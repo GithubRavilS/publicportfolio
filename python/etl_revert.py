@@ -1,0 +1,278 @@
+import json
+import sqlite3
+import csv
+from datetime import date
+from io import StringIO
+from pathlib import Path
+from typing import Any
+
+import requests
+
+
+def excel_col_name(idx: int) -> str:
+    n = idx + 1
+    result = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        result = chr(65 + rem) + result
+    return result
+
+
+def load_config() -> dict[str, Any]:
+    config_path = Path("python/config.json")
+    if not config_path.exists():
+        raise FileNotFoundError("Create python/config.json from python/config.example.json")
+    return json.loads(config_path.read_text(encoding="utf-8"))
+
+
+def normalize_symbol(symbol: str) -> str:
+    s = symbol.strip().upper()
+    if "BTC" in s:
+        return "BTC"
+    if "ETH" in s:
+        return "ETH"
+    return s
+
+
+def fetch_prices() -> dict[str, float]:
+    url = (
+        "https://api.coingecko.com/api/v3/simple/price"
+        "?ids=bitcoin,ethereum,tether,usd-coin&vs_currencies=usd"
+    )
+    res = requests.get(url, timeout=30)
+    res.raise_for_status()
+    data = res.json()
+    return {
+        "BTC": float(data["bitcoin"]["usd"]),
+        "ETH": float(data["ethereum"]["usd"]),
+        "USDT": float(data["tether"]["usd"]),
+        "USDC": float(data["usd-coin"]["usd"]),
+    }
+
+
+def load_google_sheet_rows(sheet_id: str, gid: str) -> list[dict[str, Any]]:
+    if not gid:
+        return []
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    res = requests.get(url, timeout=30)
+    res.raise_for_status()
+    reader = csv.reader(StringIO(res.text))
+    raw_rows = list(reader)
+    if not raw_rows:
+        return []
+    headers = [str(x).strip() for x in raw_rows[0]]
+    rows: list[dict[str, Any]] = []
+    for row in raw_rows[1:]:
+        cleaned: dict[str, Any] = {}
+        for i, value in enumerate(row):
+            col_letter = excel_col_name(i)
+            cleaned[col_letter] = value.strip() if isinstance(value, str) else value
+            if i < len(headers) and headers[i]:
+                cleaned[headers[i]] = value.strip() if isinstance(value, str) else value
+        rows.append(cleaned)
+    return rows
+
+
+def upsert_market_prices(conn: sqlite3.Connection, as_of_date: str, prices: dict[str, float]) -> None:
+    cur = conn.cursor()
+    for symbol, px in prices.items():
+        cur.execute(
+            """
+            INSERT INTO market_prices(as_of_date, symbol, price_usd, source)
+            VALUES (?, ?, ?, 'coingecko')
+            ON CONFLICT(as_of_date, symbol, source)
+            DO UPDATE SET price_usd=excluded.price_usd, created_at=datetime('now')
+            """,
+            (as_of_date, symbol, px),
+        )
+
+
+def ingest_revert(config: dict[str, Any]) -> None:
+    db_path = config["db_path"]
+    revert_source = config.get("revert_source", "excel")
+    pools_cols = config["revert_pools_columns"]
+    fees_cols = config["revert_fees_columns"]
+
+    if not Path(db_path).exists():
+        raise FileNotFoundError(f"DB not found: {db_path}. Run python python/init_db.py first.")
+    excel_path = config.get("revert_excel_path", "")
+    pools_sheet = config.get("revert_pools_sheet", "pools")
+    fees_sheet = config.get("revert_fees_sheet", "fees")
+    sheet_id = config.get("google_sheet_id", "")
+    pools_gid = str(config.get("revert_pools_gid", "")).strip()
+    fees_gid = str(config.get("revert_fees_gid", "")).strip()
+
+    if revert_source == "excel" and (not excel_path or not Path(excel_path).exists()):
+        raise FileNotFoundError(f"Excel file not found: {excel_path}")
+    if revert_source == "google_sheets" and not sheet_id:
+        raise ValueError("Set google_sheet_id in python/config.json")
+
+    as_of_date = date.today().isoformat()
+    prices = fetch_prices()
+
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    try:
+        upsert_market_prices(conn, as_of_date, prices)
+
+        pools_rows: list[dict[str, Any]]
+        fees_rows_data: list[dict[str, Any]]
+        if revert_source == "google_sheets":
+            pools_rows = load_google_sheet_rows(sheet_id, pools_gid)
+            fees_rows_data = load_google_sheet_rows(sheet_id, fees_gid) if fees_gid else []
+            if not pools_rows:
+                raise ValueError("Pools Google Sheet is empty or not accessible")
+        else:
+            from openpyxl import load_workbook
+            wb = load_workbook(excel_path, data_only=True)
+            if pools_sheet not in wb.sheetnames:
+                raise ValueError(f"Sheet '{pools_sheet}' not found")
+            ws_pools = wb[pools_sheet]
+            rows = list(ws_pools.iter_rows(values_only=True))
+            if not rows:
+                raise ValueError("Pools sheet is empty")
+            headers = [str(x).strip() if x is not None else "" for x in list(rows[0])]
+            data_rows = rows[1:]
+            pools_rows = []
+            for row in data_rows:
+                pools_rows.append({headers[i]: row[i] for i in range(min(len(headers), len(row))) if headers[i]})
+
+            fees_rows_data = []
+            if fees_sheet in wb.sheetnames:
+                ws_fees = wb[fees_sheet]
+                fee_rows = list(ws_fees.iter_rows(values_only=True))
+                if fee_rows:
+                    fee_headers = [str(x).strip() if x is not None else "" for x in list(fee_rows[0])]
+                    for row in fee_rows[1:]:
+                        fees_rows_data.append(
+                            {fee_headers[i]: row[i] for i in range(min(len(fee_headers), len(row))) if fee_headers[i]}
+                        )
+
+        pair_mode = all(
+            key in pools_cols
+            for key in ["token0_symbol", "token1_symbol", "token0_amount", "token1_amount"]
+        )
+
+        required_pool_cols = [pools_cols["position_id"]]
+        if pair_mode:
+            required_pool_cols.extend(
+                [pools_cols["token0_symbol"], pools_cols["token1_symbol"], pools_cols["token0_amount"], pools_cols["token1_amount"]]
+            )
+        else:
+            required_pool_cols.extend([pools_cols["symbol"], pools_cols["amount"]])
+        available_pool_headers = list(pools_rows[0].keys())
+        for c in required_pool_cols:
+            if c not in pools_rows[0]:
+                raise ValueError(f"Pools column not found: {c}. Available: {available_pool_headers}")
+
+        cur.execute("DELETE FROM revert_positions WHERE as_of_date = ?", (as_of_date,))
+        liquidity_usd = 0.0
+
+        for row in pools_rows:
+            position_id = row.get(pools_cols["position_id"])
+            if position_id is None or str(position_id).strip() == "":
+                continue
+
+            token_items: list[tuple[str, Any]] = []
+            if pair_mode:
+                token_items = [
+                    (str(row.get(pools_cols["token0_symbol"], "")), row.get(pools_cols["token0_amount"])),
+                    (str(row.get(pools_cols["token1_symbol"], "")), row.get(pools_cols["token1_amount"])),
+                ]
+            else:
+                token_items = [(str(row.get(pools_cols["symbol"], "")), row.get(pools_cols["amount"]))]
+
+            for symbol_raw, amount_raw in token_items:
+                if symbol_raw is None or amount_raw is None or str(symbol_raw).strip() == "":
+                    continue
+                try:
+                    amount = float(amount_raw)
+                except (TypeError, ValueError):
+                    continue
+                symbol = normalize_symbol(str(symbol_raw))
+                px = prices.get(symbol, 0.0)
+                usd_value = amount * px
+                liquidity_usd += usd_value
+
+                cur.execute(
+                    """
+                    INSERT INTO revert_positions(as_of_date, position_id, symbol, amount, usd_value)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (as_of_date, str(position_id), symbol, amount, usd_value),
+                )
+
+        latest_fee = 0.0
+        fee_source_rows = fees_rows_data if fees_rows_data else pools_rows
+        if fee_source_rows:
+            if fees_cols.get("token0_fee") and fees_cols.get("token1_fee"):
+                token0_fee_col = fees_cols["token0_fee"]
+                token1_fee_col = fees_cols["token1_fee"]
+                token0_symbol_col = fees_cols.get("token0_symbol", pools_cols.get("token0_symbol"))
+                token1_symbol_col = fees_cols.get("token1_symbol", pools_cols.get("token1_symbol"))
+                for row in fee_source_rows:
+                    fee0 = row.get(token0_fee_col)
+                    fee1 = row.get(token1_fee_col)
+                    sym0 = str(row.get(token0_symbol_col, "")) if token0_symbol_col else ""
+                    sym1 = str(row.get(token1_symbol_col, "")) if token1_symbol_col else ""
+                    fee0_num = float(fee0) if fee0 not in (None, "") else 0.0
+                    fee1_num = float(fee1) if fee1 not in (None, "") else 0.0
+                    latest_fee = fee0_num * prices.get(normalize_symbol(sym0), 0.0) + fee1_num * prices.get(normalize_symbol(sym1), 0.0)
+            elif fees_cols.get("daily_fee_income_usd") and fees_cols.get("date"):
+                if fees_cols["date"] not in fees_rows_data[0] or fees_cols["daily_fee_income_usd"] not in fees_rows_data[0]:
+                    available_fee_headers = list(fees_rows_data[0].keys())
+                    raise ValueError(
+                        f"Fees columns not found: {fees_cols}. Available: {available_fee_headers}"
+                    )
+                latest_row_date = None
+                for row in fees_rows_data:
+                    row_date = row.get(fees_cols["date"])
+                    fee_raw = row.get(fees_cols["daily_fee_income_usd"])
+                    if row_date is None or fee_raw is None:
+                        continue
+                    latest_row_date = str(row_date)
+                    latest_fee = float(fee_raw)
+                if latest_row_date is None:
+                    latest_fee = 0.0
+
+        cur.execute(
+            """
+            INSERT INTO daily_metrics(
+                as_of_date, liquidity_usd, daily_fee_income_usd, updated_at, source_revert
+            ) VALUES (?, ?, ?, datetime('now'), 'excel')
+            ON CONFLICT(as_of_date) DO UPDATE SET
+                liquidity_usd=excluded.liquidity_usd,
+                daily_fee_income_usd=excluded.daily_fee_income_usd,
+                updated_at=datetime('now'),
+                source_revert='excel'
+            """,
+            (as_of_date, liquidity_usd, latest_fee),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO ingestion_runs(as_of_date, pipeline, status, message)
+            VALUES (?, 'revert_excel', 'success', ?)
+            """,
+            (as_of_date, f"liquidity_usd={liquidity_usd:.2f}; daily_fee={latest_fee:.2f}"),
+        )
+        conn.commit()
+        print(f"[OK] Revert ingested for {as_of_date}: liquidity_usd={liquidity_usd:.2f}, daily_fee={latest_fee:.2f}")
+    except Exception as exc:
+        cur.execute(
+            """
+            INSERT INTO ingestion_runs(as_of_date, pipeline, status, message)
+            VALUES (?, 'revert_excel', 'error', ?)
+            """,
+            (as_of_date, str(exc)),
+        )
+        conn.commit()
+        raise
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    cfg = load_config()
+    ingest_revert(cfg)

@@ -1,0 +1,25 @@
+{
+  "db_path": "data/portfolio.db",
+  "manual_visual_adjustment_usd": 2600,
+  "debank_wallets": ["0x1fb07ac5643428710ee3bf5a73a4a66d0762f355"],
+  "revert_source": "google_sheets",
+  "google_sheet_id": "1yq5nbZ-fws8o9C0PCZWjlZjxUqZs60E4hfPiI7L0GD8",
+  "google_service_account_file": "python/google-service-account.json",
+  "revert_pools_sheet_name": "Выгрузка Revert",
+  "revert_fees_sheet_name": "",
+  "revert_pools_gid": "0",
+  "revert_fees_gid": "",
+  "revert_pools_columns": {
+    "position_id": "BT",
+    "token0_symbol": "AK",
+    "token1_symbol": "AL",
+    "token0_amount": "AU",
+    "token1_amount": "AV"
+  },
+  "revert_fees_columns": {
+    "token0_symbol": "AK",
+    "token1_symbol": "AL",
+    "token0_fee": "AM",
+    "token1_fee": "AN"
+  }
+}

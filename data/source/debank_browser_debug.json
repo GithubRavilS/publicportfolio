@@ -1,0 +1,7 @@
+{
+  "wallet": "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355",
+  "api_urls": [
+    "https://api.debank.com/chain/list"
+  ],
+  "captured_payloads_count": 1
+}

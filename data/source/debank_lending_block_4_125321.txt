@@ -1,0 +1,9 @@
+PROTOCOL: Aave V3
+HEALTH_FACTOR_PARSED: 10
+------------------------------------------------------------
+Health Rate
+>10
+Supplied
+Balance
+USD Value
+WETH

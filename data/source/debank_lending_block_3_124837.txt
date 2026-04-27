@@ -1,0 +1,16 @@
+PROTOCOL: Fluid
+HEALTH_FACTOR_PARSED: None
+------------------------------------------------------------
+Health Rate
+1.42
+Supplied
+Balance
+USD Value
+ETH
+Borrowed
+Balance
+USD Value
+USDC
+Uniswap V3
+$448
+Liquidity Pool

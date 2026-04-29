@@ -1,0 +1,5 @@
+.venv/
+data/portfolio.db
+python/config.json
+data/source/
+debank_lending_*.csv

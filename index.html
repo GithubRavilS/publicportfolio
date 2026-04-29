@@ -163,11 +163,24 @@
       const bust = qs.get("r") || String(Date.now());
       const s = document.createElement("script");
       s.src = `./data/portfolio-data.js?r=${encodeURIComponent(bust)}`;
-      s.async = false;
+      s.onload = function () {
+        window.__portfolioDataLoaded = true;
+        if (typeof window.__initPortfolioApp === "function") {
+          window.__initPortfolioApp();
+        }
+      };
+      s.onerror = function () {
+        console.error("Failed to load portfolio-data.js");
+      };
       document.head.appendChild(s);
     })();
   </script>
   <script>
+    window.__initPortfolioApp = function () {
+    if (window.__portfolioAppStarted) return;
+    if (!window.PORTFOLIO_DATA) return;
+    window.__portfolioAppStarted = true;
+
     const verticalLinePlugin = {
       id: "verticalLinePlugin",
       afterDatasetsDraw(chart) {
@@ -458,6 +471,8 @@
       });
     }
     renderPositions();
+    };
+    window.__initPortfolioApp();
   </script>
 </body>
 </html>

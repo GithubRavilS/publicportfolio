@@ -184,6 +184,13 @@
 
     const fmtUsd = (n) => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
     const fmtPct = (n) => Number(n || 0).toFixed(2) + "%";
+    const fmtFeeTier = (v) => {
+      const n = Number(v || 0);
+      if (!n) return "—";
+      let s = n < 0.01 ? n.toFixed(4) : n < 1 ? n.toFixed(3) : n.toFixed(2);
+      if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
+      return s + "%";
+    };
 
     const latest = snapshots[snapshots.length - 1] || {};
     const equity = Number(latest.equityUsd || initial);
@@ -194,7 +201,12 @@
     const retEl = document.getElementById("returnPct");
     retEl.textContent = fmtPct(ret);
     retEl.style.color = ret >= 0 ? "var(--green)" : "var(--red)";
-    document.getElementById("updatedAt").textContent = latest.timestamp ? ("Обновление: " + latest.timestamp.slice(0, 10)) : "Нет данных";
+    {
+      const day = (data.exportedAt && String(data.exportedAt).slice(0, 10))
+        || (latest.timestamp && latest.timestamp.slice(0, 10))
+        || "";
+      document.getElementById("updatedAt").textContent = day ? ("Обновление: " + day) : "Нет данных";
+    }
     document.getElementById("collateralUsd").textContent = fmtUsd(latest.collateralUsd || 0);
     document.getElementById("debtUsd").textContent = fmtUsd(latest.debtUsd || 0);
     document.getElementById("liquidityUsd").textContent = fmtUsd(latest.liquidityUsd || 0);
@@ -372,7 +384,7 @@
         <div class="pos-title">${p.pair || "Пул"} <span class="badge">${p.platform || "Revert"}</span></div>
         <div class="pos-meta">
           <div><div class="muted">APR</div><div>${(!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`}</div></div>
-          <div><div class="muted">Fee Tier</div><div>${Number(p.feeTier || 0).toFixed(2)}%</div></div>
+          <div><div class="muted">Fee Tier</div><div>${fmtFeeTier(p.feeTier)}</div></div>
           <div><div class="muted">Chain</div><div>${p.chain || "-"}</div></div>
           <div><div class="muted">Комиссия total</div><div>$${Number(p.feesUsd || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
           <div><div class="muted">Период</div><div>${p.openedAt || "-"} → ${p.closedAt || "active"}</div></div>

@@ -929,10 +929,26 @@
   },
   {
     "timestamp": "2026-04-27T00:00:00.000Z",
-    "collateralUsd": 11400.039999999999,
-    "debtUsd": 7100.53,
-    "liquidityUsd": 8650.999495059104,
-    "equityUsd": 15550.509495059105,
-    "dailyFeeIncomeUsd": 125.29830823379055
+    "collateralUsd": 11315.16,
+    "debtUsd": 7101.6,
+    "liquidityUsd": 8644.002994442322,
+    "equityUsd": 15457.562994442322,
+    "dailyFeeIncomeUsd": 125.19931134744704
+  },
+  {
+    "timestamp": "2026-04-28T00:00:00.000Z",
+    "collateralUsd": 11213.42,
+    "debtUsd": 7101.64,
+    "liquidityUsd": 8627.818618977573,
+    "equityUsd": 15339.598618977572,
+    "dailyFeeIncomeUsd": 124.96664352758661
+  },
+  {
+    "timestamp": "2026-04-29T00:00:00.000Z",
+    "collateralUsd": 11418.12,
+    "debtUsd": 7102.139999999999,
+    "liquidityUsd": 0.0,
+    "equityUsd": 6915.980000000001,
+    "dailyFeeIncomeUsd": 0.0
   }
 ]

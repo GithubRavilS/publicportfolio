@@ -654,6 +654,10 @@
       return c;
     };
     const s1AprFromPosition = (p) => {
+      if (p.instrument === "LP") {
+        const apr = Number(p.apr || 0);
+        return Number.isFinite(apr) ? Math.max(0, apr) : 0;
+      }
       const baseUsd = 10;
       const valueUsd = Number(p.valueUsd || 0);
       const endDate = s1Labels.length ? s1Labels[s1Labels.length - 1] : "";
@@ -666,6 +670,12 @@
       const days = daysBetween(startDate, endDate);
       if (baseUsd <= 0 || valueUsd <= 0) return 0;
       return (((valueUsd - baseUsd) / baseUsd) / days) * 365 * 100;
+    };
+    const s1FeesFromPosition = (p) => {
+      if (p.instrument === "Hyperliquid") {
+        return Math.max(0, Number(p.valueUsd || 0) - 10);
+      }
+      return Number(p.feesUsd || 0);
     };
     const s1WeightedApr = (() => {
       const total = s1Pos.reduce((sum, p) => sum + Math.max(0, Number(p.valueUsd || 0)), 0);
@@ -765,7 +775,7 @@
             <div><div class="muted">Chain</div><div>${chainName(p.chain, p.instrument)}</div></div>
             <div><div class="muted">Value USD</div><div>${fmtUsdSmart(p.valueUsd || 0)}</div></div>
             <div><div class="muted">APR</div><div>${s1AprFromPosition(p).toFixed(2)}%</div></div>
-            <div><div class="muted">${t("feesTotal")}</div><div>${fmtUsdSmart(p.feesUsd || 0)}</div></div>
+            <div><div class="muted">${t("feesTotal")}</div><div>${fmtUsdSmart(s1FeesFromPosition(p))}</div></div>
             <div><div class="muted">Fee Tier</div><div>${fmtFeeTier(p.feeTier)}</div></div>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">

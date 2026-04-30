@@ -389,25 +389,47 @@ def strategy_lp_positions(config: dict) -> list[dict]:
     sheet_name = config.get("strategy_one_sheet_name", "Strategy 1")
     rows = load_google_sheet_rows_by_name(sheet_id, sheet_name)
     out: list[dict] = []
+    stable_symbols = {"USDC", "USDT", "DAI", "USDE", "FDUSD", "TUSD", "USD"}
     for r in rows:
         token0 = (r.get("AK", "") or "").strip()
         token1 = (r.get("AL", "") or "").strip()
         if token0 or token1:
             pair = f"{token0} / {token1}".strip(" /")
+            value_candidates = [
+                parse_float(r.get("AH", "")),
+                parse_float(r.get("AA", "")),
+                parse_float(r.get("AF", "")),
+                parse_float(r.get("AE", "")),
+                parse_float(r.get("AD", "")),
+                parse_float(r.get("AC", "")),
+            ]
+            value_usd = next((v for v in value_candidates if v > 0), 0.0)
+            amt0 = parse_float(r.get("AU", ""))
+            amt1 = parse_float(r.get("AV", ""))
+            # If sheet has only token amounts for stable pairs, use them as USD proxy.
+            if value_usd <= 0 and (token0.upper() in stable_symbols or token1.upper() in stable_symbols):
+                value_usd = max(0.0, amt0) + max(0.0, amt1)
+            fees_candidates = [
+                parse_float(r.get("AG", "")),
+                parse_float(r.get("AN", "")) + parse_float(r.get("AM", "")),
+                parse_float(r.get("AN", "")),
+                parse_float(r.get("AM", "")),
+            ]
+            fees_usd = next((v for v in fees_candidates if v > 0), 0.0)
             out.append(
                 {
                     "instrument": "LP",
                     "platform": "Revert Finance",
                     "pair": pair or "Pool",
                     "chain": (r.get("BH", "") or "").strip(),
-                    "feesUsd": parse_float(r.get("AG", "")),
+                    "feesUsd": fees_usd,
                     "apr": parse_pct(r.get("S", "")) * 100 if parse_pct(r.get("S", "")) > 0 else 0.0,
                     "openedAt": (r.get("W", "") or "").strip(),
                     "closedAt": (r.get("X", "") or "").strip(),
                     "isActive": not (r.get("X", "") or "").strip(),
                     "feeTier": (parse_float(r.get("BJ", "")) / 10000.0) if parse_float(r.get("BJ", "")) > 0 else 0.0,
                     "link": (r.get("I", "") or "").strip(),
-                    "valueUsd": parse_float(r.get("AH", "")) or parse_float(r.get("AA", "")),
+                    "valueUsd": value_usd,
                 }
             )
     return out
@@ -584,6 +606,24 @@ def load_strategy_one(conn: sqlite3.Connection) -> dict:
             }
         )
         fee_series.append(float(r[5] or 0))
+    # Bootstrap chart history: strategy starts yesterday with $30.
+    if not snapshots:
+        today = datetime.now(timezone.utc).date()
+        yday = (today - timedelta(days=1)).isoformat()
+        snapshots = [
+            {"timestamp": f"{yday}T00:00:00.000Z", "equityUsd": 30.0, "lpUsd": 0.0, "pendleUsd": 0.0, "hyperliquidUsd": 0.0},
+            {"timestamp": f"{today.isoformat()}T00:00:00.000Z", "equityUsd": 30.0, "lpUsd": 0.0, "pendleUsd": 0.0, "hyperliquidUsd": 0.0},
+        ]
+        fee_series = [0.0, 0.0]
+    elif len(snapshots) == 1:
+        d = datetime.fromisoformat(snapshots[0]["timestamp"][:10]).date()
+        yday = (d - timedelta(days=1)).isoformat()
+        snapshots.insert(
+            0,
+            {"timestamp": f"{yday}T00:00:00.000Z", "equityUsd": 30.0, "lpUsd": 0.0, "pendleUsd": 0.0, "hyperliquidUsd": 0.0},
+        )
+        fee_series.insert(0, 0.0)
+
     apr: list[float] = []
     for i, s in enumerate(snapshots):
         if i == 0:
@@ -651,7 +691,11 @@ def main() -> None:
     liquidity_positions = load_liquidity_positions_from_sheet(config)
     lending_positions = load_latest_debank_lending_csv(config)
 
-    wallet = ((config.get("debank_wallets") or [""]) + [""])[0]
+    wallet = (
+        (config.get("strategy_one_wallet") or "").strip()
+        or (config.get("strategy_wallet") or "").strip()
+        or ((config.get("debank_wallets") or [""]) + [""])[0]
+    )
     s_lp = strategy_lp_positions(config)
     s_lp_usd = sum(max(0.0, float(p.get("valueUsd") or 0.0)) for p in s_lp)
     try:
@@ -662,6 +706,27 @@ def main() -> None:
         s_hyper, s_hyper_usd = hyperliquid_positions(wallet)
     except Exception:
         s_hyper, s_hyper_usd = [], 0.0
+    if not s_pendle:
+        s_pendle = [
+            {
+                "instrument": "Pendle",
+                "platform": "Pendle",
+                "chain": "-",
+                "marketId": "-",
+                "valueUsd": s_pendle_usd,
+                "link": "https://app.pendle.finance/trade/markets",
+            }
+        ]
+    if not s_hyper:
+        s_hyper = [
+            {
+                "instrument": "Hyperliquid",
+                "platform": "Hyperliquid",
+                "coin": "-",
+                "valueUsd": s_hyper_usd,
+                "link": "https://app.hyperliquid.xyz/",
+            }
+        ]
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     upsert_strategy_one(conn, today, s_lp, s_pendle, s_hyper, s_lp_usd, s_pendle_usd, s_hyper_usd)
     strategy_one = load_strategy_one(conn)

@@ -945,10 +945,10 @@
   },
   {
     "timestamp": "2026-04-29T00:00:00.000Z",
-    "collateralUsd": 11418.12,
-    "debtUsd": 7102.139999999999,
-    "liquidityUsd": 0.0,
-    "equityUsd": 6915.980000000001,
-    "dailyFeeIncomeUsd": 0.0
+    "collateralUsd": 11149.519999999999,
+    "debtUsd": 7103.709999999999,
+    "liquidityUsd": 8674.232169581706,
+    "equityUsd": 15320.042169581706,
+    "dailyFeeIncomeUsd": 827.5136744724135
   }
 ]

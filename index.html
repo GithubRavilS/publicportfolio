@@ -606,7 +606,8 @@
         return {
           instrument: "Hyperliquid",
           platform: "Hyperliquid",
-          pair: "Vault equity",
+          pair: "HLP Vault",
+          chain: "HYPE",
           coin: pick?.vaultAddress || "-",
           valueUsd: equityUsd,
           link: "https://app.hyperliquid.xyz/"
@@ -620,7 +621,8 @@
     // Strategy 1 block
     const s1 = data.strategyOne || { snapshots: [], dailyYieldSeries: [], positions: [] };
     const s1Snapshots = s1.snapshots || [];
-    const s1Initial = s1Snapshots.length ? Number(s1Snapshots[0].equityUsd || 0) : 30;
+    const S1_INITIAL_CAPITAL_USD = 30;
+    const s1Initial = S1_INITIAL_CAPITAL_USD;
     const s1Latest = s1Snapshots[s1Snapshots.length - 1] || {};
     const s1Current = Number(s1Latest.equityUsd || s1Initial || 0);
     const s1Return = s1Initial > 0 ? ((s1Current - s1Initial) / s1Initial) * 100 : 0;
@@ -632,32 +634,144 @@
 
     const s1Labels = s1Snapshots.map(s => (s.timestamp || "").slice(0, 10));
     const s1EquityData = s1Snapshots.map(s => Number(s.equityUsd || 0));
+    const s1Pos = s1.positions || [];
+    const s1StartDate = s1Labels.length ? s1Labels[0] : "";
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const daysBetween = (fromDate, toDate) => {
+      if (!fromDate || !toDate) return 1;
+      const d1 = new Date(`${fromDate}T00:00:00Z`).getTime();
+      const d2 = new Date(`${toDate}T00:00:00Z`).getTime();
+      if (!Number.isFinite(d1) || !Number.isFinite(d2)) return 1;
+      return Math.max(1, Math.round((d2 - d1) / msPerDay));
+    };
+    const chainName = (raw, instrument) => {
+      const c = String(raw || "").trim();
+      if (instrument === "Hyperliquid") return "HYPE";
+      if (!c || c === "-") return "-";
+      if (c === "42161") return "Arbitrum";
+      if (c === "10") return "Optimism";
+      if (c === "1") return "Ethereum";
+      return c;
+    };
+    const s1AprFromPosition = (p) => {
+      const baseUsd = 10;
+      const valueUsd = Number(p.valueUsd || 0);
+      const endDate = s1Labels.length ? s1Labels[s1Labels.length - 1] : "";
+      const startDate = p.openedAt && /\d{2}\.\d{2}\.\d{4}/.test(p.openedAt)
+        ? (() => {
+          const [dd, mm, yyyy] = String(p.openedAt).split(".");
+          return `${yyyy}-${mm}-${dd}`;
+        })()
+        : s1StartDate;
+      const days = daysBetween(startDate, endDate);
+      if (baseUsd <= 0 || valueUsd <= 0) return 0;
+      return (((valueUsd - baseUsd) / baseUsd) / days) * 365 * 100;
+    };
+    const s1WeightedApr = (() => {
+      const total = s1Pos.reduce((sum, p) => sum + Math.max(0, Number(p.valueUsd || 0)), 0);
+      if (total <= 0) return 0;
+      const weighted = s1Pos.reduce((sum, p) => {
+        const w = Math.max(0, Number(p.valueUsd || 0)) / total;
+        return sum + w * s1AprFromPosition(p);
+      }, 0);
+      return Number.isFinite(weighted) ? weighted : 0;
+    })();
     const s1Apr = (s1.dailyYieldSeries || []).map(x => Number(x || 0));
+    const s1AprSeries = s1Apr.some((x) => Math.abs(x) > 0.0001)
+      ? s1Apr
+      : s1Labels.map(() => s1WeightedApr);
     new Chart(document.getElementById("s1EquityChart"), {
       type: "line",
       data: { labels: s1Labels, datasets: [{ label: "Equity", data: s1EquityData, borderColor: "#4ea1ff", backgroundColor: "rgba(78,161,255,0.2)", fill: true, tension: 0.25, pointRadius: 0 }]},
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: "#9fb0d3", maxTicksLimit: 8 }, grid: { color: "rgba(159,176,211,0.1)" } }, y: { ticks: { color: "#9fb0d3" }, grid: { color: "rgba(159,176,211,0.1)" } } } }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false, axis: "x" },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: true,
+            mode: "index",
+            intersect: false,
+            displayColors: false,
+            backgroundColor: "rgba(10, 16, 30, 0.95)",
+            borderColor: "rgba(78, 161, 255, 0.6)",
+            borderWidth: 1,
+            titleColor: "#ecf2ff",
+            bodyColor: "#ecf2ff",
+            callbacks: {
+              title(items) {
+                return items?.[0]?.label || "";
+              },
+              label(item) {
+                const v = Number(item.parsed.y || 0);
+                return `Капитал: $${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+              }
+            }
+          }
+        },
+        hover: { mode: "index", intersect: false },
+        scales: {
+          x: { ticks: { color: "#9fb0d3", maxTicksLimit: 8 }, grid: { color: "rgba(159,176,211,0.1)" } },
+          y: { ticks: { color: "#9fb0d3" }, grid: { color: "rgba(159,176,211,0.1)" } }
+        }
+      }
     });
     new Chart(document.getElementById("s1AprChart"), {
       type: "bar",
-      data: { labels: s1Labels, datasets: [{ label: "APR %", data: s1Apr, backgroundColor: "rgba(50,194,106,0.85)" }]},
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: "#9fb0d3", maxTicksLimit: 8 }, grid: { color: "rgba(159,176,211,0.1)" } }, y: { ticks: { color: "#9fb0d3", callback: (v) => `${v}%` }, grid: { color: "rgba(159,176,211,0.1)" } } } }
+      data: { labels: s1Labels, datasets: [{ label: "APR %", data: s1AprSeries, backgroundColor: "rgba(50,194,106,0.85)" }]},
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false, axis: "x" },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: true,
+            mode: "index",
+            intersect: false,
+            displayColors: false,
+            backgroundColor: "rgba(10, 16, 30, 0.95)",
+            borderColor: "rgba(50,194,106,0.6)",
+            borderWidth: 1,
+            titleColor: "#ecf2ff",
+            bodyColor: "#ecf2ff",
+            callbacks: {
+              title(items) {
+                return items?.[0]?.label || "";
+              },
+              label(item) {
+                const v = Number(item.parsed.y || 0);
+                return `APR: ${v.toFixed(2)}%`;
+              }
+            }
+          }
+        },
+        hover: { mode: "index", intersect: false },
+        scales: {
+          x: { ticks: { color: "#9fb0d3", maxTicksLimit: 8 }, grid: { color: "rgba(159,176,211,0.1)" } },
+          y: { ticks: { color: "#9fb0d3", callback: (v) => `${v}%` }, grid: { color: "rgba(159,176,211,0.1)" } }
+        }
+      }
     });
 
     const s1Grid = document.getElementById("s1PositionsGrid");
-    const s1Pos = s1.positions || [];
     const renderS1Positions = () => {
       s1Grid.innerHTML = s1Pos.map(p => `
         <div class="pos-item">
-          <div class="pos-title">${p.platform || p.instrument || "Position"} <span class="badge">${p.instrument || ""}</span></div>
+          <div class="pos-title">${p.pair || p.marketId || p.coin || p.platform || "Position"} <span class="badge">${p.instrument === "LP" ? "Liquidity Pool" : (p.instrument || "")}</span></div>
           <div class="pos-meta">
-            <div><div class="muted">Pair/Market</div><div>${p.pair || p.marketId || p.coin || "-"}</div></div>
-            <div><div class="muted">Chain</div><div>${p.chain || "-"}</div></div>
+            <div><div class="muted">Platform</div><div>${p.instrument === "LP" ? "Revert Finance" : (p.platform || "-")}</div></div>
+            <div><div class="muted">Chain</div><div>${chainName(p.chain, p.instrument)}</div></div>
             <div><div class="muted">Value USD</div><div>${fmtUsdSmart(p.valueUsd || 0)}</div></div>
-            <div><div class="muted">APR</div><div>${p.apr ? Number(p.apr).toFixed(2)+"%" : "-"}</div></div>
+            <div><div class="muted">APR</div><div>${s1AprFromPosition(p).toFixed(2)}%</div></div>
             <div><div class="muted">${t("feesTotal")}</div><div>${fmtUsdSmart(p.feesUsd || 0)}</div></div>
+            <div><div class="muted">Fee Tier</div><div>${fmtFeeTier(p.feeTier)}</div></div>
           </div>
-          <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${t("open")}</a>` : ""}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+            <div style="font-size:28px;color:var(--green);font-weight:700;line-height:1;">${s1AprFromPosition(p).toFixed(2)}%</div>
+            <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${t("open")}</a>` : ""}</div>
+          </div>
         </div>
       `).join("") || `<div class="muted">${t("noS1Data")}</div>`;
     };

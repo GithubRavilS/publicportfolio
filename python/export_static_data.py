@@ -396,8 +396,8 @@ def strategy_lp_positions(config: dict) -> list[dict]:
         if token0 or token1:
             pair = f"{token0} / {token1}".strip(" /")
             value_candidates = [
-                parse_float(r.get("AH", "")),
                 parse_float(r.get("AA", "")),
+                parse_float(r.get("AH", "")),
                 parse_float(r.get("AF", "")),
                 parse_float(r.get("AE", "")),
                 parse_float(r.get("AD", "")),
@@ -442,6 +442,26 @@ def pendle_positions(wallet: str) -> tuple[list[dict], float]:
     res = requests.get(url, timeout=30)
     res.raise_for_status()
     raw = res.json()
+    market_name_by_id: dict[str, str] = {}
+    chain_ids = [int(c.get("chainId", 0) or 0) for c in raw.get("positions", [])]
+    for chain_id in set(chain_ids):
+        if chain_id <= 0:
+            continue
+        try:
+            meta = requests.get(
+                f"https://api-v2.pendle.finance/core/v1/markets/all?chainId={chain_id}",
+                timeout=30,
+            )
+            meta.raise_for_status()
+            for m in meta.json().get("markets", []):
+                addr = str(m.get("address", "")).lower()
+                if not addr:
+                    continue
+                mid = f"{chain_id}-{addr}"
+                market_name_by_id[mid] = str(m.get("name", "") or "").strip()
+        except Exception:
+            # keep graceful fallback to marketId
+            pass
     out: list[dict] = []
     total = 0.0
     for chain in raw.get("positions", []):
@@ -458,6 +478,7 @@ def pendle_positions(wallet: str) -> tuple[list[dict], float]:
                     "platform": "Pendle",
                     "chain": str(chain_id),
                     "marketId": pos.get("marketId", ""),
+                    "pair": market_name_by_id.get(str(pos.get("marketId", "")).lower(), pos.get("marketId", "")),
                     "ptUsd": pt,
                     "ytUsd": yt,
                     "lpUsd": lp,
@@ -468,31 +489,106 @@ def pendle_positions(wallet: str) -> tuple[list[dict], float]:
     return out, total
 
 
-def hyperliquid_positions(wallet: str) -> tuple[list[dict], float]:
-    if not wallet:
-        return [], 0.0
+def hyperliquid_positions(wallets: list[str], preferred_vault: str = "") -> tuple[list[dict], float]:
     url = "https://api.hyperliquid.xyz/info"
-    res = requests.post(url, json={"type": "clearinghouseState", "user": wallet}, timeout=30)
-    res.raise_for_status()
-    raw = res.json()
-    total = parse_float((raw.get("marginSummary") or {}).get("accountValue", "0"))
-    out: list[dict] = []
-    for p in raw.get("assetPositions", []):
-        item = p.get("position") or {}
-        out.append(
-            {
-                "instrument": "Hyperliquid",
-                "platform": "Hyperliquid",
-                "coin": item.get("coin", ""),
-                "szi": parse_float(item.get("szi", "0")),
-                "entryPx": parse_float(item.get("entryPx", "0")),
-                "positionValue": parse_float(item.get("positionValue", "0")),
-                "unrealizedPnl": parse_float(item.get("unrealizedPnl", "0")),
-                "valueUsd": parse_float(item.get("positionValue", "0")),
-                "link": "https://app.hyperliquid.xyz/",
-            }
-        )
-    return out, total
+    stable = {"USDC", "USDT", "USDE", "USDH", "USDT0"}
+    preferred_vault_lc = str(preferred_vault or "").strip().lower()
+    best_positions: list[dict] = []
+    best_total = 0.0
+    for wallet in wallets:
+        w = (wallet or "").strip()
+        if not w:
+            continue
+        out: list[dict] = []
+        total = 0.0
+        # Perps account state
+        res = requests.post(url, json={"type": "clearinghouseState", "user": w}, timeout=30)
+        res.raise_for_status()
+        raw = res.json()
+        total += parse_float((raw.get("marginSummary") or {}).get("accountValue", "0"))
+        for p in raw.get("assetPositions", []):
+            item = p.get("position") or {}
+            out.append(
+                {
+                    "instrument": "Hyperliquid",
+                    "platform": "Hyperliquid",
+                    "pair": item.get("coin", "") or "-",
+                    "coin": item.get("coin", ""),
+                    "szi": parse_float(item.get("szi", "0")),
+                    "entryPx": parse_float(item.get("entryPx", "0")),
+                    "positionValue": parse_float(item.get("positionValue", "0")),
+                    "unrealizedPnl": parse_float(item.get("unrealizedPnl", "0")),
+                    "valueUsd": parse_float(item.get("positionValue", "0")),
+                    "link": "https://app.hyperliquid.xyz/",
+                }
+            )
+        # Spot balances (can be non-zero while perps are zero)
+        try:
+            sres = requests.post(url, json={"type": "spotClearinghouseState", "user": w}, timeout=30)
+            sres.raise_for_status()
+            sraw = sres.json()
+            for b in sraw.get("balances", []):
+                coin = str(b.get("coin", "") or "")
+                amt = parse_float(b.get("total", "0"))
+                if amt <= 0:
+                    continue
+                px = 1.0 if coin.upper() in stable else 0.0
+                v = amt * px
+                total += v
+                out.append(
+                    {
+                        "instrument": "Hyperliquid",
+                        "platform": "Hyperliquid",
+                        "pair": coin,
+                        "coin": coin,
+                        "valueUsd": v,
+                        "link": "https://app.hyperliquid.xyz/",
+                    }
+                )
+        except Exception:
+            pass
+
+        # Vault equities (HLP and other vault strategies).
+        # Important: these positions are not visible in clearinghouse/spot states.
+        try:
+            vres = requests.post(url, json={"type": "userVaultEquities", "user": w}, timeout=30)
+            vres.raise_for_status()
+            vraw = vres.json()
+            if isinstance(vraw, list):
+                vault_items = [x for x in vraw if parse_float((x or {}).get("equity", "0")) > 0]
+                if preferred_vault_lc:
+                    ordered = sorted(
+                        vault_items,
+                        key=lambda x: (
+                            str((x or {}).get("vaultAddress", "")).lower() != preferred_vault_lc,
+                            -parse_float((x or {}).get("equity", "0")),
+                        ),
+                    )
+                else:
+                    ordered = sorted(vault_items, key=lambda x: -parse_float((x or {}).get("equity", "0")))
+                for v in ordered:
+                    vault_addr = str((v or {}).get("vaultAddress", "") or "")
+                    equity_usd = parse_float((v or {}).get("equity", "0"))
+                    if equity_usd <= 0:
+                        continue
+                    total += equity_usd
+                    out.append(
+                        {
+                            "instrument": "Hyperliquid",
+                            "platform": "Hyperliquid",
+                            "pair": "Vault equity",
+                            "coin": vault_addr or "-",
+                            "vaultAddress": vault_addr,
+                            "valueUsd": equity_usd,
+                            "link": "https://app.hyperliquid.xyz/",
+                        }
+                    )
+        except Exception:
+            pass
+        if total > best_total or (total == best_total and len(out) > len(best_positions)):
+            best_total = total
+            best_positions = out
+    return best_positions, best_total
 
 
 def ensure_strategy_one_tables(conn: sqlite3.Connection) -> None:
@@ -618,9 +714,16 @@ def load_strategy_one(conn: sqlite3.Connection) -> dict:
     elif len(snapshots) == 1:
         d = datetime.fromisoformat(snapshots[0]["timestamp"][:10]).date()
         yday = (d - timedelta(days=1)).isoformat()
+        first = snapshots[0]
         snapshots.insert(
             0,
-            {"timestamp": f"{yday}T00:00:00.000Z", "equityUsd": 30.0, "lpUsd": 0.0, "pendleUsd": 0.0, "hyperliquidUsd": 0.0},
+            {
+                "timestamp": f"{yday}T00:00:00.000Z",
+                "equityUsd": float(first["equityUsd"] or 0.0),
+                "lpUsd": float(first["lpUsd"] or 0.0),
+                "pendleUsd": float(first["pendleUsd"] or 0.0),
+                "hyperliquidUsd": float(first["hyperliquidUsd"] or 0.0),
+            },
         )
         fee_series.insert(0, 0.0)
 
@@ -629,9 +732,10 @@ def load_strategy_one(conn: sqlite3.Connection) -> dict:
         if i == 0:
             apr.append(0.0)
             continue
-        delta_fee = max(0.0, fee_series[i] - fee_series[i - 1])
-        equity = max(float(s["equityUsd"] or 0.0), 1.0)
-        apr.append((delta_fee / equity) * 365.0 * 100.0)
+        prev_equity = max(float(snapshots[i - 1]["equityUsd"] or 0.0), 1.0)
+        cur_equity = float(s["equityUsd"] or 0.0)
+        daily_return = (cur_equity - prev_equity) / prev_equity
+        apr.append(daily_return * 365.0 * 100.0)
     latest_day = snapshots[-1]["timestamp"][:10] if snapshots else ""
     pos_rows = cur.execute(
         """
@@ -702,8 +806,22 @@ def main() -> None:
         s_pendle, s_pendle_usd = pendle_positions(wallet)
     except Exception:
         s_pendle, s_pendle_usd = [], 0.0
+    hyper_wallets: list[str] = []
+    for x in [
+        config.get("hyperliquid_wallet"),
+        config.get("strategy_one_wallet"),
+        config.get("strategy_wallet"),
+        *((config.get("hyperliquid_wallets") or [])),
+        *((config.get("debank_wallets") or [])),
+    ]:
+        s = str(x or "").strip()
+        if s and s not in hyper_wallets:
+            hyper_wallets.append(s)
     try:
-        s_hyper, s_hyper_usd = hyperliquid_positions(wallet)
+        s_hyper, s_hyper_usd = hyperliquid_positions(
+            hyper_wallets,
+            preferred_vault=(config.get("hyperliquid_preferred_vault") or config.get("hyperliquid_vault") or ""),
+        )
     except Exception:
         s_hyper, s_hyper_usd = [], 0.0
     if not s_pendle:

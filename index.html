@@ -81,6 +81,11 @@
       <div>
         <h1 class="title">VIP Public Portfolio</h1>
         <div class="muted">Публичный трекер капитала</div>
+        <div class="tabs" style="margin-top:8px;">
+          <button class="btn active" data-app="public">Публичный портфель</button>
+          <button class="btn" data-app="strategy1">Стратегия 1: Stable Coin</button>
+          <button class="btn" id="langToggle">EN</button>
+        </div>
         <div class="tabs">
           <button class="btn active" data-tab="dashboard">Дашборд</button>
           <button class="btn" data-tab="positions">Позиции</button>
@@ -153,6 +158,36 @@
         </table>
       </div>
     </div>
+    </section>
+
+    <section id="strategy1Root" class="section" style="display:none;">
+      <div class="tabs">
+        <button class="btn active" data-s1-tab="dashboard">Дашборд</button>
+        <button class="btn" data-s1-tab="positions">Позиции</button>
+      </div>
+      <section id="s1Dashboard" class="section active">
+        <div class="row">
+          <div class="card kpi"><h3 id="s1InitialLabel">Стартовый капитал</h3><p id="s1InitialUsd">$0</p></div>
+          <div class="card kpi"><h3 id="s1CurrentLabel">Текущий капитал</h3><p id="s1CurrentUsd">$0</p></div>
+          <div class="card kpi"><h3 id="s1ReturnLabel">Доходность</h3><p id="s1ReturnPct">0%</p></div>
+        </div>
+        <div class="charts">
+          <div class="card">
+            <strong id="s1EqTitle">Динамика портфеля</strong>
+            <div class="chart-box"><canvas id="s1EquityChart"></canvas></div>
+          </div>
+          <div class="card">
+            <strong id="s1AprTitle">Ежедневная доходность (годовых, %)</strong>
+            <div class="chart-box"><canvas id="s1AprChart"></canvas></div>
+          </div>
+        </div>
+      </section>
+      <section id="s1Positions" class="section">
+        <div class="card">
+          <strong id="s1PosTitle">Позиции</strong>
+          <div id="s1PositionsGrid" class="pos-grid" style="margin-top:10px;"></div>
+        </div>
+      </section>
     </section>
   </div>
 
@@ -469,6 +504,90 @@
         u.searchParams.set("r", String(Date.now()));
         window.location.replace(u.toString());
       });
+    }
+
+    // Strategy 1 block
+    const s1 = data.strategyOne || { snapshots: [], dailyYieldSeries: [], positions: [] };
+    const s1Snapshots = s1.snapshots || [];
+    const s1Initial = s1Snapshots.length ? Number(s1Snapshots[0].equityUsd || 0) : 30;
+    const s1Latest = s1Snapshots[s1Snapshots.length - 1] || {};
+    const s1Current = Number(s1Latest.equityUsd || s1Initial || 0);
+    const s1Return = s1Initial > 0 ? ((s1Current - s1Initial) / s1Initial) * 100 : 0;
+    document.getElementById("s1InitialUsd").textContent = fmtUsd(s1Initial);
+    document.getElementById("s1CurrentUsd").textContent = fmtUsd(s1Current);
+    const s1RetEl = document.getElementById("s1ReturnPct");
+    s1RetEl.textContent = fmtPct(s1Return);
+    s1RetEl.style.color = s1Return >= 0 ? "var(--green)" : "var(--red)";
+
+    const s1Labels = s1Snapshots.map(s => (s.timestamp || "").slice(0, 10));
+    const s1EquityData = s1Snapshots.map(s => Number(s.equityUsd || 0));
+    const s1Apr = (s1.dailyYieldSeries || []).map(x => Math.max(0, Number(x || 0)));
+    new Chart(document.getElementById("s1EquityChart"), {
+      type: "line",
+      data: { labels: s1Labels, datasets: [{ label: "Equity", data: s1EquityData, borderColor: "#4ea1ff", backgroundColor: "rgba(78,161,255,0.2)", fill: true, tension: 0.25, pointRadius: 0 }]},
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: "#9fb0d3", maxTicksLimit: 8 }, grid: { color: "rgba(159,176,211,0.1)" } }, y: { ticks: { color: "#9fb0d3" }, grid: { color: "rgba(159,176,211,0.1)" } } } }
+    });
+    new Chart(document.getElementById("s1AprChart"), {
+      type: "bar",
+      data: { labels: s1Labels, datasets: [{ label: "APR %", data: s1Apr, backgroundColor: "rgba(50,194,106,0.85)" }]},
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: "#9fb0d3", maxTicksLimit: 8 }, grid: { color: "rgba(159,176,211,0.1)" } }, y: { ticks: { color: "#9fb0d3", callback: (v) => `${v}%` }, grid: { color: "rgba(159,176,211,0.1)" } } } }
+    });
+
+    const s1Grid = document.getElementById("s1PositionsGrid");
+    const s1Pos = s1.positions || [];
+    s1Grid.innerHTML = s1Pos.map(p => `
+      <div class="pos-item">
+        <div class="pos-title">${p.platform || p.instrument || "Position"} <span class="badge">${p.instrument || ""}</span></div>
+        <div class="pos-meta">
+          <div><div class="muted">Pair/Market</div><div>${p.pair || p.marketId || p.coin || "-"}</div></div>
+          <div><div class="muted">Chain</div><div>${p.chain || "-"}</div></div>
+          <div><div class="muted">Value USD</div><div>$${Number(p.valueUsd || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
+          <div><div class="muted">APR</div><div>${p.apr ? Number(p.apr).toFixed(2)+"%" : "-"}</div></div>
+          <div><div class="muted">Fees total</div><div>$${Number(p.feesUsd || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
+        </div>
+        <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">Открыть</a>` : ""}</div>
+      </div>
+    `).join("") || `<div class="muted">Нет данных по Strategy 1</div>`;
+
+    const switchApp = (app) => {
+      document.querySelectorAll(".btn[data-app]").forEach((b) => b.classList.toggle("active", b.dataset.app === app));
+      const showPublic = app === "public";
+      document.querySelectorAll("#dashboard,#positions,#transactions").forEach((el) => el.style.display = showPublic ? "" : "none");
+      document.getElementById("strategy1Root").style.display = showPublic ? "none" : "block";
+      document.querySelectorAll(".btn[data-tab]").forEach((b) => b.style.display = showPublic ? "inline-block" : "none");
+    };
+    document.querySelectorAll(".btn[data-app]").forEach((btn) => {
+      btn.addEventListener("click", () => switchApp(btn.dataset.app));
+    });
+    switchApp("public");
+
+    document.querySelectorAll(".btn[data-s1-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".btn[data-s1-tab]").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const tab = btn.dataset.s1Tab;
+        document.getElementById("s1Dashboard").style.display = tab === "dashboard" ? "block" : "none";
+        document.getElementById("s1Positions").style.display = tab === "positions" ? "block" : "none";
+      });
+    });
+
+    let lang = "ru";
+    const langBtn = document.getElementById("langToggle");
+    const applyLang = () => {
+      const en = lang === "en";
+      document.querySelector('[data-app="public"]').textContent = en ? "Public Portfolio" : "Публичный портфель";
+      document.querySelector('[data-app="strategy1"]').textContent = en ? "Strategy 1: Stable Coin" : "Стратегия 1: Stable Coin";
+      document.getElementById("s1EqTitle").textContent = en ? "Portfolio equity" : "Динамика портфеля";
+      document.getElementById("s1AprTitle").textContent = en ? "Daily yield (APR, %)" : "Ежедневная доходность (годовых, %)";
+      document.getElementById("s1PosTitle").textContent = en ? "Positions" : "Позиции";
+      document.getElementById("s1InitialLabel").textContent = en ? "Initial capital" : "Стартовый капитал";
+      document.getElementById("s1CurrentLabel").textContent = en ? "Current capital" : "Текущий капитал";
+      document.getElementById("s1ReturnLabel").textContent = en ? "Return" : "Доходность";
+      langBtn.textContent = en ? "RU" : "EN";
+    };
+    if (langBtn) {
+      langBtn.addEventListener("click", () => { lang = (lang === "ru" ? "en" : "ru"); applyLang(); });
+      applyLang();
     }
     renderPositions();
     };

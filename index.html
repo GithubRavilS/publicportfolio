@@ -80,16 +80,16 @@
     <div class="header">
       <div>
         <h1 class="title">VIP Public Portfolio</h1>
-        <div class="muted">Публичный трекер капитала</div>
+        <div class="muted" id="subtitleText">Публичный трекер капитала</div>
         <div class="tabs" style="margin-top:8px;">
           <button class="btn active" data-app="public">Публичный портфель</button>
           <button class="btn" data-app="strategy1">Стратегия 1: Stable Coin</button>
           <button class="btn" id="langToggle">EN</button>
         </div>
         <div class="tabs">
-          <button class="btn active" data-tab="dashboard">Дашборд</button>
-          <button class="btn" data-tab="positions">Позиции</button>
-          <button class="btn" data-tab="transactions">Транзакции</button>
+          <button class="btn active" data-tab="dashboard" id="tabDashboardBtn">Дашборд</button>
+          <button class="btn" data-tab="positions" id="tabPositionsBtn">Позиции</button>
+          <button class="btn" data-tab="transactions" id="tabTransactionsBtn">Транзакции</button>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
@@ -100,15 +100,15 @@
 
     <section id="dashboard" class="section active">
     <div class="row">
-      <div class="card kpi"><h3>Стартовый капитал</h3><p id="initialUsd">$0</p></div>
-      <div class="card kpi"><h3>Текущий капитал</h3><p id="currentUsd">$0</p></div>
-      <div class="card kpi"><h3>Доходность с 01.01.2026</h3><p id="returnPct">0%</p></div>
+      <div class="card kpi"><h3 id="initialLabel">Стартовый капитал</h3><p id="initialUsd">$0</p></div>
+      <div class="card kpi"><h3 id="currentLabel">Текущий капитал</h3><p id="currentUsd">$0</p></div>
+      <div class="card kpi"><h3 id="returnLabel">Доходность с 01.01.2026</h3><p id="returnPct">0%</p></div>
     </div>
 
     <div class="charts">
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <strong>Динамика портфеля</strong>
+          <strong id="equityTitle">Динамика портфеля</strong>
           <div class="toolbar">
             <button class="btn active" data-unit="USD">USD</button>
             <button class="btn" data-unit="BTC">BTC</button>
@@ -118,25 +118,25 @@
         <div class="chart-box"><canvas id="equityChart"></canvas></div>
       </div>
       <div class="card">
-        <strong>Ежедневная доходность (годовых, %)</strong>
+        <strong id="aprTitle">Ежедневная доходность (годовых, %)</strong>
         <div class="chart-box"><canvas id="pnlChart"></canvas></div>
       </div>
     </div>
 
     <div class="row">
-      <div class="card kpi"><h3>Collateral</h3><p id="collateralUsd">$0</p></div>
-      <div class="card kpi"><h3>Debt</h3><p id="debtUsd">$0</p></div>
-      <div class="card kpi"><h3>Liquidity</h3><p id="liquidityUsd">$0</p></div>
+      <div class="card kpi"><h3 id="collateralLabel">Collateral</h3><p id="collateralUsd">$0</p></div>
+      <div class="card kpi"><h3 id="debtLabel">Debt</h3><p id="debtUsd">$0</p></div>
+      <div class="card kpi"><h3 id="liquidityLabel">Liquidity</h3><p id="liquidityUsd">$0</p></div>
     </div>
     </section>
 
     <section id="positions" class="section">
       <div class="card">
         <div class="subtabs">
-          <button class="btn active" data-pos-type="lp">Пулы ликвидности</button>
-          <button class="btn" data-pos-type="lending">Лендинг-позиции</button>
-          <button class="btn active" data-pos-filter="active">Активные</button>
-          <button class="btn" data-pos-filter="closed">Закрытые</button>
+          <button class="btn active" data-pos-type="lp" id="lpTypeBtn">Пулы ликвидности</button>
+          <button class="btn" data-pos-type="lending" id="lendingTypeBtn">Лендинг-позиции</button>
+          <button class="btn active" data-pos-filter="active" id="activeFilterBtn">Активные</button>
+          <button class="btn" data-pos-filter="closed" id="closedFilterBtn">Закрытые</button>
         </div>
         <strong id="positionsTitle">Пулы ликвидности</strong>
         <div id="lpPositions" class="pos-grid" style="margin-top:10px;"></div>
@@ -146,12 +146,12 @@
 
     <section id="transactions" class="section">
     <div class="card">
-      <strong>Транзакции</strong>
+      <strong id="txTitle">Транзакции</strong>
       <div class="table-wrap" style="margin-top:10px;">
         <table>
           <thead>
             <tr>
-              <th>Время</th><th>Источник</th><th>Сеть</th><th>Протокол</th><th>Действие</th><th>Актив</th><th>Сумма</th><th>USD</th>
+              <th id="thTime">Время</th><th id="thSource">Источник</th><th id="thChain">Сеть</th><th id="thProtocol">Протокол</th><th id="thAction">Действие</th><th id="thAsset">Актив</th><th id="thAmount">Сумма</th><th id="thUsd">USD</th>
             </tr>
           </thead>
           <tbody id="txBody"></tbody>
@@ -162,8 +162,8 @@
 
     <section id="strategy1Root" class="section" style="display:none;">
       <div class="tabs">
-        <button class="btn active" data-s1-tab="dashboard">Дашборд</button>
-        <button class="btn" data-s1-tab="positions">Позиции</button>
+        <button class="btn active" data-s1-tab="dashboard" id="s1DashBtn">Дашборд</button>
+        <button class="btn" data-s1-tab="positions" id="s1PosBtn">Позиции</button>
       </div>
       <section id="s1Dashboard" class="section active">
         <div class="row">
@@ -237,12 +237,21 @@
     Chart.register(verticalLinePlugin);
 
     const data = window.PORTFOLIO_DATA || { snapshots: [], transactions: [], prices: { BTC: 0, ETH: 0 }, initialCapitalUsd: 15500 };
+    const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
+    const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
     const snapshots = data.snapshots || [];
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
 
-    const fmtUsd = (n) => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+    const fmtUsd = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtUsdSmart = (n) => {
+      const v = Number(n || 0);
+      if (v !== 0 && Math.abs(v) < 0.01) {
+        return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 });
+      }
+      return fmtUsd(v);
+    };
     const fmtPct = (n) => Number(n || 0).toFixed(2) + "%";
     const fmtFeeTier = (v) => {
       const n = Number(v || 0);
@@ -251,6 +260,78 @@
       if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
       return s + "%";
     };
+    let lang = "ru";
+    const i18n = {
+      ru: {
+        subtitle: "Публичный трекер капитала",
+        public: "Публичный портфель",
+        strategy1: "Стратегия 1: Stable Coin",
+        dashboard: "Дашборд",
+        positions: "Позиции",
+        transactions: "Транзакции",
+        refresh: "Обновить",
+        initial: "Стартовый капитал",
+        current: "Текущий капитал",
+        totalReturn: "Доходность с 01.01.2026",
+        equity: "Динамика портфеля",
+        dailyApr: "Ежедневная доходность (годовых, %)",
+        updated: "Обновление",
+        noData: "Нет данных",
+        collateral: "Залог",
+        debt: "Долг",
+        liquidity: "Ликвидность",
+        lp: "Пулы ликвидности",
+        lending: "Лендинг-позиции",
+        active: "Активные",
+        closed: "Закрытые",
+        txTime: "Время",
+        txSource: "Источник",
+        txChain: "Сеть",
+        txProtocol: "Протокол",
+        txAction: "Действие",
+        txAsset: "Актив",
+        txAmount: "Сумма",
+        pair: "Пара/рынок",
+        feesTotal: "Комиссия total",
+        open: "Открыть",
+        noS1Data: "Нет данных по Strategy 1"
+      },
+      en: {
+        subtitle: "Public capital tracker",
+        public: "Public Portfolio",
+        strategy1: "Strategy 1: Stable Coin",
+        dashboard: "Dashboard",
+        positions: "Positions",
+        transactions: "Transactions",
+        refresh: "Refresh",
+        initial: "Initial capital",
+        current: "Current capital",
+        totalReturn: "Return since 2026-01-01",
+        equity: "Portfolio equity",
+        dailyApr: "Daily yield (APR, %)",
+        updated: "Updated",
+        noData: "No data",
+        collateral: "Collateral",
+        debt: "Debt",
+        liquidity: "Liquidity",
+        lp: "Liquidity pools",
+        lending: "Lending positions",
+        active: "Active",
+        closed: "Closed",
+        txTime: "Time",
+        txSource: "Source",
+        txChain: "Chain",
+        txProtocol: "Protocol",
+        txAction: "Action",
+        txAsset: "Asset",
+        txAmount: "Amount",
+        pair: "Pair/market",
+        feesTotal: "Fees total",
+        open: "Open",
+        noS1Data: "No Strategy 1 data"
+      }
+    };
+    const t = (k) => (i18n[lang] && i18n[lang][k]) || k;
 
     const latest = snapshots[snapshots.length - 1] || {};
     const equity = Number(latest.equityUsd || initial);
@@ -265,7 +346,7 @@
       const day = (data.exportedAt && String(data.exportedAt).slice(0, 10))
         || (latest.timestamp && latest.timestamp.slice(0, 10))
         || "";
-      document.getElementById("updatedAt").textContent = day ? ("Обновление: " + day) : "Нет данных";
+      document.getElementById("updatedAt").textContent = day ? (`${t("updated")}: ${day}`) : t("noData");
     }
     document.getElementById("collateralUsd").textContent = fmtUsd(latest.collateralUsd || 0);
     document.getElementById("debtUsd").textContent = fmtUsd(latest.debtUsd || 0);
@@ -430,7 +511,7 @@
       const filterBtn = document.querySelector(".btn[data-pos-filter].active");
       const posType = posTypeBtn ? posTypeBtn.dataset.posType : "lp";
       const filter = filterBtn ? filterBtn.dataset.posFilter : "active";
-      document.getElementById("positionsTitle").textContent = posType === "lp" ? "Пулы ликвидности" : "Лендинг-позиции";
+      document.getElementById("positionsTitle").textContent = posType === "lp" ? t("lp") : t("lending");
       document.querySelectorAll(".btn[data-pos-filter]").forEach((b) => {
         b.style.display = posType === "lp" ? "inline-block" : "none";
       });
@@ -446,15 +527,15 @@
           <div><div class="muted">APR</div><div>${(!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`}</div></div>
           <div><div class="muted">Fee Tier</div><div>${fmtFeeTier(p.feeTier)}</div></div>
           <div><div class="muted">Chain</div><div>${p.chain || "-"}</div></div>
-          <div><div class="muted">Комиссия total</div><div>$${Number(p.feesUsd || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
+          <div><div class="muted">${t("feesTotal")}</div><div>$${Number(p.feesUsd || 0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
           <div><div class="muted">Период</div><div>${p.openedAt || "-"} → ${p.closedAt || "active"}</div></div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
           <div style="font-size:28px;color:var(--green);font-weight:700;line-height:1;">${(!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`}</div>
-          <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">Открыть позицию</a>` : ""}</div>
+          <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${t("open")}</a>` : ""}</div>
         </div>
       </div>
-    `).join("") || `<div class="muted">Нет данных по пулам ликвидности</div>`;
+    `).join("") || `<div class="muted">${t("noData")}</div>`;
 
       lendEl.innerHTML = lending.map(p => `
       <div class="pos-item">
@@ -506,6 +587,36 @@
       });
     }
 
+    async function fetchHyperliquidVaultPosition(wallet, preferredVault) {
+      if (!wallet) return null;
+      try {
+        const res = await fetch("https://api.hyperliquid.xyz/info", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "userVaultEquities", user: wallet })
+        });
+        if (!res.ok) return null;
+        const items = await res.json();
+        if (!Array.isArray(items) || !items.length) return null;
+        const preferred = String(preferredVault || "").toLowerCase();
+        const pick = items.find((x) => String(x.vaultAddress || "").toLowerCase() === preferred)
+          || [...items].sort((a, b) => Number(b.equity || 0) - Number(a.equity || 0))[0];
+        const equityUsd = Number(pick?.equity || 0);
+        if (!equityUsd) return null;
+        return {
+          instrument: "Hyperliquid",
+          platform: "Hyperliquid",
+          pair: "Vault equity",
+          coin: pick?.vaultAddress || "-",
+          valueUsd: equityUsd,
+          link: "https://app.hyperliquid.xyz/"
+        };
+      } catch (err) {
+        console.error("Failed to load Hyperliquid vault position", err);
+        return null;
+      }
+    }
+
     // Strategy 1 block
     const s1 = data.strategyOne || { snapshots: [], dailyYieldSeries: [], positions: [] };
     const s1Snapshots = s1.snapshots || [];
@@ -513,15 +624,15 @@
     const s1Latest = s1Snapshots[s1Snapshots.length - 1] || {};
     const s1Current = Number(s1Latest.equityUsd || s1Initial || 0);
     const s1Return = s1Initial > 0 ? ((s1Current - s1Initial) / s1Initial) * 100 : 0;
-    document.getElementById("s1InitialUsd").textContent = fmtUsd(s1Initial);
-    document.getElementById("s1CurrentUsd").textContent = fmtUsd(s1Current);
+    document.getElementById("s1InitialUsd").textContent = fmtUsdSmart(s1Initial);
+    document.getElementById("s1CurrentUsd").textContent = fmtUsdSmart(s1Current);
     const s1RetEl = document.getElementById("s1ReturnPct");
     s1RetEl.textContent = fmtPct(s1Return);
     s1RetEl.style.color = s1Return >= 0 ? "var(--green)" : "var(--red)";
 
     const s1Labels = s1Snapshots.map(s => (s.timestamp || "").slice(0, 10));
     const s1EquityData = s1Snapshots.map(s => Number(s.equityUsd || 0));
-    const s1Apr = (s1.dailyYieldSeries || []).map(x => Math.max(0, Number(x || 0)));
+    const s1Apr = (s1.dailyYieldSeries || []).map(x => Number(x || 0));
     new Chart(document.getElementById("s1EquityChart"), {
       type: "line",
       data: { labels: s1Labels, datasets: [{ label: "Equity", data: s1EquityData, borderColor: "#4ea1ff", backgroundColor: "rgba(78,161,255,0.2)", fill: true, tension: 0.25, pointRadius: 0 }]},
@@ -535,19 +646,22 @@
 
     const s1Grid = document.getElementById("s1PositionsGrid");
     const s1Pos = s1.positions || [];
-    s1Grid.innerHTML = s1Pos.map(p => `
-      <div class="pos-item">
-        <div class="pos-title">${p.platform || p.instrument || "Position"} <span class="badge">${p.instrument || ""}</span></div>
-        <div class="pos-meta">
-          <div><div class="muted">Pair/Market</div><div>${p.pair || p.marketId || p.coin || "-"}</div></div>
-          <div><div class="muted">Chain</div><div>${p.chain || "-"}</div></div>
-          <div><div class="muted">Value USD</div><div>$${Number(p.valueUsd || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
-          <div><div class="muted">APR</div><div>${p.apr ? Number(p.apr).toFixed(2)+"%" : "-"}</div></div>
-          <div><div class="muted">Fees total</div><div>$${Number(p.feesUsd || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
+    const renderS1Positions = () => {
+      s1Grid.innerHTML = s1Pos.map(p => `
+        <div class="pos-item">
+          <div class="pos-title">${p.platform || p.instrument || "Position"} <span class="badge">${p.instrument || ""}</span></div>
+          <div class="pos-meta">
+            <div><div class="muted">Pair/Market</div><div>${p.pair || p.marketId || p.coin || "-"}</div></div>
+            <div><div class="muted">Chain</div><div>${p.chain || "-"}</div></div>
+            <div><div class="muted">Value USD</div><div>${fmtUsdSmart(p.valueUsd || 0)}</div></div>
+            <div><div class="muted">APR</div><div>${p.apr ? Number(p.apr).toFixed(2)+"%" : "-"}</div></div>
+            <div><div class="muted">${t("feesTotal")}</div><div>${fmtUsdSmart(p.feesUsd || 0)}</div></div>
+          </div>
+          <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${t("open")}</a>` : ""}</div>
         </div>
-        <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">Открыть</a>` : ""}</div>
-      </div>
-    `).join("") || `<div class="muted">Нет данных по Strategy 1</div>`;
+      `).join("") || `<div class="muted">${t("noS1Data")}</div>`;
+    };
+    renderS1Positions();
 
     const switchApp = (app) => {
       document.querySelectorAll(".btn[data-app]").forEach((b) => b.classList.toggle("active", b.dataset.app === app));
@@ -571,25 +685,65 @@
       });
     });
 
-    let lang = "ru";
     const langBtn = document.getElementById("langToggle");
     const applyLang = () => {
       const en = lang === "en";
-      document.querySelector('[data-app="public"]').textContent = en ? "Public Portfolio" : "Публичный портфель";
-      document.querySelector('[data-app="strategy1"]').textContent = en ? "Strategy 1: Stable Coin" : "Стратегия 1: Stable Coin";
-      document.getElementById("s1EqTitle").textContent = en ? "Portfolio equity" : "Динамика портфеля";
-      document.getElementById("s1AprTitle").textContent = en ? "Daily yield (APR, %)" : "Ежедневная доходность (годовых, %)";
-      document.getElementById("s1PosTitle").textContent = en ? "Positions" : "Позиции";
-      document.getElementById("s1InitialLabel").textContent = en ? "Initial capital" : "Стартовый капитал";
-      document.getElementById("s1CurrentLabel").textContent = en ? "Current capital" : "Текущий капитал";
+      document.getElementById("subtitleText").textContent = t("subtitle");
+      document.querySelector('[data-app="public"]').textContent = t("public");
+      document.querySelector('[data-app="strategy1"]').textContent = t("strategy1");
+      document.getElementById("tabDashboardBtn").textContent = t("dashboard");
+      document.getElementById("tabPositionsBtn").textContent = t("positions");
+      document.getElementById("tabTransactionsBtn").textContent = t("transactions");
+      document.getElementById("refreshBtn").textContent = t("refresh");
+      document.getElementById("initialLabel").textContent = t("initial");
+      document.getElementById("currentLabel").textContent = t("current");
+      document.getElementById("returnLabel").textContent = t("totalReturn");
+      document.getElementById("equityTitle").textContent = t("equity");
+      document.getElementById("aprTitle").textContent = t("dailyApr");
+      document.getElementById("collateralLabel").textContent = t("collateral");
+      document.getElementById("debtLabel").textContent = t("debt");
+      document.getElementById("liquidityLabel").textContent = t("liquidity");
+      document.getElementById("lpTypeBtn").textContent = t("lp");
+      document.getElementById("lendingTypeBtn").textContent = t("lending");
+      document.getElementById("activeFilterBtn").textContent = t("active");
+      document.getElementById("closedFilterBtn").textContent = t("closed");
+      document.getElementById("txTitle").textContent = t("transactions");
+      document.getElementById("thTime").textContent = t("txTime");
+      document.getElementById("thSource").textContent = t("txSource");
+      document.getElementById("thChain").textContent = t("txChain");
+      document.getElementById("thProtocol").textContent = t("txProtocol");
+      document.getElementById("thAction").textContent = t("txAction");
+      document.getElementById("thAsset").textContent = t("txAsset");
+      document.getElementById("thAmount").textContent = t("txAmount");
+      document.getElementById("s1DashBtn").textContent = t("dashboard");
+      document.getElementById("s1PosBtn").textContent = t("positions");
+      document.getElementById("s1EqTitle").textContent = t("equity");
+      document.getElementById("s1AprTitle").textContent = t("dailyApr");
+      document.getElementById("s1PosTitle").textContent = t("positions");
+      document.getElementById("s1InitialLabel").textContent = t("initial");
+      document.getElementById("s1CurrentLabel").textContent = t("current");
       document.getElementById("s1ReturnLabel").textContent = en ? "Return" : "Доходность";
       langBtn.textContent = en ? "RU" : "EN";
+      renderPositions();
+      if (s1Grid) renderS1Positions();
+      const day = (data.exportedAt && String(data.exportedAt).slice(0, 10))
+        || (latest.timestamp && latest.timestamp.slice(0, 10))
+        || "";
+      document.getElementById("updatedAt").textContent = day ? (`${t("updated")}: ${day}`) : t("noData");
     };
     if (langBtn) {
       langBtn.addEventListener("click", () => { lang = (lang === "ru" ? "en" : "ru"); applyLang(); });
       applyLang();
     }
     renderPositions();
+    fetchHyperliquidVaultPosition(HLP_WALLET, HLP_PREFERRED_VAULT).then((hlPosition) => {
+      if (!hlPosition) return;
+      const next = s1Pos.filter((x) => x.instrument !== "Hyperliquid");
+      next.unshift(hlPosition);
+      s1Pos.length = 0;
+      s1Pos.push(...next);
+      renderS1Positions();
+    });
     };
     window.__initPortfolioApp();
   </script>

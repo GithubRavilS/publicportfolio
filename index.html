@@ -621,7 +621,7 @@
     // Strategy 1 block
     const s1 = data.strategyOne || { snapshots: [], dailyYieldSeries: [], positions: [] };
     const s1Snapshots = s1.snapshots || [];
-    const S1_INITIAL_CAPITAL_USD = 30;
+    const S1_INITIAL_CAPITAL_USD = Number(data.strategyOneInitialUsd || s1.initialUsd || 30);
     const s1Initial = S1_INITIAL_CAPITAL_USD;
     const s1Latest = s1Snapshots[s1Snapshots.length - 1] || {};
     const s1Current = Number(s1Latest.equityUsd || s1Initial || 0);
@@ -723,7 +723,11 @@
         hover: { mode: "index", intersect: false },
         scales: {
           x: { ticks: { color: "#9fb0d3", maxTicksLimit: 8 }, grid: { color: "rgba(159,176,211,0.1)" } },
-          y: { ticks: { color: "#9fb0d3" }, grid: { color: "rgba(159,176,211,0.1)" } }
+          y: {
+            grace: "12%",
+            ticks: { color: "#9fb0d3", maxTicksLimit: 8 },
+            grid: { color: "rgba(159,176,211,0.1)" }
+          }
         }
       }
     });

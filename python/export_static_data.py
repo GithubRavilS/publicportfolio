@@ -702,27 +702,45 @@ def load_strategy_one(conn: sqlite3.Connection) -> dict:
             }
         )
         fee_series.append(float(r[5] or 0))
-    # Bootstrap chart history: strategy starts yesterday with $30.
+    try:
+        _cfg_s1 = json.loads(Path("python/config.json").read_text(encoding="utf-8"))
+        s1_init = float(_cfg_s1.get("strategy_one_initial_usd", 30) or 30)
+    except Exception:
+        s1_init = 30.0
+    per_leg = s1_init / 3.0
+    # Baseline day before first DB row: full initial capital (chart starts at $30, then real days).
     if not snapshots:
         today = datetime.now(timezone.utc).date()
         yday = (today - timedelta(days=1)).isoformat()
         snapshots = [
-            {"timestamp": f"{yday}T00:00:00.000Z", "equityUsd": 30.0, "lpUsd": 0.0, "pendleUsd": 0.0, "hyperliquidUsd": 0.0},
-            {"timestamp": f"{today.isoformat()}T00:00:00.000Z", "equityUsd": 30.0, "lpUsd": 0.0, "pendleUsd": 0.0, "hyperliquidUsd": 0.0},
+            {
+                "timestamp": f"{yday}T00:00:00.000Z",
+                "equityUsd": s1_init,
+                "lpUsd": per_leg,
+                "pendleUsd": per_leg,
+                "hyperliquidUsd": per_leg,
+            },
+            {
+                "timestamp": f"{today.isoformat()}T00:00:00.000Z",
+                "equityUsd": s1_init,
+                "lpUsd": per_leg,
+                "pendleUsd": per_leg,
+                "hyperliquidUsd": per_leg,
+            },
         ]
         fee_series = [0.0, 0.0]
-    elif len(snapshots) == 1:
-        d = datetime.fromisoformat(snapshots[0]["timestamp"][:10]).date()
-        yday = (d - timedelta(days=1)).isoformat()
-        first = snapshots[0]
+    else:
+        first_ts = snapshots[0]["timestamp"][:10]
+        first_d = datetime.fromisoformat(first_ts).date()
+        baseline_d = (first_d - timedelta(days=1)).isoformat()
         snapshots.insert(
             0,
             {
-                "timestamp": f"{yday}T00:00:00.000Z",
-                "equityUsd": float(first["equityUsd"] or 0.0),
-                "lpUsd": float(first["lpUsd"] or 0.0),
-                "pendleUsd": float(first["pendleUsd"] or 0.0),
-                "hyperliquidUsd": float(first["hyperliquidUsd"] or 0.0),
+                "timestamp": f"{baseline_d}T00:00:00.000Z",
+                "equityUsd": s1_init,
+                "lpUsd": per_leg,
+                "pendleUsd": per_leg,
+                "hyperliquidUsd": per_leg,
             },
         )
         fee_series.insert(0, 0.0)
@@ -864,6 +882,7 @@ def main() -> None:
         "lendingPositions": lending_positions,
         "transactions": transactions,
         "strategyOne": strategy_one,
+        "strategyOneInitialUsd": float(config.get("strategy_one_initial_usd", 30) or 30),
     }
 
     out = Path("data/portfolio-data.js")

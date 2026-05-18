@@ -75,11 +75,17 @@
     return v.toLocaleString("en-US", { maximumFractionDigits: 6 });
   }
 
+  function normalizeRangeFields(p) {
+    if (p?.rangeMin != null && p?.rangeMax != null) return p;
+    return p;
+  }
+
   function renderRangeBar(r, lang, fmtFeeTier) {
-    if (r?.rangeMin == null || r?.rangeMax == null) return "";
-    const min = Number(r.rangeMin);
-    const max = Number(r.rangeMax);
-    const cur = Number(r.rangeCurrent ?? (min + max) / 2);
+    const pos = normalizeRangeFields(r);
+    if (pos?.rangeMin == null || pos?.rangeMax == null) return "";
+    const min = Number(pos.rangeMin);
+    const max = Number(pos.rangeMax);
+    const cur = Number(pos.rangeCurrent ?? (min + max) / 2);
     const span = max - min || 1;
     const pad = span * 0.15;
     const trackMin = min - pad;
@@ -90,9 +96,10 @@
     let markerPct = ((cur - trackMin) / trackSpan) * 100;
     markerPct = Math.max(1, Math.min(99, markerPct));
     const inRange = cur >= min && cur <= max;
+    const curLbl = lang === "ru" ? "цена" : "price";
     return `<div class="range-bar-wrap${inRange ? "" : " out-range"}">
-      <div class="range-bar-head"><span class="range-lbl">${lang === "ru" ? "Диапазон цены" : "Price range"}</span><span class="range-fee">${fmtFeeTier(r.feeTier)}</span></div>
-      <div class="range-bar-labels"><span>${fmtRangeNum(min)}</span><span class="range-cur${inRange ? "" : " out"}">${fmtRangeNum(cur)}</span><span>${fmtRangeNum(max)}</span></div>
+      <div class="range-bar-head"><span class="range-lbl">${lang === "ru" ? "Диапазон цены" : "Price range"}</span><span class="range-fee">${fmtFeeTier(pos.feeTier)}</span></div>
+      <div class="range-bar-labels"><span>${fmtRangeNum(min)}</span><span class="range-cur${inRange ? "" : " out"}">${curLbl}: ${fmtRangeNum(cur)}</span><span>${fmtRangeNum(max)}</span></div>
       <div class="range-bar"><div class="range-track"></div><div class="range-active" style="left:${segLeft.toFixed(2)}%;width:${segWidth.toFixed(2)}%"></div><div class="range-marker" style="left:${markerPct.toFixed(2)}%"></div></div>
     </div>`;
   }
@@ -123,30 +130,88 @@
     </div>`;
   }
 
+  function fmtUsdShort(n) {
+    const v = Number(n || 0);
+    if (Math.abs(v) < 0.01) return "$0.00";
+    return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function renderLendAssetRows(items, variant, lang) {
+    if (!items?.length) {
+      const msg = variant === "sup"
+        ? (lang === "ru" ? "Нет залога" : "No collateral")
+        : (lang === "ru" ? "Нет долга" : "No debt");
+      return `<p class="lend-empty">${msg}</p>`;
+    }
+    return items
+      .map(
+        (x) => `
+    <div class="lend-asset-row lend-asset-row--${variant}">
+      <span class="lend-asset-sym">${x.asset || "—"}</span>
+      <span class="lend-asset-amt">${Number(x.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+      <span class="lend-asset-usd">${fmtUsdShort(x.usd)}</span>
+    </div>`
+      )
+      .join("");
+  }
+
   function renderLendingCard(p, ctx) {
     const hf = Number(p.healthFactor || 0);
-    const hfColor = hf >= 1.5 ? "var(--green)" : hf >= 1.2 ? "var(--blue)" : "var(--red)";
-    return `<div class="pool-card lend-card">
-      <div class="pool-card-head">
-        ${chainBadgeHtml(p.chain, 28, "Lending")}
-        <div class="pool-card-main">
-          <div class="pool-pair-row">
-            <span class="pool-pair">${p.protocol || "Protocol"}</span>
-            <span class="badge">Lending</span>
-          </div>
-          <div class="pool-dex">${chainLabelUi(p.chain, "Lending")}</div>
+    const hfClass = hf > 0 && hf < 1.2 ? " lend-hf--warn" : hf > 0 && hf < 1.5 ? " lend-hf--mid" : "";
+    const supplied = p.supplied?.length
+      ? p.supplied
+      : [{ asset: p.collateralAsset, amount: p.collateralAmount, usd: p.collateralUsd }];
+    const borrowed = p.borrowed?.length
+      ? p.borrowed
+      : [{ asset: p.borrowAsset, amount: p.borrowAmount, usd: p.borrowUsd || 0 }];
+    const supUsd = supplied.reduce((s, x) => s + Number(x.usd || 0), 0);
+    const borUsd = borrowed.reduce((s, x) => s + Number(x.usd || 0), 0);
+    const netUsd = Number.isFinite(Number(p.netUsd)) ? Number(p.netUsd) : supUsd - borUsd;
+    const liqLbl = ctx.lang === "ru" ? "Ликвидация" : "Liq. price";
+    return `<article class="lend-card pool-card">
+      <header class="lend-card-head">
+        <div class="lend-card-title">
+          ${chainBadgeHtml(p.chain, 24, "Lending")}
+          <span class="lend-protocol">${p.protocol || "Protocol"}</span>
+          <span class="badge">Lending</span>
         </div>
-        <div class="pool-apr-hero" style="color:${hfColor};font-size:18px">HF ${hf.toFixed(2)}</div>
+        <div class="lend-net">
+          <span class="lend-net-lbl">${ctx.lang === "ru" ? "Нетто" : "Net"}</span>
+          <strong>${fmtUsdShort(netUsd)}</strong>
+        </div>
+      </header>
+      <div class="lend-metrics">
+        <div class="lend-metric">
+          <span>${ctx.lang === "ru" ? "Залог" : "Collateral"}</span>
+          <strong>${fmtUsdShort(supUsd)}</strong>
+        </div>
+        <div class="lend-metric lend-metric--debt">
+          <span>${ctx.lang === "ru" ? "Долг" : "Debt"}</span>
+          <strong>${fmtUsdShort(borUsd)}</strong>
+        </div>
+        ${
+          hf > 0
+            ? `<div class="lend-metric${hfClass}"><span>HF</span><strong>${hf.toFixed(2)}</strong></div>`
+            : ""
+        }
+        ${
+          Number(p.liquidationPrice || 0) > 0
+            ? `<div class="lend-metric"><span>${liqLbl}</span><strong>$${Number(p.liquidationPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></div>`
+            : ""
+        }
       </div>
-      <div class="pool-meta-grid">
-        <div><div class="lbl">Collateral</div><div>${p.collateralAsset || "-"} ${Number(p.collateralAmount || 0).toLocaleString()}</div></div>
-        <div><div class="lbl">Collateral USD</div><div>$${Number(p.collateralUsd || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div></div>
-        <div><div class="lbl">Borrow</div><div>${p.borrowAsset || "-"} ${Number(p.borrowAmount || 0).toLocaleString()}</div></div>
-        <div><div class="lbl">${ctx.lang === "ru" ? "Рынок" : "Market"}</div><div>$${Number(p.marketPrice || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div></div>
-        <div><div class="lbl">${ctx.lang === "ru" ? "Ликвидация" : "Liq. price"}</div><div>$${Number(p.liquidationPrice || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div></div>
-        <div class="pos-actions" style="grid-column:1/-1">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${ctx.t("open")}</a>` : ""}</div>
+      <div class="lend-columns">
+        <section class="lend-col lend-col--sup">
+          <h4>${ctx.lang === "ru" ? "Залог" : "Supplied"}</h4>
+          ${renderLendAssetRows(supplied, "sup", ctx.lang)}
+        </section>
+        <section class="lend-col lend-col--bor">
+          <h4>${ctx.lang === "ru" ? "Долг" : "Borrowed"}</h4>
+          ${renderLendAssetRows(borrowed.filter((x) => x.asset || Number(x.amount)), "bor", ctx.lang)}
+        </section>
       </div>
-    </div>`;
+      ${p.link ? `<div class="lend-card-foot"><a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${ctx.t("open")}</a></div>` : ""}
+    </article>`;
   }
 
   function renderS1Card(p, ctx) {
@@ -176,12 +241,104 @@
     </div>`;
   }
 
+  function parseSheetFloat(s) {
+    const raw = String(s || "").trim().replace(/\s/g, "");
+    if (!raw) return 0;
+    let v = raw.replace(",", ".");
+    if (v.includes(".") && v.includes(",")) {
+      if (v.lastIndexOf(",") > v.lastIndexOf(".")) v = v.replace(/\./g, "").replace(",", ".");
+      else v = v.replace(/,/g, "");
+    }
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function pairKeyFromRow(token0, token1) {
+    const a = String(token0 || "").trim();
+    const b = String(token1 || "").trim();
+    if (!a && !b) return "";
+    return `${a} / ${b}`.replace(/\s+/g, " ").trim();
+  }
+
+  async function enrichLpRangesFromSheet(positions, opts) {
+    const sheetId = opts?.sheetId;
+    const sheetName = opts?.sheetName || "Public Portfolio";
+    if (!sheetId || !positions?.length) return positions;
+    try {
+      const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+      const res = await fetch(url);
+      if (!res.ok) return positions;
+      const text = await res.text();
+      const rows = text.split(/\r?\n/).map((line) => {
+        const out = [];
+        let cur = "";
+        let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            inQ = !inQ;
+            continue;
+          }
+          if (ch === "," && !inQ) {
+            out.push(cur);
+            cur = "";
+            continue;
+          }
+          cur += ch;
+        }
+        out.push(cur);
+        return out;
+      });
+      if (rows.length < 2) return positions;
+      const headers = rows[0];
+      const idx = (name) => headers.indexOf(name);
+      const iAk = idx("AK");
+      const iAl = idx("AL");
+      const iBh = idx("BH");
+      const iLower = idx("price_lower");
+      const iUpper = idx("price_upper");
+      const iMkt = idx("Asset market price");
+      const iClosed = idx("X") >= 0 ? idx("X") : -1;
+      if (iLower < 0 || iUpper < 0) return positions;
+      const map = new Map();
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        const closedVal = String(row[iClosed] || "").trim().toLowerCase();
+        if (iClosed >= 0 && closedVal && closedVal !== "null" && closedVal !== "none") continue;
+        const pair = pairKeyFromRow(row[iAk], row[iAl]);
+        const chain = String(row[iBh] || "").trim().toLowerCase();
+        const lower = parseSheetFloat(row[iLower]);
+        const upper = parseSheetFloat(row[iUpper]);
+        const cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
+        if (!pair || !lower || !upper) continue;
+        const rmin = Math.min(lower, upper);
+        const rmax = Math.max(lower, upper);
+        let rcur = cur > 0 ? cur : (rmin + rmax) / 2;
+        if (rcur < rmin * 0.25 || rcur > rmax * 4) {
+          const inv = 1 / rcur;
+          if (inv >= rmin * 0.75 && inv <= rmax * 1.25) rcur = inv;
+        }
+        map.set(`${chain}|${pair.toLowerCase()}`, { rangeMin: rmin, rangeMax: rmax, rangeCurrent: rcur });
+      }
+      for (const p of positions) {
+        if (p.rangeMin != null && p.rangeMax != null) continue;
+        const key = `${String(p.chain || "").trim().toLowerCase()}|${String(p.pair || "").trim().toLowerCase()}`;
+        const hit = map.get(key);
+        if (hit) Object.assign(p, hit);
+      }
+    } catch (e) {
+      console.warn("LP range enrich failed", e);
+    }
+    return positions;
+  }
+
   window.PortfolioUI = {
     chainLabelUi,
     chainBadgeHtml,
     dexFromLink,
     renderLpCard,
     renderLendingCard,
-    renderS1Card
+    renderS1Card,
+    enrichLpRangesFromSheet
   };
 })();

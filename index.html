@@ -146,7 +146,31 @@
     .range-active { position: absolute; top: 0; bottom: 0; border-radius: 999px; background: linear-gradient(90deg, rgba(78,161,255,0.2), rgba(50,194,106,0.45)); border: 1px solid rgba(50,194,106,0.5); }
     .range-marker { position: absolute; top: 50%; width: 3px; height: 14px; transform: translate(-50%,-50%); background: #fff; border-radius: 2px; box-shadow: 0 0 8px rgba(78,161,255,0.8); z-index: 2; }
     .range-bar-wrap.out-range .range-active { background: rgba(255,107,125,0.25); border-color: rgba(255,107,125,0.5); }
-    .lend-card .pool-meta-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .lend-list { display: flex; flex-direction: column; gap: 12px; }
+    .lend-card { padding: 14px 16px; }
+    .lend-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .lend-card-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .lend-protocol { font-weight: 700; font-size: 15px; }
+    .lend-net { text-align: right; }
+    .lend-net-lbl { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .lend-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .lend-metric span { display: block; font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+    .lend-metric strong { font-size: 14px; }
+    .lend-metric--debt strong { color: var(--red); }
+    .lend-hf--warn strong { color: var(--red); }
+    .lend-hf--mid strong { color: var(--amber, #f5a623); }
+    .lend-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .lend-columns { grid-template-columns: 1fr; } }
+    .lend-col h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .lend-col--sup { border-left: 3px solid var(--green); padding-left: 10px; }
+    .lend-col--bor { border-left: 3px solid var(--red); padding-left: 10px; }
+    .lend-asset-row { display: grid; grid-template-columns: minmax(52px, 0.7fr) 1fr auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; }
+    .lend-asset-row:last-child { border-bottom: none; }
+    .lend-asset-sym { font-weight: 700; }
+    .lend-asset-amt { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .lend-asset-usd { font-weight: 700; text-align: right; color: var(--cyan, #5eead4); }
+    .lend-empty { margin: 0; font-size: 12px; color: var(--muted); font-style: italic; }
+    .lend-card-foot { margin-top: 12px; }
     #strategy1Root .section { display: none; }
     #strategy1Root .section.active { display: block; }
   </style>
@@ -329,6 +353,76 @@
 
         const data = window.PORTFOLIO_DATA || { snapshots: [], transactions: [], prices: { BTC: 0, ETH: 0 }, initialCapitalUsd: 15500 };
     const aprAuditByDay = Object.fromEntries((data.aprAudit || []).map((x) => [x.date, x]));
+    const GOOGLE_SHEET_ID = data.googleSheetId || "1yq5nbZ-fws8o9C0PCZWjlZjxUqZs60E4hfPiI7L0GD8";
+    const PUBLIC_SHEET_NAME = data.publicPortfolioSheetName || "Public Portfolio";
+
+    function feeBasedAprFromSnapshots(snaps) {
+      return (snaps || []).map((s, i) => {
+        if (i === 0) return 0;
+        const liq = Number(s.liquidityUsd || 0);
+        const fee = Number(s.dailyFeeIncomeUsd || 0);
+        if (liq > 0 && fee >= 0) return (fee / liq) * 365 * 100;
+        return 0;
+      });
+    }
+
+    function sanitizeYieldSeries(snaps, rawSeries, maxApr = 80) {
+      const feeBased = feeBasedAprFromSnapshots(snaps);
+      const raw = rawSeries || [];
+      let lastGood = 0;
+      return (snaps || []).map((_, i) => {
+        const feeApr = Number(feeBased[i] || 0);
+        const r = Number(raw[i] || 0);
+        let chosen = r;
+        if (feeApr > 0 && r > Math.max(feeApr * 3.5, 60)) chosen = feeApr;
+        else if (r > maxApr) chosen = feeApr > 0 ? feeApr : Math.min(r, maxApr);
+        chosen = Math.max(0, Math.min(chosen, maxApr));
+        if (chosen > 0) lastGood = chosen;
+        else if (lastGood > 0 && feeApr <= 0) chosen = lastGood;
+        return chosen;
+      });
+    }
+
+    function sanitizeS1Snapshots(snaps, liveTotal, initial) {
+      const out = (snaps || []).map((s) => ({ ...s }));
+      if (!out.length) return out;
+      const live = Number(liveTotal || 0);
+      const init = Number(initial || 30);
+      const capHigh = init * 1.12;
+      if (live > 0) out[out.length - 1].equityUsd = live;
+      const maxEq = Math.max(...out.map((s) => Number(s.equityUsd || 0)));
+      if (maxEq <= capHigh) return out;
+      let lastOk = 0;
+      out.forEach((s, i) => {
+        if (Number(s.equityUsd || 0) <= capHigh) lastOk = i;
+      });
+      const startEq = Number(out[lastOk].equityUsd || init);
+      const endEq = live > 0 ? live : startEq;
+      const steps = out.length - 1 - lastOk;
+      if (steps <= 0) {
+        out.forEach((s) => {
+          if (Number(s.equityUsd || 0) > capHigh) s.equityUsd = endEq;
+        });
+        return out;
+      }
+      for (let j = 0; j < steps; j++) {
+        const i = lastOk + 1 + j;
+        const t = (j + 1) / (steps + 1);
+        out[i].equityUsd = startEq + (endEq - startEq) * t;
+      }
+      return out;
+    }
+
+    function s1AprFromSnapshots(snaps, maxApr = 120) {
+      return (snaps || []).map((s, i) => {
+        if (i === 0) return 0;
+        const prev = Math.max(Number(snaps[i - 1].equityUsd || 0), 1e-9);
+        const cur = Number(s.equityUsd || 0);
+        const daily = (cur - prev) / prev;
+        return Math.max(0, Math.min(daily * 365 * 100, maxApr));
+      });
+    }
+
     const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
     const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
     const snapshots = data.snapshots || [];
@@ -464,7 +558,7 @@
 
     const labels = snapshots.map(s => (s.timestamp || "").slice(0, 10));
     const baseEquity = snapshots.map(s => Number(s.equityUsd || 0));
-    const dailyYieldSeries = (data.dailyYieldSeries || []).map(x => Math.max(0, Number(x || 0)));
+    const dailyYieldSeries = sanitizeYieldSeries(snapshots, data.dailyYieldSeries || [], 80);
 
     let unit = "USD";
     const toUnit = (usd) => {
@@ -609,7 +703,7 @@
       });
     });
 
-    const lp = data.liquidityPositions || [];
+    let lp = data.liquidityPositions || [];
     const lending = data.lendingPositions || [];
     const lpEl = document.getElementById("lpPositions");
     const lendEl = document.getElementById("lendingPositions");
@@ -626,11 +720,19 @@
 
       const lpFiltered = lp.filter(p => filter === "active" ? p.isActive : !p.isActive);
       lpEl.style.display = posType === "lp" ? "grid" : "none";
-      lendEl.style.display = posType === "lending" ? "grid" : "none";
+      lendEl.style.display = posType === "lending" ? "block" : "none";
+      lendEl.className = posType === "lending" ? "lend-list" : "pos-grid";
 
       lpEl.innerHTML = lpFiltered.map((p) => window.PortfolioUI.renderLpCard(p, cardCtx())).join("") || `<div class="muted">${t("noData")}</div>`;
       lendEl.innerHTML = lending.map((p) => window.PortfolioUI.renderLendingCard(p, cardCtx())).join("") || `<div class="muted">${lang === "ru" ? "Нет данных по лендинг-позициям" : "No lending positions"}</div>`;
     };
+
+    if (window.PortfolioUI?.enrichLpRangesFromSheet) {
+      window.PortfolioUI.enrichLpRangesFromSheet(lp, {
+        sheetId: GOOGLE_SHEET_ID,
+        sheetName: PUBLIC_SHEET_NAME
+      }).then(() => renderPositions());
+    }
 
     document.querySelectorAll(".btn[data-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -742,9 +844,11 @@
     s1RetEl.textContent = fmtPct(s1Return);
     s1RetEl.style.color = s1Return >= 0 ? "var(--green)" : "var(--red)";
 
+    const s1Pos = s1.positions || [];
+    const s1ActiveUsdEarly = s1Pos.filter(isActivePos).reduce((sum, p) => sum + Math.max(0, Number(p.valueUsd || 0)), 0);
+    s1Snapshots = sanitizeS1Snapshots(s1Snapshots, s1ActiveUsdEarly, S1_INITIAL_CAPITAL_USD);
     const s1Labels = s1Snapshots.map(s => (s.timestamp || "").slice(0, 10));
     const s1EquityData = s1Snapshots.map(s => Number(s.equityUsd || 0));
-    const s1Pos = s1.positions || [];
     const s1StartDate = s1Labels.length ? s1Labels[0] : "";
     const msPerDay = 24 * 60 * 60 * 1000;
     const daysBetween = (fromDate, toDate) => {
@@ -788,9 +892,7 @@
       }, 0);
       return Number.isFinite(weighted) ? weighted : 0;
     })();
-    let s1Apr = (s1.dailyYieldSeries || []).map(x => Number(x || 0));
-    while (s1Apr.length < s1Labels.length) s1Apr.unshift(0);
-    if (s1Apr.length > s1Labels.length) s1Apr = s1Apr.slice(s1Apr.length - s1Labels.length);
+    let s1Apr = s1AprFromSnapshots(s1Snapshots, 120);
     const s1AprSeries = s1Apr.some((x) => Math.abs(x) > 0.0001)
       ? s1Apr
       : s1Labels.map(() => s1WeightedApr);

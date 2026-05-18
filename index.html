@@ -80,6 +80,9 @@
       .header > div:last-child { width: 100%; justify-content: space-between; }
     }
     @media (max-width: 760px) {
+      .pool-card-head { flex-wrap: wrap; }
+      .pool-apr-hero { width: 100%; margin-top: 4px; }
+      .lend-card .pool-meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
       .tabs::-webkit-scrollbar { display: none; }
       .btn { flex: 0 0 auto; }
@@ -98,8 +101,56 @@
       .pos-meta { grid-template-columns: 1fr; }
       th, td { padding: 8px 9px; font-size: 12px; }
     }
+    .pool-card {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.02);
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .pool-card-head { display: flex; align-items: flex-start; gap: 10px; }
+    .pool-card-main { flex: 1; min-width: 0; }
+    .pool-pair-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pool-pair { font-weight: 700; font-size: 15px; }
+    .pool-dex { font-size: 11px; color: var(--muted); }
+    .pool-apr-hero { font-size: 26px; font-weight: 800; color: var(--green); line-height: 1; white-space: nowrap; }
+    .pool-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 12px; }
+    .pool-meta-grid .lbl { color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+    .chain-icon-wrap {
+      --sz: 26px;
+      width: var(--sz);
+      height: var(--sz);
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.25);
+    }
+    .chain-icon-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .chain-icon-fallback { display: none; width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #fff; }
+    .chain-icon-fallback.show { display: flex; }
+    .range-bar-wrap { width: 100%; margin-top: 4px; }
+    .range-bar-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .range-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .range-fee { font-size: 11px; color: var(--blue); }
+    .range-bar-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); gap: 6px; margin-bottom: 4px; }
+    .range-cur { color: var(--text); font-weight: 700; }
+    .range-cur.out { color: var(--red); }
+    .range-bar { position: relative; height: 8px; }
+    .range-track { position: absolute; inset: 0; border-radius: 999px; background: rgba(100,116,139,0.35); }
+    .range-active { position: absolute; top: 0; bottom: 0; border-radius: 999px; background: linear-gradient(90deg, rgba(78,161,255,0.2), rgba(50,194,106,0.45)); border: 1px solid rgba(50,194,106,0.5); }
+    .range-marker { position: absolute; top: 50%; width: 3px; height: 14px; transform: translate(-50%,-50%); background: #fff; border-radius: 2px; box-shadow: 0 0 8px rgba(78,161,255,0.8); z-index: 2; }
+    .range-bar-wrap.out-range .range-active { background: rgba(255,107,125,0.25); border-color: rgba(255,107,125,0.5); }
+    .lend-card .pool-meta-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    #strategy1Root .section { display: none; }
+    #strategy1Root .section.active { display: block; }
   </style>
-  <link rel="stylesheet" href="https://cry-maden008.pythonanywhere.com/vip-static/vip-auth.css" />
+  <link rel="stylesheet" href="https://cry-Maden008.pythonanywhere.com/vip-static/vip-auth.css" />
 </head>
 <body>
   <div id="vipAuthGate" class="vip-auth-gate" role="dialog" aria-modal="true">
@@ -219,6 +270,10 @@
       </section>
       <section id="s1Positions" class="section">
         <div class="card">
+          <div class="subtabs">
+            <button class="btn active" data-s1-filter="active" id="s1ActiveBtn">Активные</button>
+            <button class="btn" data-s1-filter="closed" id="s1ClosedBtn">Закрытые</button>
+          </div>
           <strong id="s1PosTitle">Позиции</strong>
           <div id="s1PositionsGrid" class="pos-grid" style="margin-top:10px;"></div>
         </div>
@@ -226,6 +281,7 @@
     </section>
   </div>
 
+  <script src="./js/portfolio-ui.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script>
     (function () {
@@ -271,7 +327,8 @@
     };
     Chart.register(verticalLinePlugin);
 
-    const data = window.PORTFOLIO_DATA || { snapshots: [], transactions: [], prices: { BTC: 0, ETH: 0 }, initialCapitalUsd: 15500 };
+        const data = window.PORTFOLIO_DATA || { snapshots: [], transactions: [], prices: { BTC: 0, ETH: 0 }, initialCapitalUsd: 15500 };
+    const aprAuditByDay = Object.fromEntries((data.aprAudit || []).map((x) => [x.date, x]));
     const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
     const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
     const snapshots = data.snapshots || [];
@@ -369,6 +426,8 @@
       }
     };
     const t = (k) => (i18n[lang] && i18n[lang][k]) || k;
+    const cardCtx = () => ({ lang, t, fmtFeeTier, fmtUsdSmart });
+    const isActivePos = (p) => p.isActive !== false && !String(p.closedAt || "").trim();
 
     const latest = snapshots[snapshots.length - 1] || {};
     const equity = Number(latest.equityUsd || initial);
@@ -507,7 +566,19 @@
               },
               label(item) {
                 const v = Number(item.parsed.y || 0);
-                return `APR: ${v.toFixed(2)}%`;
+                const day = item.label || "";
+                const a = aprAuditByDay[day];
+                if (!a) return `APR: ${v.toFixed(2)}%`;
+                const lines = [
+                  `APR (график): ${v.toFixed(2)}%`,
+                  `fee-based: ${Number(a.feeBasedApr || 0).toFixed(2)}%`,
+                  `ETL rollup: ${Number(a.rollupApr || 0).toFixed(2)}%`,
+                  `fees: $${Number(a.dailyFeeIncomeUsd || 0).toFixed(4)}`,
+                  `liq: $${Number(a.liquidityUsd || 0).toFixed(0)}`,
+                  `elapsed: ${Number(a.elapsedHours || 0).toFixed(1)}h`
+                ];
+                if (a.spikeRejected) lines.push("скачок ETL отклонён");
+                return lines;
               }
             }
           }
@@ -557,38 +628,8 @@
       lpEl.style.display = posType === "lp" ? "grid" : "none";
       lendEl.style.display = posType === "lending" ? "grid" : "none";
 
-      lpEl.innerHTML = lpFiltered.map(p => `
-      <div class="pos-item">
-        <div class="pos-title">${p.pair || "Пул"} <span class="badge">${p.platform || "Revert"}</span></div>
-        <div class="pos-meta">
-          <div><div class="muted">APR</div><div>${(!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`}</div></div>
-          <div><div class="muted">Fee Tier</div><div>${fmtFeeTier(p.feeTier)}</div></div>
-          <div><div class="muted">Chain</div><div>${p.chain || "-"}</div></div>
-          <div><div class="muted">${t("feesTotal")}</div><div>$${Number(p.feesUsd || 0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
-          <div><div class="muted">Период</div><div>${p.openedAt || "-"} → ${p.closedAt || "active"}</div></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
-          <div style="font-size:28px;color:var(--green);font-weight:700;line-height:1;">${(!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`}</div>
-          <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${t("open")}</a>` : ""}</div>
-        </div>
-      </div>
-    `).join("") || `<div class="muted">${t("noData")}</div>`;
-
-      lendEl.innerHTML = lending.map(p => `
-      <div class="pos-item">
-        <div class="pos-title">${p.protocol || "Protocol"} <span class="badge">Lending</span></div>
-        <div class="pos-meta">
-          <div><div class="muted">${t("blockchain")}</div><div>${chainName(p.chain, p.instrument || "Lending")}</div></div>
-          <div><div class="muted">Collateral</div><div>${p.collateralAsset || "-"} ${Number(p.collateralAmount || 0).toLocaleString()}</div></div>
-          <div><div class="muted">Collateral USD</div><div>$${Number(p.collateralUsd || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
-          <div><div class="muted">Borrow</div><div>${p.borrowAsset || "-"} ${Number(p.borrowAmount || 0).toLocaleString()}</div></div>
-          <div><div class="muted">Health Factor</div><div>${Number(p.healthFactor || 0).toFixed(2)}</div></div>
-          <div><div class="muted">Рынок (asset)</div><div>$${Number(p.marketPrice || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
-          <div><div class="muted">Цена ликвидации</div><div>$${Number(p.liquidationPrice || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>
-        </div>
-        <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">Открыть в DeBank</a>` : ""}</div>
-      </div>
-    `).join("") || `<div class="muted">Нет данных по лендинг-позициям</div>`;
+      lpEl.innerHTML = lpFiltered.map((p) => window.PortfolioUI.renderLpCard(p, cardCtx())).join("") || `<div class="muted">${t("noData")}</div>`;
+      lendEl.innerHTML = lending.map((p) => window.PortfolioUI.renderLendingCard(p, cardCtx())).join("") || `<div class="muted">${lang === "ru" ? "Нет данных по лендинг-позициям" : "No lending positions"}</div>`;
     };
 
     document.querySelectorAll(".btn[data-tab]").forEach((btn) => {
@@ -596,9 +637,10 @@
         const tab = btn.dataset.tab;
         document.querySelectorAll(".btn[data-tab]").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
-        document.querySelectorAll(".section").forEach((s) => s.classList.remove("active"));
-        const section = document.getElementById(tab);
-        if (section) section.classList.add("active");
+        ["dashboard", "positions", "transactions"].forEach((id) => {
+          const section = document.getElementById(id);
+          if (section) section.classList.toggle("active", id === tab);
+        });
       });
     });
 
@@ -648,7 +690,8 @@
           chain: "HYPE",
           coin: pick?.vaultAddress || "-",
           valueUsd: equityUsd,
-          link: "https://app.hyperliquid.xyz/"
+          link: "https://app.hyperliquid.xyz/",
+          isActive: true
         };
       } catch (err) {
         console.error("Failed to load Hyperliquid vault position", err);
@@ -711,15 +754,7 @@
       if (!Number.isFinite(d1) || !Number.isFinite(d2)) return 1;
       return Math.max(1, Math.round((d2 - d1) / msPerDay));
     };
-    const chainName = (raw, instrument) => {
-      const c = String(raw || "").trim();
-      if (instrument === "Hyperliquid") return "HYPE";
-      if (!c || c === "-") return "-";
-      if (c === "42161") return "Arbitrum";
-      if (c === "10") return "Optimism";
-      if (c === "1") return "Ethereum";
-      return c;
-    };
+    const chainName = (raw, instrument) => window.PortfolioUI.chainLabelUi(raw, instrument);
     const s1AprFromPosition = (p) => {
       if (p.instrument === "LP") {
         const apr = Number(p.apr || 0);
@@ -745,9 +780,9 @@
       return Number(p.feesUsd || 0);
     };
     const s1WeightedApr = (() => {
-      const total = s1Pos.reduce((sum, p) => sum + Math.max(0, Number(p.valueUsd || 0)), 0);
+      const total = s1Pos.filter(isActivePos).reduce((sum, p) => sum + Math.max(0, Number(p.valueUsd || 0)), 0);
       if (total <= 0) return 0;
-      const weighted = s1Pos.reduce((sum, p) => {
+      const weighted = s1Pos.filter(isActivePos).reduce((sum, p) => {
         const w = Math.max(0, Number(p.valueUsd || 0)) / total;
         return sum + w * s1AprFromPosition(p);
       }, 0);
@@ -852,36 +887,42 @@
     };
 
     const s1Grid = document.getElementById("s1PositionsGrid");
+    const updateS1Kpis = () => {
+      const active = s1Pos.filter(isActivePos);
+      const activeUsd = active.reduce((sum, p) => sum + Math.max(0, Number(p.valueUsd || 0)), 0);
+      const s1InitialK = Number(data.strategyOneInitialUsd || s1.initialUsd || 30);
+      const displayCurrent = activeUsd > 0 ? activeUsd : Number(s1Latest.equityUsd || s1Current || 0);
+      const s1ReturnActive = s1InitialK > 0 ? ((displayCurrent - s1InitialK) / s1InitialK) * 100 : 0;
+      document.getElementById("s1CurrentUsd").textContent = fmtUsdSmart(displayCurrent);
+      const s1RetEl2 = document.getElementById("s1ReturnPct");
+      s1RetEl2.textContent = fmtPct(s1ReturnActive);
+      s1RetEl2.style.color = s1ReturnActive >= 0 ? "var(--green)" : "var(--red)";
+    };
     const renderS1Positions = () => {
-      s1Grid.innerHTML = s1Pos.map(p => `
-        <div class="pos-item">
-          <div class="pos-title">${p.pair || p.marketId || p.coin || p.platform || "Position"} <span class="badge">${p.instrument === "LP" ? "Liquidity Pool" : (p.instrument || "")}</span></div>
-          <div class="pos-meta">
-            <div><div class="muted">Platform</div><div>${p.instrument === "LP" ? "Revert Finance" : (p.platform || "-")}</div></div>
-            <div><div class="muted">Chain</div><div>${chainName(p.chain, p.instrument)}</div></div>
-            <div><div class="muted">Value USD</div><div>${fmtUsdSmart(p.valueUsd || 0)}</div></div>
-            <div><div class="muted">APR</div><div>${s1AprFromPosition(p).toFixed(2)}%</div></div>
-            <div><div class="muted">${t("feesTotal")}</div><div>${fmtUsdSmart(s1FeesFromPosition(p))}</div></div>
-            <div><div class="muted">Fee Tier</div><div>${fmtFeeTier(p.feeTier)}</div></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
-            <div style="font-size:28px;color:var(--green);font-weight:700;line-height:1;">${s1AprFromPosition(p).toFixed(2)}%</div>
-            <div class="pos-actions">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${t("open")}</a>` : ""}</div>
-          </div>
-        </div>
-      `).join("") || `<div class="muted">${t("noS1Data")}</div>`;
+      const filterBtn = document.querySelector(".btn[data-s1-filter].active");
+      const filter = filterBtn ? filterBtn.dataset.s1Filter : "active";
+      const list = s1Pos.filter((p) => (filter === "active" ? isActivePos(p) : !isActivePos(p)));
+      const ctx = Object.assign(cardCtx(), { chainName, s1AprFromPosition, s1FeesFromPosition });
+      s1Grid.innerHTML = list.map((p) => window.PortfolioUI.renderS1Card(p, ctx)).join("") || `<div class="muted">${t("noS1Data")}</div>`;
     };
     renderS1Positions();
+    updateS1Kpis();
 
+    const showStrategy1Dashboard = () => {
+      document.getElementById("s1Dashboard")?.classList.add("active");
+      document.getElementById("s1Positions")?.classList.remove("active");
+      document.querySelectorAll(".btn[data-s1-tab]").forEach((b) => b.classList.toggle("active", b.dataset.s1Tab === "dashboard"));
+      setTimeout(() => initS1Charts(), 0);
+      setTimeout(() => initS1Charts(), 150);
+    };
     const switchApp = (app) => {
       document.querySelectorAll(".btn[data-app]").forEach((b) => b.classList.toggle("active", b.dataset.app === app));
       const showPublic = app === "public";
       document.querySelectorAll("#dashboard,#positions,#transactions").forEach((el) => el.style.display = showPublic ? "" : "none");
-      document.getElementById("strategy1Root").style.display = showPublic ? "none" : "block";
+      const s1root = document.getElementById("strategy1Root");
+      if (s1root) s1root.style.display = showPublic ? "none" : "block";
       document.querySelectorAll(".btn[data-tab]").forEach((b) => b.style.display = showPublic ? "inline-block" : "none");
-      if (!showPublic) {
-        requestAnimationFrame(() => initS1Charts());
-      }
+      if (!showPublic) showStrategy1Dashboard();
     };
     document.querySelectorAll(".btn[data-app]").forEach((btn) => {
       btn.addEventListener("click", () => switchApp(btn.dataset.app));
@@ -893,11 +934,18 @@
         document.querySelectorAll(".btn[data-s1-tab]").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         const tab = btn.dataset.s1Tab;
-        document.getElementById("s1Dashboard").style.display = tab === "dashboard" ? "block" : "none";
-        document.getElementById("s1Positions").style.display = tab === "positions" ? "block" : "none";
-        if (tab === "dashboard") {
-          requestAnimationFrame(() => initS1Charts());
-        }
+        document.getElementById("s1Dashboard")?.classList.toggle("active", tab === "dashboard");
+        document.getElementById("s1Positions")?.classList.toggle("active", tab === "positions");
+        if (tab === "dashboard") showStrategy1Dashboard();
+        else { renderS1Positions(); updateS1Kpis(); }
+      });
+    });
+    document.querySelectorAll(".btn[data-s1-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".btn[data-s1-filter]").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        renderS1Positions();
+        updateS1Kpis();
       });
     });
 
@@ -939,6 +987,8 @@
       document.getElementById("s1InitialLabel").textContent = t("initial");
       document.getElementById("s1CurrentLabel").textContent = t("current");
       document.getElementById("s1ReturnLabel").textContent = en ? "Return" : "Доходность";
+      document.getElementById("s1ActiveBtn").textContent = t("active");
+      document.getElementById("s1ClosedBtn").textContent = t("closed");
       langBtn.textContent = en ? "RU" : "EN";
       renderPositions();
       if (s1Grid) renderS1Positions();
@@ -959,12 +1009,13 @@
       s1Pos.length = 0;
       s1Pos.push(...next);
       renderS1Positions();
+      updateS1Kpis();
     });
     };
   </script>
-  <script src="https://cry-maden008.pythonanywhere.com/vip-static/vip-auth-client.js"></script>
+  <script src="https://cry-Maden008.pythonanywhere.com/vip-static/vip-auth-client.js"></script>
   <script>
-    window.VIP_AUTH_BACKEND = 'https://cry-maden008.pythonanywhere.com';
+    window.VIP_AUTH_BACKEND = 'https://cry-Maden008.pythonanywhere.com';
     DeFiLabsVipAuth.init({
       hostsRequireAuth: ['publicportfolio-mu.vercel.app', 'localhost', '127.0.0.1'],
       onAuthenticated: function () {

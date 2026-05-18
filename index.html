@@ -99,8 +99,18 @@
       th, td { padding: 8px 9px; font-size: 12px; }
     }
   </style>
+  <link rel="stylesheet" href="https://cry-maden008.pythonanywhere.com/vip-static/vip-auth.css" />
 </head>
 <body>
+  <div id="vipAuthGate" class="vip-auth-gate" role="dialog" aria-modal="true">
+    <div class="vip-auth-gate-inner">
+      <h2>Доступ DeFi Labs VIP</h2>
+      <p>Пароль из Telegram-бота: DeFi Labs VIP → «Получить пароль». Один пароль NAV:… для всех сайтов.</p>
+      <div class="vip-auth-err" id="vipAuthErr"></div>
+      <input type="password" class="vip-auth-input" id="vipAuthInput" autocomplete="current-password" placeholder="NAV:… целиком" />
+      <button type="button" class="vip-auth-submit" id="vipAuthSubmit">Войти</button>
+    </div>
+  </div>
   <div class="container">
     <div class="header">
       <div>
@@ -225,7 +235,7 @@
       s.src = `./data/portfolio-data.js?r=${encodeURIComponent(bust)}`;
       s.onload = function () {
         window.__portfolioDataLoaded = true;
-        if (typeof window.__initPortfolioApp === "function") {
+        if (typeof window.__initPortfolioApp === "function" && window.__vipAuthOk) {
           window.__initPortfolioApp();
         }
       };
@@ -951,7 +961,19 @@
       renderS1Positions();
     });
     };
-    window.__initPortfolioApp();
+  </script>
+  <script src="https://cry-maden008.pythonanywhere.com/vip-static/vip-auth-client.js"></script>
+  <script>
+    window.VIP_AUTH_BACKEND = 'https://cry-maden008.pythonanywhere.com';
+    DeFiLabsVipAuth.init({
+      hostsRequireAuth: ['publicportfolio-mu.vercel.app', 'localhost', '127.0.0.1'],
+      onAuthenticated: function () {
+        window.__vipAuthOk = true;
+        if (window.__portfolioDataLoaded && typeof window.__initPortfolioApp === 'function') {
+          window.__initPortfolioApp();
+        }
+      }
+    });
   </script>
 </body>
 </html>

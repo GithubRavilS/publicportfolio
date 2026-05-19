@@ -297,6 +297,11 @@
     return Number.isFinite(n) && n > 0 ? n : 0;
   }
 
+  function revertPositionId(link) {
+    const m = String(link || "").match(/\/(\d+)(?:\?.*)?$/);
+    return m ? m[1] : "";
+  }
+
   function pairKeyFromRow(token0, token1) {
     const a = String(token0 || "").trim();
     const b = String(token1 || "").trim();
@@ -343,39 +348,28 @@
         }
         return -1;
       };
-      const iAk = pickCol("AK", "token0");
-      const iAl = pickCol("AL", "token1");
-      const iBh = pickCol("BH", "network");
+      const iLink = pickCol("Ссылка на позицию", "I");
       const iLower = pickCol("price_lower", "BE");
       const iUpper = pickCol("price_upper", "BD");
       const iMkt = pickCol("Asset market price", "BW");
       const iClosed = pickCol("X", "closed_at");
-      if (iAk < 0 || iAl < 0 || iLower < 0 || iUpper < 0) return positions;
-      const map = new Map();
+      if (iLower < 0 || iUpper < 0) return positions;
+      const byPositionId = new Map();
       for (let r = 1; r < rows.length; r++) {
         const row = rows[r];
-        if (iClosed >= 0) {
-          const closedVal = String(row[iClosed] || "").trim().toLowerCase();
-          if (closedVal && closedVal !== "null" && closedVal !== "none" && closedVal !== "n/a") continue;
-        }
-        const pair = pairKeyFromRow(row[iAk], row[iAl]);
-        const chain = String(row[iBh] || "").trim().toLowerCase();
+        const link = iLink >= 0 ? String(row[iLink] || "").trim() : "";
+        const posId = revertPositionId(link);
         const lower = parseSheetFloat(row[iLower]);
         const upper = parseSheetFloat(row[iUpper]);
         const cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
-        if (!pair || !lower || !upper) continue;
+        if (!lower || !upper) continue;
         const norm = normalizeLpRangePrices(lower, upper, cur > 0 ? cur : null);
         if (!norm) continue;
-        map.set(`${chain}|${pair.toLowerCase()}`, norm);
+        if (posId) byPositionId.set(posId, norm);
       }
       for (const p of positions) {
-        const chainK = String(p.chain || "").trim().toLowerCase();
-        const pairK = String(p.pair || "").trim().toLowerCase();
-        const key = `${chainK}|${pairK}`;
-        let altKey = key;
-        const toks = pairK.split(" / ").map((s) => s.trim()).filter(Boolean);
-        if (toks.length === 2) altKey = `${chainK}|${toks[1]} / ${toks[0]}`;
-        const hit = map.get(key) || map.get(altKey);
+        const posId = revertPositionId(p.link) || String(p.positionId || "").trim();
+        const hit = posId ? byPositionId.get(posId) : null;
         if (hit) Object.assign(p, hit);
         applyLpRangeToPosition(p);
       }

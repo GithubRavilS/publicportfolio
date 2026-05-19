@@ -3,9 +3,53 @@
 import { ReactNode, useEffect, useState } from "react";
 
 const BACKEND = (
-  process.env.NEXT_PUBLIC_VIP_AUTH_BACKEND || "https://cry-maden008.pythonanywhere.com"
+  process.env.NEXT_PUBLIC_VIP_AUTH_BACKEND || "https://cry-Maden008.pythonanywhere.com"
 ).replace(/\/$/, "");
 const STORAGE_KEY = "defilabs_vip_jwt";
+const LEGACY_KEYS = ["defilabs_nav_jwt"];
+
+function readStoredToken(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    let t = localStorage.getItem(STORAGE_KEY) || "";
+    if (t) return t;
+    const ss = sessionStorage.getItem(STORAGE_KEY) || "";
+    if (ss) {
+      localStorage.setItem(STORAGE_KEY, ss);
+      sessionStorage.removeItem(STORAGE_KEY);
+      return ss;
+    }
+    for (const lk of LEGACY_KEYS) {
+      const leg = localStorage.getItem(lk) || sessionStorage.getItem(lk) || "";
+      if (leg) {
+        localStorage.setItem(STORAGE_KEY, leg);
+        localStorage.removeItem(lk);
+        sessionStorage.removeItem(lk);
+        return leg;
+      }
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredToken(token: string) {
+  try {
+    if (token) {
+      localStorage.setItem(STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+      for (const lk of LEGACY_KEYS) {
+        localStorage.removeItem(lk);
+        sessionStorage.removeItem(lk);
+      }
+    }
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 function normalizePassword(raw: string) {
   return String(raw || "")
@@ -63,27 +107,25 @@ export function VipAuthGate({ children }: { children: ReactNode }) {
       setReady(true);
       return;
     }
-    let token = "";
-    try {
-      token = sessionStorage.getItem(STORAGE_KEY) || "";
-    } catch {
-      token = "";
-    }
+    const token = readStoredToken();
     sessionCheck(token)
       .then((ok) => {
         if (ok) {
           setShowGate(false);
           setReady(true);
         } else {
-          try {
-            sessionStorage.removeItem(STORAGE_KEY);
-          } catch {
-            /* ignore */
-          }
+          writeStoredToken("");
           setShowGate(true);
         }
       })
-      .catch(() => setShowGate(true));
+      .catch(() => {
+        if (readStoredToken()) {
+          setShowGate(false);
+          setReady(true);
+          return;
+        }
+        setShowGate(true);
+      });
   }, []);
 
   async function onSubmit(e: React.FormEvent) {
@@ -95,7 +137,7 @@ export function VipAuthGate({ children }: { children: ReactNode }) {
     try {
       const x = await loginRequest(p);
       if (x.ok && x.j?.token) {
-        sessionStorage.setItem(STORAGE_KEY, String(x.j.token));
+        writeStoredToken(String(x.j.token));
         setShowGate(false);
         setReady(true);
         setPwd("");

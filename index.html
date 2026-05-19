@@ -704,6 +704,9 @@
     });
 
     let lp = data.liquidityPositions || [];
+    if (window.PortfolioUI?.applyLpRangeToPosition) {
+      lp.forEach((p) => window.PortfolioUI.applyLpRangeToPosition(p));
+    }
     const lending = data.lendingPositions || [];
     const lpEl = document.getElementById("lpPositions");
     const lendEl = document.getElementById("lendingPositions");

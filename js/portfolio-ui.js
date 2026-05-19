@@ -67,6 +67,34 @@
     return "DEX";
   }
 
+  const RANGE_FLIP_THRESHOLD = 0.5;
+
+  function flipPoolPrice(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) return null;
+    if (v < RANGE_FLIP_THRESHOLD) return 1 / v;
+    return v;
+  }
+
+  /** Если значение < 0.5 — это 1/цена пула; приводим к человекочитаемому виду. */
+  function normalizeLpRangePrices(lower, upper, current) {
+    const a = flipPoolPrice(lower);
+    const b = flipPoolPrice(upper);
+    const cRaw = current != null && current !== "" ? flipPoolPrice(current) : null;
+    if (a == null || b == null) return null;
+    const rangeMin = Math.min(a, b);
+    const rangeMax = Math.max(a, b);
+    const rangeCurrent = cRaw != null ? cRaw : (rangeMin + rangeMax) / 2;
+    return { rangeMin, rangeMax, rangeCurrent };
+  }
+
+  function applyLpRangeToPosition(p) {
+    if (!p) return p;
+    const n = normalizeLpRangePrices(p.rangeMin, p.rangeMax, p.rangeCurrent);
+    if (n) Object.assign(p, n);
+    return p;
+  }
+
   function fmtRangeNum(n) {
     const v = Number(n);
     if (!Number.isFinite(v)) return "—";
@@ -75,13 +103,8 @@
     return v.toLocaleString("en-US", { maximumFractionDigits: 6 });
   }
 
-  function normalizeRangeFields(p) {
-    if (p?.rangeMin != null && p?.rangeMax != null) return p;
-    return p;
-  }
-
   function renderRangeBar(r, lang, fmtFeeTier) {
-    const pos = normalizeRangeFields(r);
+    const pos = applyLpRangeToPosition({ ...r });
     if (pos?.rangeMin == null || pos?.rangeMax == null) return "";
     const min = Number(pos.rangeMin);
     const max = Number(pos.rangeMax);
@@ -105,6 +128,7 @@
   }
 
   function renderLpCard(p, ctx) {
+    applyLpRangeToPosition(p);
     const dex = dexFromLink(p.link, p.platform);
     const aprShown = (!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`;
     const period = `${p.openedAt || "-"} → ${p.closedAt || (ctx.lang === "ru" ? "активна" : "active")}`;
@@ -215,6 +239,7 @@
   }
 
   function renderS1Card(p, ctx) {
+    applyLpRangeToPosition(p);
     const apr = ctx.s1AprFromPosition(p);
     const fees = ctx.s1FeesFromPosition(p);
     const instrument = p.instrument === "LP" ? "Liquidity Pool" : (p.instrument || "");
@@ -292,43 +317,53 @@
       if (rows.length < 2) return positions;
       const headers = rows[0];
       const idx = (name) => headers.indexOf(name);
-      const iAk = idx("AK");
-      const iAl = idx("AL");
-      const iBh = idx("BH");
-      const iLower = idx("price_lower");
-      const iUpper = idx("price_upper");
-      const iMkt = idx("Asset market price");
-      const iClosed = idx("X") >= 0 ? idx("X") : -1;
-      if (iLower < 0 || iUpper < 0) return positions;
+      const pickCol = (...names) => {
+        for (const n of names) {
+          const i = idx(n);
+          if (i >= 0) return i;
+        }
+        return -1;
+      };
+      const iAk = pickCol("AK", "token0");
+      const iAl = pickCol("AL", "token1");
+      const iBh = pickCol("BH", "network");
+      const iLower = pickCol("price_lower", "BE");
+      const iUpper = pickCol("price_upper", "BD");
+      const iMkt = pickCol("Asset market price", "BW");
+      const iClosed = pickCol("X", "closed_at");
+      if (iAk < 0 || iAl < 0 || iLower < 0 || iUpper < 0) return positions;
       const map = new Map();
       for (let r = 1; r < rows.length; r++) {
         const row = rows[r];
-        const closedVal = String(row[iClosed] || "").trim().toLowerCase();
-        if (iClosed >= 0 && closedVal && closedVal !== "null" && closedVal !== "none") continue;
+        if (iClosed >= 0) {
+          const closedVal = String(row[iClosed] || "").trim().toLowerCase();
+          if (closedVal && closedVal !== "null" && closedVal !== "none" && closedVal !== "n/a") continue;
+        }
         const pair = pairKeyFromRow(row[iAk], row[iAl]);
         const chain = String(row[iBh] || "").trim().toLowerCase();
         const lower = parseSheetFloat(row[iLower]);
         const upper = parseSheetFloat(row[iUpper]);
         const cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
         if (!pair || !lower || !upper) continue;
-        const rmin = Math.min(lower, upper);
-        const rmax = Math.max(lower, upper);
-        let rcur = cur > 0 ? cur : (rmin + rmax) / 2;
-        if (rcur < rmin * 0.25 || rcur > rmax * 4) {
-          const inv = 1 / rcur;
-          if (inv >= rmin * 0.75 && inv <= rmax * 1.25) rcur = inv;
-        }
-        map.set(`${chain}|${pair.toLowerCase()}`, { rangeMin: rmin, rangeMax: rmax, rangeCurrent: rcur });
+        const norm = normalizeLpRangePrices(lower, upper, cur > 0 ? cur : null);
+        if (!norm) continue;
+        map.set(`${chain}|${pair.toLowerCase()}`, norm);
       }
       for (const p of positions) {
-        if (p.rangeMin != null && p.rangeMax != null) continue;
-        const key = `${String(p.chain || "").trim().toLowerCase()}|${String(p.pair || "").trim().toLowerCase()}`;
-        const hit = map.get(key);
+        const chainK = String(p.chain || "").trim().toLowerCase();
+        const pairK = String(p.pair || "").trim().toLowerCase();
+        const key = `${chainK}|${pairK}`;
+        let altKey = key;
+        const toks = pairK.split(" / ").map((s) => s.trim()).filter(Boolean);
+        if (toks.length === 2) altKey = `${chainK}|${toks[1]} / ${toks[0]}`;
+        const hit = map.get(key) || map.get(altKey);
         if (hit) Object.assign(p, hit);
+        applyLpRangeToPosition(p);
       }
     } catch (e) {
       console.warn("LP range enrich failed", e);
     }
+    for (const p of positions) applyLpRangeToPosition(p);
     return positions;
   }
 
@@ -336,6 +371,8 @@
     chainLabelUi,
     chainBadgeHtml,
     dexFromLink,
+    normalizeLpRangePrices,
+    applyLpRangeToPosition,
     renderLpCard,
     renderLendingCard,
     renderS1Card,

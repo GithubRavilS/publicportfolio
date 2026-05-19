@@ -293,6 +293,225 @@ def merge_realized_apr(
     return out
 
 
+def build_fee_based_daily_yield(snapshots: list[dict]) -> list[float]:
+    """APR из дневного fee income / liquidity (наиболее честная дневная метрика)."""
+    out: list[float] = []
+    for s in snapshots:
+        liq = float(s.get("liquidityUsd") or 0.0)
+        fee = float(s.get("dailyFeeIncomeUsd") or 0.0)
+        if liq > 0 and fee > 0:
+            out.append((fee / liq) * 365.0 * 100.0)
+        else:
+            out.append(0.0)
+    return out
+
+
+def merge_apr_for_chart(
+    snapshots: list[dict],
+    fee_based: list[float],
+    realized_by_day: dict[str, float],
+    *,
+    max_chart_apr: float = 80.0,
+) -> list[float]:
+    """
+    Для графика: fee-based — база; realized из ETL — только если не выбивается
+    (типичный баг: два прогона в день → 130%+ «годовых»).
+    """
+    if not snapshots:
+        return []
+    out: list[float] = []
+    last_good = 0.0
+    for i, s in enumerate(snapshots):
+        fee_apr = float(fee_based[i] if i < len(fee_based) else 0.0)
+        d = str(s.get("timestamp", ""))[:10]
+        real = float(realized_by_day[d]) if d in realized_by_day else 0.0
+        chosen = fee_apr
+        if real > 0:
+            if fee_apr > 0 and real > max(fee_apr * 3.5, 60.0):
+                chosen = fee_apr
+            elif real > max_chart_apr * 2:
+                chosen = fee_apr if fee_apr > 0 else min(last_good, max_chart_apr)
+            else:
+                chosen = real
+        elif last_good > 0 and fee_apr <= 0:
+            chosen = last_good
+        chosen = max(0.0, min(chosen, max_chart_apr))
+        if chosen > 0:
+            last_good = chosen
+        out.append(chosen)
+    return out
+
+
+def load_apr_rollup_by_day(conn: sqlite3.Connection) -> dict[str, dict]:
+    cur = conn.cursor()
+    try:
+        rows = cur.execute(
+            """
+            SELECT as_of_date, liquidity_usd, total_fee_usd, earned_vs_prev_day_usd,
+                   elapsed_hours, apr_annualized
+            FROM revert_daily_rollup
+            ORDER BY as_of_date ASC
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out: dict[str, dict] = {}
+    for row in rows:
+        d = str(row[0] or "").strip()
+        if not d:
+            continue
+        out[d] = {
+            "liquidityUsd": float(row[1] or 0.0),
+            "totalFeeUsd": float(row[2] or 0.0),
+            "earnedUsd": float(row[3] or 0.0),
+            "elapsedHours": float(row[4] or 0.0),
+            "rollupApr": float(row[5] or 0.0),
+        }
+    return out
+
+
+def build_apr_audit(
+    snapshots: list[dict],
+    chart_series: list[float],
+    fee_based: list[float],
+    realized_by_day: dict[str, float],
+    rollup_by_day: dict[str, dict],
+) -> list[dict]:
+    audit: list[dict] = []
+    for i, s in enumerate(snapshots):
+        d = str(s.get("timestamp", ""))[:10]
+        liq = float(s.get("liquidityUsd") or 0.0)
+        fee = float(s.get("dailyFeeIncomeUsd") or 0.0)
+        roll = rollup_by_day.get(d, {})
+        fee_apr = float(fee_based[i] if i < len(fee_based) else 0.0)
+        chart_apr = float(chart_series[i] if i < len(chart_series) else 0.0)
+        real_apr = float(realized_by_day.get(d, 0.0))
+        spike = real_apr > 0 and fee_apr > 0 and real_apr > max(fee_apr * 3.5, 60.0)
+        audit.append(
+            {
+                "date": d,
+                "chartApr": round(chart_apr, 4),
+                "feeBasedApr": round(fee_apr, 4),
+                "rollupApr": round(float(roll.get("rollupApr", real_apr) or 0.0), 4),
+                "earnedUsd": round(float(roll.get("earnedUsd", fee) or 0.0), 6),
+                "elapsedHours": round(float(roll.get("elapsedHours", 24.0) or 24.0), 2),
+                "liquidityUsd": round(liq, 2),
+                "dailyFeeIncomeUsd": round(fee, 6),
+                "spikeRejected": spike,
+            }
+        )
+    return audit
+
+
+def dex_from_revert_link(link: str) -> str:
+    s = (link or "").lower()
+    if "aerodrome" in s:
+        return "Aerodrome V3"
+    if "pancake" in s:
+        return "PancakeSwap V3"
+    if "velodrome" in s:
+        return "Velodrome"
+    if "uniswap" in s:
+        return "Uniswap V3"
+    return "DEX"
+
+
+RANGE_FLIP_THRESHOLD = 0.5
+
+
+def flip_pool_price(value: float | None) -> float | None:
+    if value is None or value <= 0:
+        return None
+    if value < RANGE_FLIP_THRESHOLD:
+        return 1.0 / value
+    return value
+
+
+def normalize_lp_range(
+    lower: float | None,
+    upper: float | None,
+    current: float | None = None,
+) -> dict[str, float]:
+    a = flip_pool_price(lower)
+    b = flip_pool_price(upper)
+    c = flip_pool_price(current) if current is not None else None
+    if a is None or b is None:
+        return {}
+    rmin, rmax = min(a, b), max(a, b)
+    if c is None:
+        c = (rmin + rmax) / 2.0
+    return {"rangeMin": rmin, "rangeMax": rmax, "rangeCurrent": c}
+
+
+def parse_position_range(row: dict[str, str]) -> dict[str, float | None]:
+    """Диапазон цены из Revert-таблицы: price_lower/upper + рыночная цена."""
+    keys_lower = ("price_lower", "BE", "rangeMin", "Range Min", "Min Price")
+    keys_upper = ("price_upper", "BD", "rangeMax", "Range Max", "Max Price")
+    keys_cur = ("Asset market price", "BW", "rangeCurrent", "Range Current", "Current Price")
+
+    def pick(keys: tuple[str, ...]) -> float | None:
+        for k in keys:
+            v = parse_float(row.get(k, ""))
+            if v > 0:
+                return v
+        return None
+
+    lower = pick(keys_lower)
+    upper = pick(keys_upper)
+    cur = pick(keys_cur)
+    if lower is None or upper is None:
+        return {}
+    return normalize_lp_range(lower, upper, cur)
+
+
+def sanitize_strategy_one_snapshots(
+    snapshots: list[dict],
+    live_total: float,
+    initial: float,
+) -> list[dict]:
+    """Убирает «залипшие» ~$40 из БД, когда фактический капитал ~$30."""
+    if not snapshots:
+        return snapshots
+    live = float(live_total or 0.0)
+    init = float(initial or 30.0)
+    cap_high = init * 1.12
+    if live > 0:
+        snapshots[-1] = {**snapshots[-1], "equityUsd": live}
+    max_eq = max(float(s.get("equityUsd") or 0.0) for s in snapshots)
+    if max_eq <= cap_high:
+        return snapshots
+    last_ok = 0
+    for i, s in enumerate(snapshots):
+        if float(s.get("equityUsd") or 0.0) <= cap_high:
+            last_ok = i
+    start_eq = float(snapshots[last_ok].get("equityUsd") or init)
+    end_eq = live if live > 0 else start_eq
+    steps = len(snapshots) - 1 - last_ok
+    if steps <= 0:
+        for s in snapshots:
+            if float(s.get("equityUsd") or 0.0) > cap_high:
+                s["equityUsd"] = end_eq
+        return snapshots
+    for j, i in enumerate(range(last_ok + 1, len(snapshots))):
+        t = (j + 1) / (steps + 1)
+        snapshots[i]["equityUsd"] = start_eq + (end_eq - start_eq) * t
+    return snapshots
+
+
+def strategy_one_apr_from_snapshots(snapshots: list[dict], *, max_apr: float = 120.0) -> list[float]:
+    apr: list[float] = []
+    for i, s in enumerate(snapshots):
+        if i == 0:
+            apr.append(0.0)
+            continue
+        prev_eq = max(float(snapshots[i - 1].get("equityUsd") or 0.0), 1e-9)
+        cur_eq = float(s.get("equityUsd") or 0.0)
+        daily_return = (cur_eq - prev_eq) / prev_eq
+        v = daily_return * 365.0 * 100.0
+        apr.append(max(0.0, min(v, max_apr)))
+    return apr
+
+
 def clamp_apr_spikes(series: list[float], max_apr: float = 200.0, window_days: int = 30) -> list[float]:
     """
     Если APR выбивается выше max_apr, заменяем на среднее за последние window_days.
@@ -315,6 +534,17 @@ def clamp_apr_spikes(series: list[float], max_apr: float = 200.0, window_days: i
     return out
 
 
+def lending_chain_from_protocol(protocol: str) -> str:
+    p = (protocol or "").lower()
+    if "compound" in p:
+        return "ethereum"
+    if "aave" in p:
+        return "ethereum"
+    if "fluid" in p:
+        return "arbitrum"
+    return "ethereum"
+
+
 def load_latest_debank_lending_csv(config: dict) -> list[dict]:
     candidates = sorted(Path(".").glob("debank_lending_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
     out = []
@@ -331,14 +561,27 @@ def load_latest_debank_lending_csv(config: dict) -> list[dict]:
             hf = parse_float(r.get("health_factor", ""))
             market_price = (collateral_usd / collateral_amount) if collateral_amount > 0 else 0.0
             liquidation_price = (market_price / hf) if hf > 0 and hf <= 10 and market_price > 0 else 0.0
+            chain_raw = (r.get("chain") or r.get("chain_id") or "").strip()
+            if not chain_raw:
+                chain_raw = lending_chain_from_protocol(r.get("protocol", ""))
+            borrow_asset = r.get("borrow_asset", "")
+            borrow_amount = parse_float(r.get("borrow_amount", ""))
+            borrow_usd = parse_float(r.get("borrow_usd", ""))
+            if borrow_usd <= 0 and borrow_amount > 0 and market_price > 0:
+                borrow_usd = borrow_amount * market_price
             out.append(
                 {
                     "protocol": r.get("protocol", ""),
+                    "chain": chain_raw,
                     "collateralAsset": collateral_asset,
                     "collateralAmount": collateral_amount,
                     "collateralUsd": collateral_usd,
-                    "borrowAsset": r.get("borrow_asset", ""),
-                    "borrowAmount": parse_float(r.get("borrow_amount", "")),
+                    "borrowAsset": borrow_asset,
+                    "borrowAmount": borrow_amount,
+                    "borrowUsd": borrow_usd,
+                    "supplied": [{"asset": collateral_asset, "amount": collateral_amount, "usd": collateral_usd}],
+                    "borrowed": [{"asset": borrow_asset, "amount": borrow_amount, "usd": borrow_usd}],
+                    "netUsd": collateral_usd - borrow_usd,
                     "timestamp": r.get("timestamp", ""),
                     "healthFactor": hf,
                     "marketPrice": market_price,
@@ -360,27 +603,33 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
         token1 = (r.get("AL", "") or "").strip()
         if not token0 and not token1:
             continue
-        is_active = not (r.get("X", "") or "").strip()
+        closed_raw = (r.get("X", "") or r.get("closed_at", "") or "").strip()
+        if closed_raw.lower() in ("null", "none", "n/a"):
+            closed_raw = ""
+        is_active = not closed_raw
         apr = (parse_pct(r.get("S", "")) * 100) if is_active else closed_position_apr(r)
         if (not is_active) and apr <= 0:
             apr = 0.0
         # BJ в шите в «тысячных»; после /1000 получалось в 10 раз больше реального tier (3% вместо 0.3%)
         bj = parse_float(r.get("BJ", ""))
         fee_tier = (bj / 10000) if bj > 0 else 0.0
-        out.append(
-            {
-                "platform": "Revert Finance",
-                "chain": (r.get("BH", "") or "").strip(),
-                "pair": f"{token0} / {token1}".strip(" /"),
-                "feesUsd": parse_float(r.get("AG", "")),
-                "apr": apr,
-                "openedAt": (r.get("W", "") or "").strip(),
-                "closedAt": (r.get("X", "") or "").strip(),
-                "isActive": is_active,
-                "feeTier": fee_tier,
-                "link": (r.get("I", "") or "").strip(),
-            }
-        )
+        link = (r.get("I", "") or "").strip()
+        dex = dex_from_revert_link(link)
+        item = {
+            "platform": dex,
+            "dataSource": "Revert Finance",
+            "chain": (r.get("BH", "") or "").strip(),
+            "pair": f"{token0} / {token1}".strip(" /"),
+            "feesUsd": parse_float(r.get("AG", "")),
+            "apr": apr,
+            "openedAt": (r.get("W", "") or "").strip(),
+            "closedAt": (r.get("X", "") or "").strip(),
+            "isActive": is_active,
+            "feeTier": fee_tier,
+            "link": link,
+        }
+        item.update(parse_position_range(r))
+        out.append(item)
     return out
 
 
@@ -416,22 +665,28 @@ def strategy_lp_positions(config: dict) -> list[dict]:
                 parse_float(r.get("AM", "")),
             ]
             fees_usd = next((v for v in fees_candidates if v > 0), 0.0)
-            out.append(
-                {
-                    "instrument": "LP",
-                    "platform": "Revert Finance",
-                    "pair": pair or "Pool",
-                    "chain": (r.get("BH", "") or "").strip(),
-                    "feesUsd": fees_usd,
-                    "apr": parse_pct(r.get("S", "")) * 100 if parse_pct(r.get("S", "")) > 0 else 0.0,
-                    "openedAt": (r.get("W", "") or "").strip(),
-                    "closedAt": (r.get("X", "") or "").strip(),
-                    "isActive": not (r.get("X", "") or "").strip(),
-                    "feeTier": (parse_float(r.get("BJ", "")) / 10000.0) if parse_float(r.get("BJ", "")) > 0 else 0.0,
-                    "link": (r.get("I", "") or "").strip(),
-                    "valueUsd": value_usd,
-                }
-            )
+            link = (r.get("I", "") or "").strip()
+            closed_raw = (r.get("X", "") or r.get("closed_at", "") or "").strip()
+        if closed_raw.lower() in ("null", "none", "n/a"):
+            closed_raw = ""
+        is_active = not closed_raw
+            item = {
+                "instrument": "LP",
+                "platform": dex_from_revert_link(link),
+                "dataSource": "Revert Finance",
+                "pair": pair or "Pool",
+                "chain": (r.get("BH", "") or "").strip(),
+                "feesUsd": fees_usd,
+                "apr": parse_pct(r.get("S", "")) * 100 if parse_pct(r.get("S", "")) > 0 else 0.0,
+                "openedAt": (r.get("W", "") or "").strip(),
+                "closedAt": (r.get("X", "") or "").strip(),
+                "isActive": is_active,
+                "feeTier": (parse_float(r.get("BJ", "")) / 10000.0) if parse_float(r.get("BJ", "")) > 0 else 0.0,
+                "link": link,
+                "valueUsd": value_usd if is_active else 0.0,
+            }
+            item.update(parse_position_range(r))
+            out.append(item)
     return out
 
 
@@ -483,6 +738,7 @@ def pendle_positions(wallet: str) -> tuple[list[dict], float]:
                     "ytUsd": yt,
                     "lpUsd": lp,
                     "valueUsd": v,
+                    "isActive": True,
                     "link": "https://app.pendle.finance/trade/markets",
                 }
             )
@@ -579,9 +835,10 @@ def hyperliquid_positions(wallets: list[str], preferred_vault: str = "") -> tupl
                             "pair": "Vault equity",
                             "coin": vault_addr or "-",
                             "vaultAddress": vault_addr,
-                            "valueUsd": equity_usd,
-                            "link": "https://app.hyperliquid.xyz/",
-                        }
+                    "valueUsd": equity_usd,
+                    "isActive": True,
+                    "link": "https://app.hyperliquid.xyz/",
+                }
                     )
         except Exception:
             pass
@@ -765,6 +1022,9 @@ def load_strategy_one(conn: sqlite3.Connection) -> dict:
         (latest_day,),
     ).fetchall() if latest_day else []
     positions = [json.loads(r[0]) for r in pos_rows]
+    for p in positions:
+        if "isActive" not in p:
+            p["isActive"] = not bool(str(p.get("closedAt") or "").strip())
     return {"snapshots": snapshots, "dailyYieldSeries": apr, "positions": positions}
 
 
@@ -805,8 +1065,12 @@ def main() -> None:
     month_apr = month_apr_map_from_revert_sheet(config)
     synthetic_daily_yield = build_daily_yield_series(snapshots, fallback_apr, month_apr)
     realized_by_day = load_realized_apr_by_day(conn)
-    merged_yield = merge_realized_apr(snapshots, synthetic_daily_yield, realized_by_day)
-    daily_yield_series = clamp_apr_spikes(merged_yield, max_apr=200.0, window_days=30)
+    fee_based_yield = build_fee_based_daily_yield(snapshots)
+    rollup_by_day = load_apr_rollup_by_day(conn)
+    daily_yield_series = merge_apr_for_chart(
+        snapshots, fee_based_yield, realized_by_day, max_chart_apr=80.0
+    )
+    apr_audit = build_apr_audit(snapshots, daily_yield_series, fee_based_yield, realized_by_day, rollup_by_day)
 
     tx_path = Path("data/transactions.json")
     transactions = json.loads(tx_path.read_text(encoding="utf-8")) if tx_path.exists() else []
@@ -819,7 +1083,8 @@ def main() -> None:
         or ((config.get("debank_wallets") or [""]) + [""])[0]
     )
     s_lp = strategy_lp_positions(config)
-    s_lp_usd = sum(max(0.0, float(p.get("valueUsd") or 0.0)) for p in s_lp)
+    s_lp_active = [p for p in s_lp if p.get("isActive", True)]
+    s_lp_usd = sum(max(0.0, float(p.get("valueUsd") or 0.0)) for p in s_lp_active)
     try:
         s_pendle, s_pendle_usd = pendle_positions(wallet)
     except Exception:
@@ -864,13 +1129,22 @@ def main() -> None:
             }
         ]
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    upsert_strategy_one(conn, today, s_lp, s_pendle, s_hyper, s_lp_usd, s_pendle_usd, s_hyper_usd)
+    upsert_strategy_one(conn, today, s_lp_active, s_pendle, s_hyper, s_lp_usd, s_pendle_usd, s_hyper_usd)
     strategy_one = load_strategy_one(conn)
+    s1_init = float(config.get("strategy_one_initial_usd", 30) or 30)
+    s1_live = s_lp_usd + s_pendle_usd + s_hyper_usd
+    strategy_one["snapshots"] = sanitize_strategy_one_snapshots(
+        strategy_one.get("snapshots") or [], s1_live, s1_init
+    )
+    strategy_one["dailyYieldSeries"] = strategy_one_apr_from_snapshots(strategy_one["snapshots"])
+    strategy_one["positions"] = s_lp + s_pendle + s_hyper
     conn.close()
 
     exported_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
         "exportedAt": exported_at,
+        "googleSheetId": config.get("google_sheet_id", ""),
+        "publicPortfolioSheetName": config.get("public_portfolio_sheet_name", "Public Portfolio"),
         "initialCapitalUsd": initial_capital,
         "prices": {"BTC": 95000, "ETH": 1800},
         "snapshots": snapshots,
@@ -878,6 +1152,7 @@ def main() -> None:
         "fallbackApr": fallback_apr,
         "monthAprMap": month_apr,
         "realizedAprByDay": realized_by_day,
+        "aprAudit": apr_audit,
         "liquidityPositions": liquidity_positions,
         "lendingPositions": lending_positions,
         "transactions": transactions,

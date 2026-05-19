@@ -103,28 +103,44 @@
     return v.toLocaleString("en-US", { maximumFractionDigits: 6 });
   }
 
-  function renderRangeBar(r, lang, fmtFeeTier) {
+  function renderRangeBar(r, lang) {
     const pos = applyLpRangeToPosition({ ...r });
     if (pos?.rangeMin == null || pos?.rangeMax == null) return "";
     const min = Number(pos.rangeMin);
     const max = Number(pos.rangeMax);
     const cur = Number(pos.rangeCurrent ?? (min + max) / 2);
-    const span = max - min || 1;
-    const pad = span * 0.15;
-    const trackMin = min - pad;
-    const trackMax = max + pad;
+    const inRange = cur >= min && cur <= max;
+    const span = max - min || Math.max(Math.abs(max), 1) * 0.01;
+    const pad = Math.max(span * 0.12, Math.max(0, cur - max, min - cur) * 0.35);
+    const trackMin = Math.min(min, cur) - pad;
+    const trackMax = Math.max(max, cur) + pad;
     const trackSpan = trackMax - trackMin || 1;
     const segLeft = ((min - trackMin) / trackSpan) * 100;
     const segWidth = (span / trackSpan) * 100;
+    const segRight = segLeft + segWidth;
     let markerPct = ((cur - trackMin) / trackSpan) * 100;
-    markerPct = Math.max(1, Math.min(99, markerPct));
-    const inRange = cur >= min && cur <= max;
-    const curLbl = lang === "ru" ? "цена" : "price";
+    markerPct = Math.max(0.5, Math.min(99.5, markerPct));
+    const curLbl = lang === "ru" ? "Цена" : "Price";
     return `<div class="range-bar-wrap${inRange ? "" : " out-range"}">
-      <div class="range-bar-head"><span class="range-lbl">${lang === "ru" ? "Диапазон цены" : "Price range"}</span><span class="range-fee">${fmtFeeTier(pos.feeTier)}</span></div>
-      <div class="range-bar-labels"><span>${fmtRangeNum(min)}</span><span class="range-cur${inRange ? "" : " out"}">${curLbl}: ${fmtRangeNum(cur)}</span><span>${fmtRangeNum(max)}</span></div>
-      <div class="range-bar"><div class="range-track"></div><div class="range-active" style="left:${segLeft.toFixed(2)}%;width:${segWidth.toFixed(2)}%"></div><div class="range-marker" style="left:${markerPct.toFixed(2)}%"></div></div>
+      <div class="range-bar-head"><span class="range-lbl">${lang === "ru" ? "Диапазон цены" : "Price range"}</span></div>
+      <div class="range-bar-stage">
+        <div class="range-bar-labels-pos" aria-hidden="true">
+          <span class="range-lbl-pos range-lbl-min" style="left:${segLeft.toFixed(2)}%">${fmtRangeNum(min)}</span>
+          <span class="range-lbl-pos range-lbl-max" style="left:${segRight.toFixed(2)}%">${fmtRangeNum(max)}</span>
+          <span class="range-lbl-pos range-lbl-cur${inRange ? "" : " out"}" style="left:${markerPct.toFixed(2)}%">${curLbl}: ${fmtRangeNum(cur)}</span>
+        </div>
+        <div class="range-bar">
+          <div class="range-track"></div>
+          <div class="range-active" style="left:${segLeft.toFixed(2)}%;width:${segWidth.toFixed(2)}%"></div>
+          <div class="range-marker" style="left:${markerPct.toFixed(2)}%"></div>
+        </div>
+      </div>
     </div>`;
+  }
+
+  function poolOpenLink(p, ctx) {
+    if (!p.link) return "";
+    return `<a class="pool-open-link" href="${p.link}" target="_blank" rel="noreferrer">${ctx.t("open")} ↗</a>`;
   }
 
   function renderLpCard(p, ctx) {
@@ -140,16 +156,17 @@
             <span class="pool-pair">${p.pair || "Пул"}</span>
             <span class="badge">${dex}</span>
           </div>
-          <div class="pool-dex">${chainLabelUi(p.chain)}${p.dataSource ? ` · ${p.dataSource}` : ""}</div>
-          ${renderRangeBar(p, ctx.lang, ctx.fmtFeeTier)}
+          ${renderRangeBar(p, ctx.lang)}
         </div>
-        <div class="pool-apr-hero">${aprShown}</div>
+        <div class="pool-card-side">
+          <div class="pool-apr-hero">${aprShown}</div>
+          ${poolOpenLink(p, ctx)}
+        </div>
       </div>
-      <div class="pool-meta-grid">
+      <div class="pool-meta-grid pool-meta-grid--3">
         <div><div class="lbl">Fee Tier</div><div>${ctx.fmtFeeTier(p.feeTier)}</div></div>
         <div><div class="lbl">${ctx.t("feesTotal")}</div><div>$${Number(p.feesUsd || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
         <div><div class="lbl">${ctx.lang === "ru" ? "Период" : "Period"}</div><div>${period}</div></div>
-        <div class="pos-actions" style="align-self:end">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${ctx.t("open")}</a>` : ""}</div>
       </div>
     </div>`;
   }
@@ -252,16 +269,18 @@
             <span class="pool-pair">${p.pair || p.marketId || p.coin || "Position"}</span>
             <span class="badge">${instrument}</span>
           </div>
-          <div class="pool-dex">${platform} · ${ctx.chainName(p.chain, p.instrument)}</div>
-          ${renderRangeBar(p, ctx.lang, ctx.fmtFeeTier)}
+          ${p.instrument === "LP" ? `<div class="pool-pair-sub">${platform}</div>` : ""}
+          ${renderRangeBar(p, ctx.lang)}
         </div>
-        <div class="pool-apr-hero">${apr.toFixed(2)}%</div>
+        <div class="pool-card-side">
+          <div class="pool-apr-hero">${apr.toFixed(2)}%</div>
+          ${poolOpenLink(p, ctx)}
+        </div>
       </div>
-      <div class="pool-meta-grid">
+      <div class="pool-meta-grid pool-meta-grid--3">
         <div><div class="lbl">Value USD</div><div>${ctx.fmtUsdSmart(p.valueUsd || 0)}</div></div>
         <div><div class="lbl">${ctx.t("feesTotal")}</div><div>${ctx.fmtUsdSmart(fees)}</div></div>
         <div><div class="lbl">Fee Tier</div><div>${ctx.fmtFeeTier(p.feeTier)}</div></div>
-        <div class="pos-actions" style="align-self:end">${p.link ? `<a class="link-btn" href="${p.link}" target="_blank" rel="noreferrer">${ctx.t("open")}</a>` : ""}</div>
       </div>
     </div>`;
   }

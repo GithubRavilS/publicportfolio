@@ -273,18 +273,11 @@ def fee_tier_public_row(row: dict[str, str]) -> float:
 
 def live_value_usd_public_row(row: dict[str, str]) -> float:
     keys = (
-        "Внесено, USD",
         "Стоимость позиции, USD",
         "К hold, USD",
-        "Сейчас токен0, USD",
+        "Внесено, USD",
         "Инвестировано ВСЕГО (сейчас)",
         "underlying_value",
-        "AA",
-        "AH",
-        "AF",
-        "AE",
-        "AD",
-        "AC",
     )
     for k in keys:
         v = parse_float(row.get(k, ""))

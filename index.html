@@ -520,8 +520,31 @@
       });
     }
 
-    function sanitizeS1Snapshots(snaps, liveTotal, initial) {
+    function s1LegSum(s) {
+      return Number(s.lpUsd || 0) + Number(s.pendleUsd || 0) + Number(s.hyperliquidUsd || 0);
+    }
+
+    function flattenS1EquityDips(snaps, initial) {
       const out = (snaps || []).map((s) => ({ ...s }));
+      const floor = initial * 0.85;
+      for (let i = 0; i < out.length; i++) {
+        let eq = Number(out[i].equityUsd || 0);
+        if (eq >= floor) continue;
+        const legs = s1LegSum(out[i]);
+        if (legs >= floor) {
+          out[i].equityUsd = legs;
+          continue;
+        }
+        const prev = i > 0 ? Number(out[i - 1].equityUsd || 0) : 0;
+        const next = i + 1 < out.length ? Number(out[i + 1].equityUsd || 0) : 0;
+        const ok = [prev, next].filter((v) => v >= floor);
+        if (ok.length) out[i].equityUsd = ok.reduce((a, b) => a + b, 0) / ok.length;
+      }
+      return out;
+    }
+
+    function sanitizeS1Snapshots(snaps, liveTotal, initial) {
+      let out = flattenS1EquityDips(snaps, initial);
       if (!out.length) return out;
       const live = Number(liveTotal || 0);
       const init = Number(initial || 30);

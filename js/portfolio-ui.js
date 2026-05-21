@@ -145,7 +145,10 @@
 
   function renderLpCard(p, ctx) {
     applyLpRangeToPosition(p);
-    const dex = dexFromLink(p.link, p.platform);
+    const dex =
+      p.platform && String(p.platform).trim() && p.platform !== "DEX"
+        ? p.platform
+        : dexFromLink(p.link, p.platform);
     const aprShown = (!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`;
     const period = `${p.openedAt || "-"} → ${p.closedAt || (ctx.lang === "ru" ? "активна" : "active")}`;
     const statusRu = p.isActive ? "Активна" : "Закрыта";
@@ -351,38 +354,121 @@
       const i = headers.indexOf(n);
       if (i >= 0) return i;
     }
+    for (const n of names) {
+      const needle = String(n || "").trim().toLowerCase();
+      if (!needle) continue;
+      for (let i = 0; i < headers.length; i++) {
+        const h = String(headers[i] || "").trim().toLowerCase();
+        if (h === needle || h.startsWith(needle) || h.includes(needle)) return i;
+      }
+    }
     return -1;
+  }
+
+  function sanePositionUsd(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) return 0;
+    if (v > 5e7) return 0;
+    return v;
+  }
+
+  function normalizePlatformLabel(raw) {
+    const s = String(raw || "").trim().toLowerCase();
+    if (!s) return "";
+    if (s.includes("pancake")) return "PancakeSwap V3";
+    if (s.includes("aerodrome")) return "Aerodrome V3";
+    if (s.includes("velodrome")) return "Velodrome";
+    if (s.includes("uni")) return "Uniswap V3";
+    return raw.trim();
+  }
+
+  function buildRevertLink(chain, platform, tokenId) {
+    const id = String(tokenId || "").replace(/\D/g, "");
+    const net = String(chain || "").trim().toLowerCase();
+    if (!id || !net) return "";
+    const pl = String(platform || "").toLowerCase();
+    let route = "uniswap-position";
+    if (pl.includes("pancake")) route = "pancakeswap-position";
+    else if (pl.includes("aerodrome")) route = "aerodrome-position";
+    else if (pl.includes("velodrome")) route = "velodrome-position";
+    return `https://revert.finance/#/${route}/${net}/${id}`;
+  }
+
+  function feeTierFromSheetRaw(raw) {
+    const ft = parseSheetFloat(raw);
+    if (ft <= 0) return 0;
+    if (ft >= 50) return ft / 10000;
+    if (ft < 0.05) return ft;
+    return ft / 100;
   }
 
   function rowIsActive(headers, row) {
     const cell = (i) => (i >= 0 ? String(row[i] ?? "").trim() : "");
+    const oc = cell(sheetColIndex(headers, "Open/Closed", "J")).toUpperCase();
+    if (oc === "OPEN") return true;
+    if (oc === "CLOSED") return false;
     const ia = cell(sheetColIndex(headers, "is_active")).toLowerCase();
     if (["true", "yes", "1", "да"].includes(ia)) return true;
     if (["false", "no", "0", "нет"].includes(ia)) return false;
-    const c1 = normalizeClosedCell(cell(sheetColIndex(headers, "closed_at", "Дата закрытия норм", "X")));
+    const ex = cell(sheetColIndex(headers, "exited")).toLowerCase();
+    if (ex === "false" || ex === "0") return true;
+    if (ex === "true" || ex === "1") return false;
+    const c1 = normalizeClosedCell(
+      cell(sheetColIndex(headers, "closed_at", "Дата закрытия норм", "X", "Дата закрытия"))
+    );
     return !c1;
+  }
+
+  function walletColIndex(headers) {
+    return sheetColIndex(
+      headers,
+      "owner_wallet",
+      "owner",
+      "wallet",
+      "owner_address",
+      "Кошелёк",
+      "Кошелек",
+      "кошелек",
+      "Кошелек"
+    );
+  }
+
+  function rowMatchesWallet(headers, row, wallet) {
+    const w = String(wallet || "").trim().toLowerCase();
+    if (!w) return true;
+    const wi = walletColIndex(headers);
+    if (wi >= 0) {
+      const v = String(row[wi] ?? "").trim().toLowerCase();
+      if (v === w || v.includes(w)) return true;
+    }
+    return row.some((c) => String(c ?? "").trim().toLowerCase().includes(w));
   }
 
   function liveValueUsdFromSheetRow(headers, row) {
     const c = (...names) => sheetColIndex(headers, ...names);
     const cellFloat = (i) => (i >= 0 ? parseSheetFloat(row[i]) : 0);
-    const keys = ["Инвестировано ВСЕГО (сейчас)", "underlying_value", "AA", "AH", "AF", "AE", "AD", "AC"];
+    const keys = [
+      "Внесено, USD",
+      "Стоимость позиции, USD",
+      "Стоимость позиции",
+      "Инвестировано ВСЕГО (сейчас)",
+      "underlying_value",
+    ];
     for (const k of keys) {
-      const i = c(k);
-      const v = cellFloat(i);
+      const v = sanePositionUsd(cellFloat(c(k)));
       if (v > 0) return v;
     }
-    const t0 = String(row[c("token0", "AK")] ?? "")
-      .trim()
-      .toUpperCase();
-    const t1 = String(row[c("token1", "AL")] ?? "")
-      .trim()
-      .toUpperCase();
-    const stable = new Set(["USDC", "USDT", "DAI", "USDE", "FDUSD", "TUSD", "USD"]);
-    const a0 = cellFloat(c("AU", "current_amount0"));
-    const a1 = cellFloat(c("AV", "current_amount1"));
-    if (stable.has(t0) || stable.has(t1)) return Math.max(0, a0) + Math.max(0, a1);
     return 0;
+  }
+
+  function feesUsdFromSheetRow(headers, row) {
+    const c = (...names) => sheetColIndex(headers, ...names);
+    const cellFloat = (i) => (i >= 0 ? parseSheetFloat(row[i]) : 0);
+    const pending = cellFloat(c("Комиссии pending, USD", "Комиссии pendi", "Комиссии pending", "R"));
+    const claimed = cellFloat(c("Комиссии claimed, USD", "Комиссии claim", "Комиссии claimed", "S"));
+    const sum = pending + claimed;
+    if (sum > 0) return sum;
+    return cellFloat(c("Заработано комиссий итого", "fees_value", "AG"));
   }
 
   function parseSheetCsv(text) {
@@ -411,16 +497,22 @@
   function buildLpPositionFromSheetRow(headers, row) {
     const col = (...names) => sheetColIndex(headers, ...names);
     const cell = (i) => (i >= 0 ? String(row[i] ?? "").trim() : "");
-    const link = cell(col("Ссылка на позицию", "I"));
-    const posId = revertPositionId(link);
-    const t0 = cell(col("token0", "AK"));
-    const t1 = cell(col("token1", "AL"));
+    const chain = cell(col("Сеть", "network", "BH", "chain", "blockchain"));
+    const platformRaw = cell(col("Платформа (DEX)", "Платформа", "platform", "exchange", "BI"));
+    const nftId = cell(col("NFT tokenId", "ID NFT tokenid", "nft_id", "position_id", "I"));
+    let link = cell(col("Ссылка на позицию", "position_url", "position_link", "link", "url", "revert_link"));
+    if (!link) link = buildRevertLink(chain, platformRaw, nftId);
+    const posId = revertPositionId(link) || String(nftId || "").replace(/\D/g, "");
+    const t0 = cell(col("Токен 0", "token0", "AK", "AM", "E"));
+    const t1 = cell(col("Токен 1", "token1", "AL", "AN", "F"));
     if (!posId && !t0 && !t1) return null;
     const active = rowIsActive(headers, row);
-    let closedDisp = cell(col("Дата закрытия норм", "closed_at", "X"));
+    let closedDisp = cell(col("Дата закрытия", "Дата закрытия норм", "closed_at", "X", "D"));
     if (normalizeClosedCell(closedDisp) === "") closedDisp = "";
     let apr = 0;
-    for (const ia of [col("APR из Revert"), col("APR расчетный"), col("apr"), col("S")]) {
+    for (const ia of [
+      col("APR", "APR из Revert", "APR расчетный", "fee_apr", "apr", "S", "U"),
+    ]) {
       if (ia < 0) continue;
       const v = parseAprPercentCell(row[ia]);
       if (v != null) {
@@ -428,33 +520,47 @@
         break;
       }
     }
-    const iFees = col("Заработано комиссий итого", "fees_value", "AG");
-    const feesUsd = iFees >= 0 ? parseSheetFloat(row[iFees]) : 0;
-    const iFeeTier = col("fee_tier", "BJ");
-    const ft = iFeeTier >= 0 ? parseSheetFloat(row[iFeeTier]) : 0;
+    const feesUsd = feesUsdFromSheetRow(headers, row);
+    const iFeeTier = col("Fee tier", "fee_tier", "BJ", "V");
+    const platform = normalizePlatformLabel(platformRaw) || dexFromLink(link, "DEX");
     const pair = `${t0} / ${t1}`.replace(/\s*\/\s*$|^\s*\/\s*/g, "").trim();
     const item = {
-      platform: dexFromLink(link, "DEX"),
+      platform,
       dataSource: "Google Sheet",
-      chain: cell(col("network", "BH")),
+      chain,
       pair: pair && pair.replace(/\s/g, "") !== "/" ? pair : "Pool",
       feesUsd,
       apr,
-      openedAt: cell(col("Дата открытия норм", "W", "first_mint_ts")),
+      openedAt: cell(col("Дата открытия", "Дата открытия норм", "W", "first_mint_ts", "opened_at", "C")),
       closedAt: active ? "" : closedDisp,
       isActive: active,
-      feeTier: ft > 0 ? ft / 10000 : 0,
+      feeTier: feeTierFromSheetRaw(iFeeTier >= 0 ? row[iFeeTier] : ""),
       link,
       positionId: posId,
       valueUsd: active ? Math.round(liveValueUsdFromSheetRow(headers, row) * 100) / 100 : 0,
     };
-    const iLower = col("price_lower", "BE");
-    const iUpper = col("price_upper", "BD");
-    const iMkt = col("Asset market price", "BW");
+    const iLower = col(
+      "Мин. цена диапазона",
+      "Мин. цена для",
+      "price_lower",
+      "BE",
+      "Истинный диапазон (мин)",
+      "M"
+    );
+    const iUpper = col(
+      "Макс. цена диапазона",
+      "Макс. цена для",
+      "price_upper",
+      "BD",
+      "Истинный диапазон (макс)",
+      "N"
+    );
+    const iMkt = col("Текущая цена", "Asset market price", "BW", "Рыночная цена", "market_price", "O");
     if (iLower >= 0 && iUpper >= 0) {
       const lower = parseSheetFloat(row[iLower]);
       const upper = parseSheetFloat(row[iUpper]);
-      const cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
+      let cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
+      if (!cur && lower > 0 && upper > 0) cur = (lower + upper) / 2;
       if (lower && upper) {
         const norm = normalizeLpRangePrices(lower, upper, cur > 0 ? cur : null);
         if (norm) Object.assign(item, norm);
@@ -465,24 +571,42 @@
   }
 
   /** Полный список LP из листа Public Portfolio — при каждом открытии сайта. */
+  async function fetchSheetCsv(sheetId, sheetName) {
+    const names = [];
+    if (sheetName) names.push(sheetName);
+    if (!names.includes("Public portfolio")) names.push("Public portfolio");
+    if (!names.includes("Public Portfolio")) names.push("Public Portfolio");
+    for (const name of names) {
+      const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (text.startsWith("<!DOCTYPE") || text.startsWith("<html")) continue;
+      const rows = parseSheetCsv(text);
+      if (rows.length >= 2) return rows;
+    }
+    return null;
+  }
+
   async function syncLiquidityPositionsFromSheet(opts) {
     const sheetId = opts?.sheetId;
-    const sheetName = opts?.sheetName || "Public Portfolio";
+    const sheetName = opts?.sheetName || "Public portfolio";
     const fallback = Array.isArray(opts?.fallback) ? opts.fallback : [];
     if (!sheetId) return fallback;
     try {
-      const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.warn("LP sheet sync: HTTP", res.status);
+      const rows = await fetchSheetCsv(sheetId, sheetName);
+      if (!rows) {
+        console.warn("LP sheet sync: sheet not found or empty");
         return fallback;
       }
-      const rows = parseSheetCsv(await res.text());
       if (rows.length < 2) return fallback;
       const headers = rows[0].map((h) => String(h || "").trim());
+      const wallet = String(opts?.walletAddress || "").trim();
       const byKey = new Map();
       for (let r = 1; r < rows.length; r++) {
-        const item = buildLpPositionFromSheetRow(headers, rows[r]);
+        const row = rows[r];
+        if (!rowMatchesWallet(headers, row, wallet)) continue;
+        const item = buildLpPositionFromSheetRow(headers, row);
         if (!item) continue;
         const key = item.positionId || item.link || `${item.chain}|${item.pair}|${r}`;
         byKey.set(key, item);
@@ -506,6 +630,7 @@
     const fresh = await syncLiquidityPositionsFromSheet({
       sheetId: opts?.sheetId,
       sheetName: opts?.sheetName,
+      walletAddress: opts?.walletAddress,
       fallback: positions,
     });
     positions.splice(0, positions.length, ...fresh);

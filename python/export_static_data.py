@@ -667,33 +667,15 @@ def sanitize_strategy_one_snapshots(
     live_total: float,
     initial: float,
 ) -> list[dict]:
-    """Убирает «залипшие» ~$40 из БД, когда фактический капитал ~$30."""
+    """Только последняя точка = live; историю из БД не переписываем."""
     if not snapshots:
         return snapshots
     live = float(live_total or 0.0)
-    init = float(initial or 30.0)
-    cap_high = init * 1.12
-    if live > 0:
-        snapshots[-1] = {**snapshots[-1], "equityUsd": live}
-    max_eq = max(float(s.get("equityUsd") or 0.0) for s in snapshots)
-    if max_eq <= cap_high:
+    if live <= 0:
         return snapshots
-    last_ok = 0
-    for i, s in enumerate(snapshots):
-        if float(s.get("equityUsd") or 0.0) <= cap_high:
-            last_ok = i
-    start_eq = float(snapshots[last_ok].get("equityUsd") or init)
-    end_eq = live if live > 0 else start_eq
-    steps = len(snapshots) - 1 - last_ok
-    if steps <= 0:
-        for s in snapshots:
-            if float(s.get("equityUsd") or 0.0) > cap_high:
-                s["equityUsd"] = end_eq
-        return snapshots
-    for j, i in enumerate(range(last_ok + 1, len(snapshots))):
-        t = (j + 1) / (steps + 1)
-        snapshots[i]["equityUsd"] = start_eq + (end_eq - start_eq) * t
-    return snapshots
+    out = [dict(s) for s in snapshots]
+    out[-1] = {**out[-1], "equityUsd": live}
+    return out
 
 
 def strategy_one_apr_from_snapshots(snapshots: list[dict], *, max_apr: float = 120.0) -> list[float]:
@@ -743,6 +725,90 @@ def lending_chain_from_protocol(protocol: str) -> str:
     return "ethereum"
 
 
+def dedupe_lending_positions(positions: list[dict]) -> list[dict]:
+    """Один долг Fluid/USDC не должен давать две карточки (ETH + WETH dust)."""
+    out: list[dict] = []
+    for p in positions:
+        protocol = str(p.get("protocol") or "").strip().lower()
+        borrow_usd = float(p.get("borrowUsd") or 0.0)
+        if borrow_usd <= 0:
+            sup = float(p.get("collateralUsd") or 0.0)
+            if sup < 5:
+                continue
+            out.append(p)
+            continue
+        merged = False
+        for i, ex in enumerate(out):
+            ex_proto = str(ex.get("protocol") or "").strip().lower()
+            ex_borrow = float(ex.get("borrowUsd") or 0.0)
+            if protocol != ex_proto:
+                continue
+            if abs(borrow_usd - ex_borrow) > max(2.0, 0.02 * max(borrow_usd, ex_borrow, 1.0)):
+                continue
+            ex_coll = float(ex.get("collateralUsd") or 0.0)
+            cur_coll = float(p.get("collateralUsd") or 0.0)
+            if cur_coll > ex_coll:
+                out[i] = p
+            merged = True
+            break
+        if not merged:
+            out.append(p)
+    return out
+
+
+def aggregate_lending_totals(positions: list[dict]) -> tuple[float, float, float]:
+    coll = debt = 0.0
+    for p in dedupe_lending_positions(positions):
+        coll += float(p.get("collateralUsd") or 0.0)
+        debt += float(p.get("borrowUsd") or 0.0)
+    return coll, debt, coll - debt
+
+
+def patch_latest_snapshot_from_sources(
+    snapshots: list[dict],
+    lending_positions: list[dict],
+    sheet_lp_usd: float,
+) -> list[dict]:
+    if not snapshots:
+        return snapshots
+    coll, debt, _ = aggregate_lending_totals(lending_positions)
+    last = dict(snapshots[-1])
+    if coll > 0:
+        last["collateralUsd"] = coll
+    if debt > 0:
+        last["debtUsd"] = debt
+    if sheet_lp_usd > 0:
+        last["liquidityUsd"] = float(sheet_lp_usd)
+    last["equityUsd"] = (
+        float(last.get("collateralUsd") or 0.0)
+        - float(last.get("debtUsd") or 0.0)
+        + float(last.get("liquidityUsd") or 0.0)
+    )
+    snapshots[-1] = last
+    return snapshots
+
+
+def merge_strategy_one_snapshots_from_js_file(current: list[dict], js_path: Path) -> list[dict]:
+    if not js_path.exists() or not current:
+        return current
+    try:
+        raw = js_path.read_text(encoding="utf-8")
+        m = re.search(r"window\.PORTFOLIO_DATA\s*=\s*(\{.*\})\s*;?\s*$", raw, re.S)
+        if not m:
+            return current
+        old = json.loads(m.group(1))
+        old_snaps = (old.get("strategyOne") or {}).get("snapshots") or []
+        if len(old_snaps) <= len(current):
+            return current
+        by_day = {s["timestamp"][:10]: s for s in current}
+        for s in old_snaps:
+            by_day[s["timestamp"][:10]] = s
+        merged = [by_day[k] for k in sorted(by_day.keys())]
+        return merged if len(merged) > len(current) else current
+    except Exception:
+        return current
+
+
 def load_latest_debank_lending_csv(config: dict) -> list[dict]:
     candidates = sorted(Path(".").glob("debank_lending_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
     out = []
@@ -787,7 +853,7 @@ def load_latest_debank_lending_csv(config: dict) -> list[dict]:
                     "link": debank_link,
                 }
             )
-    return out
+    return dedupe_lending_positions(out)
 
 
 def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
@@ -1265,6 +1331,14 @@ def main() -> None:
             }
         )
 
+    lending_positions = dedupe_lending_positions(load_latest_debank_lending_csv(config))
+    sheet_lp_usd = sum(
+        max(0.0, float(p.get("valueUsd") or 0.0))
+        for p in load_liquidity_positions_from_sheet(config)
+        if p.get("isActive", True)
+    )
+    snapshots = patch_latest_snapshot_from_sources(snapshots, lending_positions, sheet_lp_usd)
+
     snapshots = rebase_equity_start_only(snapshots, initial_capital, current_adjustment)
     fallback_apr = mean_apr_from_revert_sheet(config)
     month_apr = month_apr_map_from_revert_sheet(config)
@@ -1280,7 +1354,8 @@ def main() -> None:
     tx_path = Path("data/transactions.json")
     transactions = json.loads(tx_path.read_text(encoding="utf-8")) if tx_path.exists() else []
     liquidity_positions = load_liquidity_positions_from_sheet(config)
-    lending_positions = load_latest_debank_lending_csv(config)
+    if not lending_positions:
+        lending_positions = load_latest_debank_lending_csv(config)
 
     wallet = (
         (config.get("strategy_one_wallet") or "").strip()
@@ -1338,9 +1413,10 @@ def main() -> None:
     strategy_one = load_strategy_one(conn)
     s1_init = float(config.get("strategy_one_initial_usd", 30) or 30)
     s1_live = s_lp_usd + s_pendle_usd + s_hyper_usd
-    strategy_one["snapshots"] = sanitize_strategy_one_snapshots(
-        strategy_one.get("snapshots") or [], s1_live, s1_init
+    s1_snaps = merge_strategy_one_snapshots_from_js_file(
+        strategy_one.get("snapshots") or [], Path("data/portfolio-data.js")
     )
+    strategy_one["snapshots"] = sanitize_strategy_one_snapshots(s1_snaps, s1_live, s1_init)
     strategy_one["dailyYieldSeries"] = strategy_one_apr_from_snapshots(strategy_one["snapshots"])
     strategy_one["positions"] = s_lp + s_pendle + s_hyper
     conn.close()

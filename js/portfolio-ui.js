@@ -669,6 +669,50 @@
     return positions;
   }
 
+  function dedupeLendingPositions(positions) {
+    const out = [];
+    for (const p of positions || []) {
+      const protocol = String(p.protocol || "").trim().toLowerCase();
+      const borrowUsd = Number(p.borrowUsd || 0);
+      const collateralUsd = Number(p.collateralUsd || 0);
+      if (borrowUsd <= 0) {
+        if (collateralUsd < 5) continue;
+        out.push(p);
+        continue;
+      }
+      let merged = false;
+      for (let i = 0; i < out.length; i++) {
+        const ex = out[i];
+        const exProto = String(ex.protocol || "").trim().toLowerCase();
+        const exBorrow = Number(ex.borrowUsd || 0);
+        if (exProto !== protocol) continue;
+        if (Math.abs(borrowUsd - exBorrow) > Math.max(2, 0.02 * Math.max(borrowUsd, exBorrow, 1))) continue;
+        if (collateralUsd > Number(ex.collateralUsd || 0)) out[i] = p;
+        merged = true;
+        break;
+      }
+      if (!merged) out.push(p);
+    }
+    return out;
+  }
+
+  function sumLendingTotals(positions) {
+    const list = dedupeLendingPositions(positions);
+    let collateral = 0;
+    let debt = 0;
+    for (const p of list) {
+      const supplied = p.supplied?.length
+        ? p.supplied
+        : [{ usd: p.collateralUsd }];
+      const borrowed = p.borrowed?.length
+        ? p.borrowed
+        : [{ usd: p.borrowUsd || 0 }];
+      collateral += supplied.reduce((s, x) => s + Number(x.usd || 0), 0);
+      debt += borrowed.reduce((s, x) => s + Number(x.usd || 0), 0);
+    }
+    return { collateral, debt, net: collateral - debt, positions: list };
+  }
+
   function sumActiveLpValueUsd(positions) {
     return (positions || []).reduce((sum, p) => {
       const active = p.isActive !== false && !String(p.closedAt || "").trim();
@@ -695,6 +739,8 @@
     renderLpCard,
     renderLendingCard,
     renderS1Card,
+    dedupeLendingPositions,
+    sumLendingTotals,
     sumActiveLpValueUsd,
     calcLiveEquityUsd,
     syncLiquidityPositionsFromSheet,

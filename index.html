@@ -432,33 +432,11 @@
       });
     }
 
-    function sanitizeS1Snapshots(snaps, liveTotal, initial) {
+    function sanitizeS1Snapshots(snaps, liveTotal) {
       const out = (snaps || []).map((s) => ({ ...s }));
       if (!out.length) return out;
       const live = Number(liveTotal || 0);
-      const init = Number(initial || 30);
-      const capHigh = init * 1.12;
       if (live > 0) out[out.length - 1].equityUsd = live;
-      const maxEq = Math.max(...out.map((s) => Number(s.equityUsd || 0)));
-      if (maxEq <= capHigh) return out;
-      let lastOk = 0;
-      out.forEach((s, i) => {
-        if (Number(s.equityUsd || 0) <= capHigh) lastOk = i;
-      });
-      const startEq = Number(out[lastOk].equityUsd || init);
-      const endEq = live > 0 ? live : startEq;
-      const steps = out.length - 1 - lastOk;
-      if (steps <= 0) {
-        out.forEach((s) => {
-          if (Number(s.equityUsd || 0) > capHigh) s.equityUsd = endEq;
-        });
-        return out;
-      }
-      for (let j = 0; j < steps; j++) {
-        const i = lastOk + 1 + j;
-        const t = (j + 1) / (steps + 1);
-        out[i].equityUsd = startEq + (endEq - startEq) * t;
-      }
       return out;
     }
 
@@ -580,18 +558,26 @@
     const staticLiquidity = Number(latest.liquidityUsd || 0);
     const staticEquity = Number(latest.equityUsd || initial);
 
-    function applyDashboardKpis(activeLpUsd, liveMode) {
+    function applyDashboardKpis(activeLpUsd) {
+      const lend = window.PortfolioUI?.sumLendingTotals
+        ? window.PortfolioUI.sumLendingTotals(lending)
+        : { collateral: 0, debt: 0, net: 0 };
+      const collateral =
+        debankCollateral > 0 ? debankCollateral : Number(lend.collateral || 0);
+      const debt = debankDebt > 0 ? debankDebt : Number(lend.debt || 0);
       const liveLiq = Number(activeLpUsd || 0) > 0 ? Number(activeLpUsd) : staticLiquidity;
-      const equity =
-        Number(activeLpUsd || 0) > 0 && window.PortfolioUI?.calcLiveEquityUsd
-          ? window.PortfolioUI.calcLiveEquityUsd(debankCollateral, debankDebt, activeLpUsd)
-          : staticEquity;
+      const equity = window.PortfolioUI?.calcLiveEquityUsd
+        ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq)
+        : staticEquity;
       const ret = ((equity - initial) / initial) * 100;
       document.getElementById("currentUsd").textContent = fmtUsd(equity);
       const retEl = document.getElementById("returnPct");
       retEl.textContent = fmtPct(ret);
       retEl.style.color = ret >= 0 ? "var(--green)" : "var(--red)";
+      document.getElementById("collateralUsd").textContent = fmtUsd(collateral);
+      document.getElementById("debtUsd").textContent = fmtUsd(debt);
       document.getElementById("liquidityUsd").textContent = fmtUsd(liveLiq);
+      const liveMode = Number(activeLpUsd || 0) > 0 || collateral > 0;
       const exportDay =
         (data.exportedAt && String(data.exportedAt).slice(0, 10)) ||
         (latest.timestamp && latest.timestamp.slice(0, 10)) ||
@@ -610,9 +596,7 @@
     }
 
     document.getElementById("initialUsd").textContent = fmtUsd(initial);
-    applyDashboardKpis(0, false);
-    document.getElementById("collateralUsd").textContent = fmtUsd(debankCollateral);
-    document.getElementById("debtUsd").textContent = fmtUsd(debankDebt);
+    applyDashboardKpis(0);
 
     const txBody = document.getElementById("txBody");
     txBody.innerHTML = txs.slice(0, 200).map(tx => `
@@ -776,7 +760,10 @@
     });
 
     let lp = [];
-    const lending = data.lendingPositions || [];
+    let lending = data.lendingPositions || [];
+    if (window.PortfolioUI?.dedupeLendingPositions) {
+      lending = window.PortfolioUI.dedupeLendingPositions(lending);
+    }
     const lpEl = document.getElementById("lpPositions");
     const lendEl = document.getElementById("lendingPositions");
 
@@ -807,7 +794,7 @@
       const activeLpUsd = window.PortfolioUI?.sumActiveLpValueUsd
         ? window.PortfolioUI.sumActiveLpValueUsd(lp)
         : 0;
-      applyDashboardKpis(activeLpUsd, activeLpUsd > 0);
+      applyDashboardKpis(activeLpUsd);
       renderPositions();
     };
     if (syncLp) {
@@ -940,7 +927,7 @@
 
     const s1Pos = s1.positions || [];
     const s1ActiveUsdEarly = s1Pos.filter(isActivePos).reduce((sum, p) => sum + Math.max(0, Number(p.valueUsd || 0)), 0);
-    s1Snapshots = sanitizeS1Snapshots(s1Snapshots, s1ActiveUsdEarly, S1_INITIAL_CAPITAL_USD);
+    s1Snapshots = sanitizeS1Snapshots(s1Snapshots, s1ActiveUsdEarly);
     const s1Labels = s1Snapshots.map(s => (s.timestamp || "").slice(0, 10));
     const s1EquityData = s1Snapshots.map(s => Number(s.equityUsd || 0));
     const s1StartDate = s1Labels.length ? s1Labels[0] : "";

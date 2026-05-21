@@ -148,12 +148,21 @@
     const dex = dexFromLink(p.link, p.platform);
     const aprShown = (!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`;
     const period = `${p.openedAt || "-"} → ${p.closedAt || (ctx.lang === "ru" ? "активна" : "active")}`;
+    const statusRu = p.isActive ? "Активна" : "Закрыта";
+    const statusEn = p.isActive ? "Active" : "Closed";
+    const valBlock =
+      Number(p.valueUsd) > 0
+        ? ctx.fmtUsdSmart(p.valueUsd)
+        : p.isActive
+          ? ctx.fmtUsdSmart(0)
+          : "—";
     return `<div class="pool-card">
       <div class="pool-card-head">
         ${chainBadgeHtml(p.chain, 28)}
         <div class="pool-card-main">
           <div class="pool-pair-row">
             <span class="pool-pair">${p.pair || "Пул"}</span>
+            <span class="pool-status-pill ${p.isActive ? "pool-status-pill--active" : "pool-status-pill--closed"}">${ctx.lang === "ru" ? statusRu : statusEn}</span>
             <span class="badge">${dex}</span>
           </div>
           ${renderRangeBar(p, ctx.lang)}
@@ -163,9 +172,10 @@
           ${poolOpenLink(p, ctx)}
         </div>
       </div>
-      <div class="pool-meta-grid pool-meta-grid--3">
-        <div><div class="lbl">Fee Tier</div><div>${ctx.fmtFeeTier(p.feeTier)}</div></div>
+      <div class="pool-meta-grid pool-meta-grid--4">
+        <div><div class="lbl">${ctx.lang === "ru" ? "Объём (USD)" : "Value USD"}</div><div>${valBlock}</div></div>
         <div><div class="lbl">${ctx.t("feesTotal")}</div><div>$${Number(p.feesUsd || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
+        <div><div class="lbl">Fee Tier</div><div>${ctx.fmtFeeTier(p.feeTier)}</div></div>
         <div><div class="lbl">${ctx.lang === "ru" ? "Период" : "Period"}</div><div>${period}</div></div>
       </div>
     </div>`;
@@ -309,6 +319,72 @@
     return `${a} / ${b}`.replace(/\s+/g, " ").trim();
   }
 
+  function normalizeClosedCell(s) {
+    const t = String(s || "")
+      .trim()
+      .replace(/\u00a0/g, " ");
+    if (!t) return "";
+    const low = t.toLowerCase();
+    if (["null", "none", "n/a", "-", "false", "no", "0"].includes(low)) return "";
+    return t;
+  }
+
+  function parseAprPercentCell(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return null;
+    const hasPct = s.includes("%");
+    let t = s.replace(/%/g, "").replace(/\s/g, "");
+    if (t.includes(".") && t.includes(",")) {
+      if (t.lastIndexOf(",") > t.lastIndexOf(".")) t = t.replace(/\./g, "").replace(",", ".");
+      else t = t.replace(/,/g, "");
+    } else if (t.includes(",") && !t.includes(".")) {
+      t = t.replace(",", ".");
+    }
+    const n = parseFloat(t);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    if (hasPct || n >= 3) return Math.min(n, 500);
+    return Math.min(n * 100, 500);
+  }
+
+  function sheetColIndex(headers, ...names) {
+    for (const n of names) {
+      const i = headers.indexOf(n);
+      if (i >= 0) return i;
+    }
+    return -1;
+  }
+
+  function rowIsActive(headers, row) {
+    const cell = (i) => (i >= 0 ? String(row[i] ?? "").trim() : "");
+    const ia = cell(sheetColIndex(headers, "is_active")).toLowerCase();
+    if (["true", "yes", "1", "да"].includes(ia)) return true;
+    if (["false", "no", "0", "нет"].includes(ia)) return false;
+    const c1 = normalizeClosedCell(cell(sheetColIndex(headers, "closed_at", "Дата закрытия норм", "X")));
+    return !c1;
+  }
+
+  function liveValueUsdFromSheetRow(headers, row) {
+    const c = (...names) => sheetColIndex(headers, ...names);
+    const cellFloat = (i) => (i >= 0 ? parseSheetFloat(row[i]) : 0);
+    const keys = ["Инвестировано ВСЕГО (сейчас)", "underlying_value", "AA", "AH", "AF", "AE", "AD", "AC"];
+    for (const k of keys) {
+      const i = c(k);
+      const v = cellFloat(i);
+      if (v > 0) return v;
+    }
+    const t0 = String(row[c("token0", "AK")] ?? "")
+      .trim()
+      .toUpperCase();
+    const t1 = String(row[c("token1", "AL")] ?? "")
+      .trim()
+      .toUpperCase();
+    const stable = new Set(["USDC", "USDT", "DAI", "USDE", "FDUSD", "TUSD", "USD"]);
+    const a0 = cellFloat(c("AU", "current_amount0"));
+    const a1 = cellFloat(c("AV", "current_amount1"));
+    if (stable.has(t0) || stable.has(t1)) return Math.max(0, a0) + Math.max(0, a1);
+    return 0;
+  }
+
   async function enrichLpRangesFromSheet(positions, opts) {
     const sheetId = opts?.sheetId;
     const sheetName = opts?.sheetName || "Public Portfolio";
@@ -339,42 +415,104 @@
         return out;
       });
       if (rows.length < 2) return positions;
-      const headers = rows[0];
-      const idx = (name) => headers.indexOf(name);
-      const pickCol = (...names) => {
-        for (const n of names) {
-          const i = idx(n);
-          if (i >= 0) return i;
-        }
-        return -1;
-      };
-      const iLink = pickCol("Ссылка на позицию", "I");
-      const iLower = pickCol("price_lower", "BE");
-      const iUpper = pickCol("price_upper", "BD");
-      const iMkt = pickCol("Asset market price", "BW");
-      const iClosed = pickCol("X", "closed_at");
-      if (iLower < 0 || iUpper < 0) return positions;
+      const headers = rows[0].map((h) => String(h || "").trim());
+      const col = (...names) => sheetColIndex(headers, ...names);
+      const iLink = col("Ссылка на позицию", "I");
+      const iLower = col("price_lower", "BE");
+      const iUpper = col("price_upper", "BD");
+      const iMkt = col("Asset market price", "BW");
+      const iOpened = col("Дата открытия норм", "W", "first_mint_ts");
+      const iClosedDisp = col("Дата закрытия норм", "closed_at", "X");
+      const iFees = col("Заработано комиссий итого", "fees_value", "AG");
+      const iApr1 = col("APR из Revert");
+      const iApr2 = col("APR расчетный");
+      const iApr3 = col("apr");
+      const iAprS = col("S");
+      const iFeeTier = col("fee_tier", "BJ");
+      const iChain = col("network", "BH");
+      const iT0 = col("token0", "AK");
+      const iT1 = col("token1", "AL");
       const byPositionId = new Map();
       for (let r = 1; r < rows.length; r++) {
         const row = rows[r];
         const link = iLink >= 0 ? String(row[iLink] || "").trim() : "";
         const posId = revertPositionId(link);
-        const lower = parseSheetFloat(row[iLower]);
-        const upper = parseSheetFloat(row[iUpper]);
-        const cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
-        if (!lower || !upper) continue;
-        const norm = normalizeLpRangePrices(lower, upper, cur > 0 ? cur : null);
-        if (!norm) continue;
-        if (posId) byPositionId.set(posId, norm);
+        if (!posId) continue;
+        const active = rowIsActive(headers, row);
+        let closedDisp = iClosedDisp >= 0 ? String(row[iClosedDisp] ?? "").trim() : "";
+        if (normalizeClosedCell(closedDisp) === "") closedDisp = "";
+        const patch = {
+          isActive: active,
+          closedAt: active ? "" : closedDisp,
+        };
+        if (iOpened >= 0) {
+          const o = String(row[iOpened] || "").trim();
+          if (o) patch.openedAt = o;
+        }
+        if (iChain >= 0) {
+          const ch = String(row[iChain] || "").trim();
+          if (ch) patch.chain = ch;
+        }
+        if (iT0 >= 0 || iT1 >= 0) {
+          const pr = `${String(row[iT0] || "").trim()} / ${String(row[iT1] || "").trim()}`
+            .replace(/\s*\/\s*$|^\s*\/\s*/g, "")
+            .trim();
+          if (pr && pr.replace(/\s/g, "") !== "/") patch.pair = pr;
+        }
+        if (iFees >= 0) {
+          const f = parseSheetFloat(row[iFees]);
+          if (f > 0) patch.feesUsd = f;
+        }
+        let aprFound = null;
+        for (const ia of [iApr1, iApr2, iApr3, iAprS]) {
+          if (ia < 0) continue;
+          const v = parseAprPercentCell(row[ia]);
+          if (v != null) {
+            aprFound = v;
+            break;
+          }
+        }
+        if (aprFound != null && active) patch.apr = aprFound;
+        if (iFeeTier >= 0) {
+          const ft = parseSheetFloat(row[iFeeTier]);
+          if (ft > 0) patch.feeTier = ft / 10000;
+        }
+        if (active) {
+          const vu = liveValueUsdFromSheetRow(headers, row);
+          if (vu > 0) patch.valueUsd = Math.round(vu * 100) / 100;
+        } else {
+          patch.valueUsd = 0;
+        }
+        if (iLower >= 0 && iUpper >= 0) {
+          const lower = parseSheetFloat(row[iLower]);
+          const upper = parseSheetFloat(row[iUpper]);
+          const cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
+          if (lower && upper) {
+            const norm = normalizeLpRangePrices(lower, upper, cur > 0 ? cur : null);
+            if (norm) Object.assign(patch, norm);
+          }
+        }
+        if (patch.pair && patch.pair.replace(/\s/g, "") === "/") delete patch.pair;
+        byPositionId.set(posId, patch);
       }
       for (const p of positions) {
         const posId = revertPositionId(p.link) || String(p.positionId || "").trim();
         const hit = posId ? byPositionId.get(posId) : null;
-        if (hit) Object.assign(p, hit);
+        if (!hit) continue;
+        Object.assign(p, hit);
+        p.isActive = !!hit.isActive;
+        if (p.isActive) p.closedAt = "";
+        if (hit.pair && String(hit.pair).trim().replace(/\s/g, "") !== "/") p.pair = hit.pair;
         applyLpRangeToPosition(p);
       }
+      positions.sort((a, b) => {
+        const ra = a.isActive ? 0 : 1;
+        const rb = b.isActive ? 0 : 1;
+        if (ra !== rb) return ra - rb;
+        return String(b.openedAt || "").localeCompare(String(a.openedAt || ""));
+      });
     } catch (e) {
-      console.warn("LP range enrich failed", e);
+      console.warn("LP sheet enrich failed", e);
     }
     for (const p of positions) applyLpRangeToPosition(p);
     return positions;

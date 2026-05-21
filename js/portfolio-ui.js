@@ -143,6 +143,14 @@
     return `<a class="pool-open-link" href="${p.link}" target="_blank" rel="noreferrer">${ctx.t("open")} ↗</a>`;
   }
 
+  function renderRewardsBlock(p, ctx) {
+    const usd = Number(p.incentivesUsd || 0);
+    const token = String(p.incentiveToken || "").trim();
+    if (usd <= 0 || !token) return "";
+    const lbl = ctx.lang === "ru" ? "Награды" : "Rewards";
+    return `<div class="pool-rewards"><span class="lbl">${lbl}</span><span class="pool-reward-line">${token}: $${usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
+  }
+
   function renderLpCard(p, ctx) {
     applyLpRangeToPosition(p);
     const dex =
@@ -176,6 +184,7 @@
         <div><div class="lbl">Fee Tier</div><div>${ctx.fmtFeeTier(p.feeTier)}</div></div>
         <div><div class="lbl">${ctx.lang === "ru" ? "Период" : "Period"}</div><div>${period}</div></div>
       </div>
+      ${renderRewardsBlock(p, ctx)}
     </div>`;
   }
 
@@ -294,7 +303,11 @@
   }
 
   function parseSheetFloat(s) {
-    const raw = String(s || "").trim().replace(/\s/g, "");
+    const raw = String(s || "")
+      .trim()
+      .replace(/\u00a0/g, "")
+      .replace(/\u202f/g, "")
+      .replace(/\s/g, "");
     if (!raw) return 0;
     let v = raw.replace(",", ".");
     if (v.includes(".") && v.includes(",")) {
@@ -499,6 +512,21 @@
     return pending + claimed;
   }
 
+  function incentivesFromSheetRow(headers, row) {
+    const c = (...names) => sheetColIndex(headers, ...names);
+    const cellFloat = (i) => (i >= 0 ? parseSheetFloat(row[i]) : 0);
+    const pending = cellFloat(c("Инцентив: pending, USD"));
+    const claimed = cellFloat(c("Инцентив: claimed, USD"));
+    const usd = pending + claimed;
+    if (usd <= 0) return { usd: 0, token: "" };
+    let token = String(row[c("Инцентив: токен")] ?? "").trim();
+    const low = token.toLowerCase();
+    if (low.includes("cake")) token = "Cake";
+    else if (low.includes("aira")) token = "Aira";
+    else if (token) token = token.charAt(0).toUpperCase() + token.slice(1);
+    return { usd, token };
+  }
+
   function feeApyPercentFromSheetRow(headers, row) {
     const i = sheetColIndex(headers, "Fee APY", "fee apy", "Fee APY %");
     if (i < 0) return 0;
@@ -548,6 +576,7 @@
     if (normalizeClosedCell(closedDisp) === "") closedDisp = "";
     const apr = feeApyPercentFromSheetRow(headers, row);
     const feesUsd = feesUsdFromSheetRow(headers, row);
+    const inc = incentivesFromSheetRow(headers, row);
     const iFeeTier = col("Fee tier (%)", "Fee tier", "fee_tier", "BJ", "V");
     const platform = normalizePlatformLabel(platformRaw) || dexFromLink(link, "DEX");
     const pair = `${t0} / ${t1}`.replace(/\s*\/\s*$|^\s*\/\s*/g, "").trim();
@@ -557,6 +586,8 @@
       chain,
       pair: pair && pair.replace(/\s/g, "") !== "/" ? pair : "Pool",
       feesUsd,
+      incentivesUsd: inc.usd > 0 ? Math.round(inc.usd * 10000) / 10000 : 0,
+      incentiveToken: inc.token,
       apr,
       openedAt: cell(col("Дата открытия", "Дата открытия норм", "W", "first_mint_ts", "opened_at", "C")),
       closedAt: active ? "" : closedDisp,

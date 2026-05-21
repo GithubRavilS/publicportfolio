@@ -374,6 +374,7 @@
     if (window.__portfolioAppStarted) return;
     if (!window.PORTFOLIO_DATA) return;
     window.__portfolioAppStarted = true;
+    try {
 
     const verticalLinePlugin = {
       id: "verticalLinePlugin",
@@ -456,6 +457,10 @@
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
+    let lending = data.lendingPositions || [];
+    if (window.PortfolioUI?.dedupeLendingPositions) {
+      lending = window.PortfolioUI.dedupeLendingPositions(lending);
+    }
 
     const fmtUsd = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtUsdSmart = (n) => {
@@ -760,10 +765,6 @@
     });
 
     let lp = [];
-    let lending = data.lendingPositions || [];
-    if (window.PortfolioUI?.dedupeLendingPositions) {
-      lending = window.PortfolioUI.dedupeLendingPositions(lending);
-    }
     const lpEl = document.getElementById("lpPositions");
     const lendEl = document.getElementById("lendingPositions");
 
@@ -1194,6 +1195,15 @@
       renderS1Positions();
       updateS1Kpis();
     });
+    } catch (err) {
+      console.error("Portfolio app init failed", err);
+      const el = document.getElementById("updatedAt");
+      if (el) {
+        el.textContent = "Ошибка загрузки: " + (err && err.message ? err.message : String(err));
+        el.style.color = "#ff6b6b";
+      }
+      window.__portfolioAppStarted = false;
+    }
     };
   </script>
   <script src="https://cry-Maden008.pythonanywhere.com/vip-static/vip-auth-client.js"></script>

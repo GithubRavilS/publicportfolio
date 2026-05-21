@@ -1073,6 +1073,8 @@
     };
     const chainName = (raw, instrument) => window.PortfolioUI.chainLabelUi(raw, instrument);
     const s1AprFromPosition = (p) => {
+      const exported = Number(p.displayApr || 0);
+      if (exported > 0) return Math.min(exported, 500);
       if (p.instrument === "LP") {
         const apr = Number(p.apr || 0);
         if (Number.isFinite(apr) && apr > 0) return Math.min(apr, 500);
@@ -1105,14 +1107,19 @@
       }, 0);
       return Number.isFinite(weighted) ? weighted : 0;
     })();
+    const s1MeanApr = (() => {
+      const active = s1Pos.filter(isActivePos);
+      if (!active.length) return 0;
+      const sum = active.reduce((acc, p) => acc + s1AprFromPosition(p), 0);
+      return sum / active.length;
+    })();
     const s1AprExported = (s1.dailyYieldSeries || []).map((v) => Math.max(0, Math.min(Number(v) || 0, 25)));
-    let s1Apr = s1AprFromSnapshots(s1Snapshots, 25);
+    const exportedMean = Number(s1.meanDisplayApr || 0);
+    const chartMean = exportedMean > 0 ? exportedMean : s1MeanApr;
     const s1AprSeries =
-      s1AprExported.length === s1Labels.length && s1AprExported.some((x) => x > 0.0001)
+      s1AprExported.length === s1Labels.length && s1AprExported.length > 1
         ? s1AprExported
-        : s1Apr.some((x) => Math.abs(x) > 0.0001)
-          ? s1Apr.map((v) => Math.max(0, Math.min(v, 25)))
-          : s1Labels.map(() => Math.min(s1WeightedApr, 25));
+        : s1Labels.map((_, i) => (i === 0 ? 0 : Math.min(chartMean, 25)));
     const s1Charts = { equity: null, apr: null };
     const initS1Charts = () => {
       if (s1Charts.equity && s1Charts.apr) {

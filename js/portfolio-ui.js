@@ -226,6 +226,9 @@
     const borUsd = borrowed.reduce((s, x) => s + Number(x.usd || 0), 0);
     const netUsd = Number.isFinite(Number(p.netUsd)) ? Number(p.netUsd) : supUsd - borUsd;
     const liqLbl = ctx.lang === "ru" ? "Ликвидация" : "Liq. price";
+    const utilPct = supUsd > 0 ? Math.min(100, (borUsd / supUsd) * 100) : 0;
+    const utilLbl = ctx.lang === "ru" ? "Использование залога" : "Collateral use";
+    const freeUsd = Math.max(0, supUsd - borUsd);
     return `<article class="lend-card pool-card">
       <header class="lend-card-head">
         <div class="lend-card-title">
@@ -238,18 +241,25 @@
           <strong>${fmtUsdShort(netUsd)}</strong>
         </div>
       </header>
-      <div class="lend-metrics">
-        <div class="lend-metric">
-          <span>${ctx.lang === "ru" ? "Залог" : "Collateral"}</span>
-          <strong>${fmtUsdShort(supUsd)}</strong>
+      <div class="lend-util-block">
+        <div class="lend-util-head">
+          <span>${utilLbl}</span>
+          <span class="lend-util-pct">${utilPct.toFixed(1)}%</span>
         </div>
-        <div class="lend-metric lend-metric--debt">
-          <span>${ctx.lang === "ru" ? "Долг" : "Debt"}</span>
-          <strong>${fmtUsdShort(borUsd)}</strong>
+        <div class="lend-util-track" aria-hidden="true">
+          <div class="lend-util-collateral" style="width:100%"></div>
+          <div class="lend-util-debt" style="width:${utilPct.toFixed(2)}%"></div>
         </div>
+        <div class="lend-util-legend">
+          <span><i class="lend-dot lend-dot--sup"></i>${ctx.lang === "ru" ? "Залог" : "Collateral"} <strong>${fmtUsdShort(supUsd)}</strong></span>
+          <span><i class="lend-dot lend-dot--bor"></i>${ctx.lang === "ru" ? "Долг" : "Debt"} <strong>${fmtUsdShort(borUsd)}</strong></span>
+          <span><i class="lend-dot lend-dot--free"></i>${ctx.lang === "ru" ? "Свободно" : "Free"} <strong>${fmtUsdShort(freeUsd)}</strong></span>
+        </div>
+      </div>
+      <div class="lend-metrics lend-metrics--compact">
         ${
           hf > 0
-            ? `<div class="lend-metric${hfClass}"><span>HF</span><strong>${hf.toFixed(2)}</strong></div>`
+            ? `<div class="lend-metric lend-metric--hf${hfClass}"><span>Health factor</span><strong>${hf.toFixed(2)}</strong></div>`
             : ""
         }
         ${

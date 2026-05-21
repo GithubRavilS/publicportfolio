@@ -385,136 +385,130 @@
     return 0;
   }
 
-  async function enrichLpRangesFromSheet(positions, opts) {
+  function parseSheetCsv(text) {
+    return text.split(/\r?\n/).map((line) => {
+      const out = [];
+      let cur = "";
+      let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          inQ = !inQ;
+          continue;
+        }
+        if (ch === "," && !inQ) {
+          out.push(cur);
+          cur = "";
+          continue;
+        }
+        cur += ch;
+      }
+      out.push(cur);
+      return out;
+    });
+  }
+
+  function buildLpPositionFromSheetRow(headers, row) {
+    const col = (...names) => sheetColIndex(headers, ...names);
+    const cell = (i) => (i >= 0 ? String(row[i] ?? "").trim() : "");
+    const link = cell(col("Ссылка на позицию", "I"));
+    const posId = revertPositionId(link);
+    const t0 = cell(col("token0", "AK"));
+    const t1 = cell(col("token1", "AL"));
+    if (!posId && !t0 && !t1) return null;
+    const active = rowIsActive(headers, row);
+    let closedDisp = cell(col("Дата закрытия норм", "closed_at", "X"));
+    if (normalizeClosedCell(closedDisp) === "") closedDisp = "";
+    let apr = 0;
+    for (const ia of [col("APR из Revert"), col("APR расчетный"), col("apr"), col("S")]) {
+      if (ia < 0) continue;
+      const v = parseAprPercentCell(row[ia]);
+      if (v != null) {
+        apr = v;
+        break;
+      }
+    }
+    const iFees = col("Заработано комиссий итого", "fees_value", "AG");
+    const feesUsd = iFees >= 0 ? parseSheetFloat(row[iFees]) : 0;
+    const iFeeTier = col("fee_tier", "BJ");
+    const ft = iFeeTier >= 0 ? parseSheetFloat(row[iFeeTier]) : 0;
+    const pair = `${t0} / ${t1}`.replace(/\s*\/\s*$|^\s*\/\s*/g, "").trim();
+    const item = {
+      platform: dexFromLink(link, "DEX"),
+      dataSource: "Google Sheet",
+      chain: cell(col("network", "BH")),
+      pair: pair && pair.replace(/\s/g, "") !== "/" ? pair : "Pool",
+      feesUsd,
+      apr,
+      openedAt: cell(col("Дата открытия норм", "W", "first_mint_ts")),
+      closedAt: active ? "" : closedDisp,
+      isActive: active,
+      feeTier: ft > 0 ? ft / 10000 : 0,
+      link,
+      positionId: posId,
+      valueUsd: active ? Math.round(liveValueUsdFromSheetRow(headers, row) * 100) / 100 : 0,
+    };
+    const iLower = col("price_lower", "BE");
+    const iUpper = col("price_upper", "BD");
+    const iMkt = col("Asset market price", "BW");
+    if (iLower >= 0 && iUpper >= 0) {
+      const lower = parseSheetFloat(row[iLower]);
+      const upper = parseSheetFloat(row[iUpper]);
+      const cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
+      if (lower && upper) {
+        const norm = normalizeLpRangePrices(lower, upper, cur > 0 ? cur : null);
+        if (norm) Object.assign(item, norm);
+      }
+    }
+    applyLpRangeToPosition(item);
+    return item;
+  }
+
+  /** Полный список LP из листа Public Portfolio — при каждом открытии сайта. */
+  async function syncLiquidityPositionsFromSheet(opts) {
     const sheetId = opts?.sheetId;
     const sheetName = opts?.sheetName || "Public Portfolio";
-    if (!sheetId || !positions?.length) return positions;
+    const fallback = Array.isArray(opts?.fallback) ? opts.fallback : [];
+    if (!sheetId) return fallback;
     try {
       const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
       const res = await fetch(url);
-      if (!res.ok) return positions;
-      const text = await res.text();
-      const rows = text.split(/\r?\n/).map((line) => {
-        const out = [];
-        let cur = "";
-        let inQ = false;
-        for (let i = 0; i < line.length; i++) {
-          const ch = line[i];
-          if (ch === '"') {
-            inQ = !inQ;
-            continue;
-          }
-          if (ch === "," && !inQ) {
-            out.push(cur);
-            cur = "";
-            continue;
-          }
-          cur += ch;
-        }
-        out.push(cur);
-        return out;
-      });
-      if (rows.length < 2) return positions;
+      if (!res.ok) {
+        console.warn("LP sheet sync: HTTP", res.status);
+        return fallback;
+      }
+      const rows = parseSheetCsv(await res.text());
+      if (rows.length < 2) return fallback;
       const headers = rows[0].map((h) => String(h || "").trim());
-      const col = (...names) => sheetColIndex(headers, ...names);
-      const iLink = col("Ссылка на позицию", "I");
-      const iLower = col("price_lower", "BE");
-      const iUpper = col("price_upper", "BD");
-      const iMkt = col("Asset market price", "BW");
-      const iOpened = col("Дата открытия норм", "W", "first_mint_ts");
-      const iClosedDisp = col("Дата закрытия норм", "closed_at", "X");
-      const iFees = col("Заработано комиссий итого", "fees_value", "AG");
-      const iApr1 = col("APR из Revert");
-      const iApr2 = col("APR расчетный");
-      const iApr3 = col("apr");
-      const iAprS = col("S");
-      const iFeeTier = col("fee_tier", "BJ");
-      const iChain = col("network", "BH");
-      const iT0 = col("token0", "AK");
-      const iT1 = col("token1", "AL");
-      const byPositionId = new Map();
+      const byKey = new Map();
       for (let r = 1; r < rows.length; r++) {
-        const row = rows[r];
-        const link = iLink >= 0 ? String(row[iLink] || "").trim() : "";
-        const posId = revertPositionId(link);
-        if (!posId) continue;
-        const active = rowIsActive(headers, row);
-        let closedDisp = iClosedDisp >= 0 ? String(row[iClosedDisp] ?? "").trim() : "";
-        if (normalizeClosedCell(closedDisp) === "") closedDisp = "";
-        const patch = {
-          isActive: active,
-          closedAt: active ? "" : closedDisp,
-        };
-        if (iOpened >= 0) {
-          const o = String(row[iOpened] || "").trim();
-          if (o) patch.openedAt = o;
-        }
-        if (iChain >= 0) {
-          const ch = String(row[iChain] || "").trim();
-          if (ch) patch.chain = ch;
-        }
-        if (iT0 >= 0 || iT1 >= 0) {
-          const pr = `${String(row[iT0] || "").trim()} / ${String(row[iT1] || "").trim()}`
-            .replace(/\s*\/\s*$|^\s*\/\s*/g, "")
-            .trim();
-          if (pr && pr.replace(/\s/g, "") !== "/") patch.pair = pr;
-        }
-        if (iFees >= 0) {
-          const f = parseSheetFloat(row[iFees]);
-          if (f > 0) patch.feesUsd = f;
-        }
-        let aprFound = null;
-        for (const ia of [iApr1, iApr2, iApr3, iAprS]) {
-          if (ia < 0) continue;
-          const v = parseAprPercentCell(row[ia]);
-          if (v != null) {
-            aprFound = v;
-            break;
-          }
-        }
-        if (aprFound != null && active) patch.apr = aprFound;
-        if (iFeeTier >= 0) {
-          const ft = parseSheetFloat(row[iFeeTier]);
-          if (ft > 0) patch.feeTier = ft / 10000;
-        }
-        if (active) {
-          const vu = liveValueUsdFromSheetRow(headers, row);
-          if (vu > 0) patch.valueUsd = Math.round(vu * 100) / 100;
-        } else {
-          patch.valueUsd = 0;
-        }
-        if (iLower >= 0 && iUpper >= 0) {
-          const lower = parseSheetFloat(row[iLower]);
-          const upper = parseSheetFloat(row[iUpper]);
-          const cur = iMkt >= 0 ? parseSheetFloat(row[iMkt]) : 0;
-          if (lower && upper) {
-            const norm = normalizeLpRangePrices(lower, upper, cur > 0 ? cur : null);
-            if (norm) Object.assign(patch, norm);
-          }
-        }
-        if (patch.pair && patch.pair.replace(/\s/g, "") === "/") delete patch.pair;
-        byPositionId.set(posId, patch);
+        const item = buildLpPositionFromSheetRow(headers, rows[r]);
+        if (!item) continue;
+        const key = item.positionId || item.link || `${item.chain}|${item.pair}|${r}`;
+        byKey.set(key, item);
       }
-      for (const p of positions) {
-        const posId = revertPositionId(p.link) || String(p.positionId || "").trim();
-        const hit = posId ? byPositionId.get(posId) : null;
-        if (!hit) continue;
-        Object.assign(p, hit);
-        p.isActive = !!hit.isActive;
-        if (p.isActive) p.closedAt = "";
-        if (hit.pair && String(hit.pair).trim().replace(/\s/g, "") !== "/") p.pair = hit.pair;
-        applyLpRangeToPosition(p);
-      }
-      positions.sort((a, b) => {
+      const list = [...byKey.values()];
+      if (!list.length) return fallback;
+      list.sort((a, b) => {
         const ra = a.isActive ? 0 : 1;
         const rb = b.isActive ? 0 : 1;
         if (ra !== rb) return ra - rb;
         return String(b.openedAt || "").localeCompare(String(a.openedAt || ""));
       });
+      return list;
     } catch (e) {
-      console.warn("LP sheet enrich failed", e);
+      console.warn("LP sheet sync failed", e);
+      return fallback;
     }
-    for (const p of positions) applyLpRangeToPosition(p);
+  }
+
+  async function enrichLpRangesFromSheet(positions, opts) {
+    const fresh = await syncLiquidityPositionsFromSheet({
+      sheetId: opts?.sheetId,
+      sheetName: opts?.sheetName,
+      fallback: positions,
+    });
+    positions.splice(0, positions.length, ...fresh);
     return positions;
   }
 
@@ -527,6 +521,7 @@
     renderLpCard,
     renderLendingCard,
     renderS1Card,
-    enrichLpRangesFromSheet
+    syncLiquidityPositionsFromSheet,
+    enrichLpRangesFromSheet,
   };
 })();

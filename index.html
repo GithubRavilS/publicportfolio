@@ -575,23 +575,44 @@
     const isActivePos = (p) => p.isActive !== false && !String(p.closedAt || "").trim();
 
     const latest = snapshots[snapshots.length - 1] || {};
-    const equity = Number(latest.equityUsd || initial);
-    const ret = ((equity - initial) / initial) * 100;
+    const debankCollateral = Number(latest.collateralUsd || 0);
+    const debankDebt = Number(latest.debtUsd || 0);
+    const staticLiquidity = Number(latest.liquidityUsd || 0);
+    const staticEquity = Number(latest.equityUsd || initial);
+
+    function applyDashboardKpis(activeLpUsd, liveMode) {
+      const liveLiq = Number(activeLpUsd || 0) > 0 ? Number(activeLpUsd) : staticLiquidity;
+      const equity =
+        Number(activeLpUsd || 0) > 0 && window.PortfolioUI?.calcLiveEquityUsd
+          ? window.PortfolioUI.calcLiveEquityUsd(debankCollateral, debankDebt, activeLpUsd)
+          : staticEquity;
+      const ret = ((equity - initial) / initial) * 100;
+      document.getElementById("currentUsd").textContent = fmtUsd(equity);
+      const retEl = document.getElementById("returnPct");
+      retEl.textContent = fmtPct(ret);
+      retEl.style.color = ret >= 0 ? "var(--green)" : "var(--red)";
+      document.getElementById("liquidityUsd").textContent = fmtUsd(liveLiq);
+      const exportDay =
+        (data.exportedAt && String(data.exportedAt).slice(0, 10)) ||
+        (latest.timestamp && latest.timestamp.slice(0, 10)) ||
+        "";
+      const today = new Date().toISOString().slice(0, 10);
+      if (liveMode) {
+        document.getElementById("updatedAt").textContent =
+          lang === "ru"
+            ? `LP из таблицы: ${today} · Debank: ${exportDay || "—"}`
+            : `LP from sheet: ${today} · Debank: ${exportDay || "—"}`;
+      } else {
+        document.getElementById("updatedAt").textContent = exportDay
+          ? `${t("updated")}: ${exportDay}`
+          : t("noData");
+      }
+    }
 
     document.getElementById("initialUsd").textContent = fmtUsd(initial);
-    document.getElementById("currentUsd").textContent = fmtUsd(equity);
-    const retEl = document.getElementById("returnPct");
-    retEl.textContent = fmtPct(ret);
-    retEl.style.color = ret >= 0 ? "var(--green)" : "var(--red)";
-    {
-      const day = (data.exportedAt && String(data.exportedAt).slice(0, 10))
-        || (latest.timestamp && latest.timestamp.slice(0, 10))
-        || "";
-      document.getElementById("updatedAt").textContent = day ? (`${t("updated")}: ${day}`) : t("noData");
-    }
-    document.getElementById("collateralUsd").textContent = fmtUsd(latest.collateralUsd || 0);
-    document.getElementById("debtUsd").textContent = fmtUsd(latest.debtUsd || 0);
-    document.getElementById("liquidityUsd").textContent = fmtUsd(latest.liquidityUsd || 0);
+    applyDashboardKpis(0, false);
+    document.getElementById("collateralUsd").textContent = fmtUsd(debankCollateral);
+    document.getElementById("debtUsd").textContent = fmtUsd(debankDebt);
 
     const txBody = document.getElementById("txBody");
     txBody.innerHTML = txs.slice(0, 200).map(tx => `
@@ -783,6 +804,10 @@
     const finishLpLoad = (list) => {
       lp.splice(0, lp.length, ...(Array.isArray(list) && list.length ? list : lpFallback));
       if (window.PortfolioUI?.applyLpRangeToPosition) lp.forEach((p) => window.PortfolioUI.applyLpRangeToPosition(p));
+      const activeLpUsd = window.PortfolioUI?.sumActiveLpValueUsd
+        ? window.PortfolioUI.sumActiveLpValueUsd(lp)
+        : 0;
+      applyDashboardKpis(activeLpUsd, activeLpUsd > 0);
       renderPositions();
     };
     if (syncLp) {

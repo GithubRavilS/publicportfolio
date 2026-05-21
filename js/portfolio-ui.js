@@ -389,17 +389,43 @@
     return `https://revert.finance/#/${route}/${net}/${id}`;
   }
 
+  function isEmptyMetric(raw) {
+    const s = String(raw ?? "").trim();
+    if (!s) return true;
+    const low = s.toLowerCase();
+    return low === "-" || low === "—" || low === "n/a" || low === "null";
+  }
+
+  function parseFeeTierCell(raw) {
+    if (isEmptyMetric(raw)) return 0;
+    const s = String(raw).trim();
+    const hasPct = s.includes("%");
+    let t = s.replace(/%/g, "").replace(/\s/g, "");
+    if (t.includes(".") && t.includes(",")) {
+      if (t.lastIndexOf(",") > t.lastIndexOf(".")) t = t.replace(/\./g, "").replace(",", ".");
+      else t = t.replace(/,/g, "");
+    } else if (t.includes(",") && !t.includes(".")) {
+      t = t.replace(",", ".");
+    }
+    const n = parseFloat(t);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    if (hasPct) {
+      if (n >= 1000) return n / 1000000;
+      if (n >= 1) return n / 100;
+      return n;
+    }
+    if (n >= 50) return n / 10000;
+    if (n <= 1) return n;
+    return n / 100;
+  }
+
   function feeTierFromSheetRaw(raw) {
-    const ft = parseSheetFloat(raw);
-    if (ft <= 0) return 0;
-    if (ft >= 50) return ft / 10000;
-    if (ft < 0.05) return ft;
-    return ft / 100;
+    return parseFeeTierCell(raw);
   }
 
   function rowIsActive(headers, row) {
     const cell = (i) => (i >= 0 ? String(row[i] ?? "").trim() : "");
-    const oc = cell(sheetColIndex(headers, "Open/Closed", "J")).toUpperCase();
+    const oc = cell(sheetColIndex(headers, "Open/Closed", "J", "Open / Closed")).toUpperCase();
     if (oc === "OPEN") return true;
     if (oc === "CLOSED") return false;
     const ia = cell(sheetColIndex(headers, "is_active")).toLowerCase();
@@ -445,7 +471,8 @@
     const keys = [
       "Внесено, USD",
       "Стоимость позиции, USD",
-      "Стоимость позиции",
+      "К hold, USD",
+      "Сейчас токен0, USD",
       "Инвестировано ВСЕГО (сейчас)",
       "underlying_value",
     ];
@@ -453,6 +480,9 @@
       const v = sanePositionUsd(cellFloat(c(k)));
       if (v > 0) return v;
     }
+    const t0usd = sanePositionUsd(cellFloat(c("Сейчас токен0, USD")));
+    const t1usd = sanePositionUsd(cellFloat(c("Сейчас токен1, USD")));
+    if (t0usd + t1usd > 0) return t0usd + t1usd;
     const withdrawn = sanePositionUsd(cellFloat(c("Выведено, USD")));
     if (withdrawn > 0) return withdrawn;
     return 0;
@@ -461,11 +491,22 @@
   function feesUsdFromSheetRow(headers, row) {
     const c = (...names) => sheetColIndex(headers, ...names);
     const cellFloat = (i) => (i >= 0 ? parseSheetFloat(row[i]) : 0);
-    const pending = cellFloat(c("Комиссии pending, USD", "Комиссии pendi", "Комиссии pending", "R"));
-    const claimed = cellFloat(c("Комиссии claimed, USD", "Комиссии claim", "Комиссии claimed", "S"));
-    const sum = pending + claimed;
-    if (sum > 0) return sum;
-    return cellFloat(c("Заработано комиссий итого", "fees_value", "AG"));
+    const total = cellFloat(
+      c("Заработано комиссий всего, USD", "Заработано комиссий итого", "fees_value", "AG")
+    );
+    if (total > 0) return total;
+    const pending = cellFloat(c("Комиссии pending, USD", "Комиссии pendi", "Комиссии pending"));
+    const claimed = cellFloat(c("Комиссии claimed, USD", "Комиссии claim", "Комиссии claimed"));
+    return pending + claimed;
+  }
+
+  function feeApyPercentFromSheetRow(headers, row) {
+    const i = sheetColIndex(headers, "Fee APY", "fee apy", "Fee APY %");
+    if (i < 0) return 0;
+    const raw = String(row[i] ?? "").trim();
+    if (isEmptyMetric(raw) || raw === "0") return 0;
+    const v = parseAprPercentCell(raw);
+    return v != null && v > 0 ? v : 0;
   }
 
   function parseSheetCsv(text) {
@@ -506,19 +547,9 @@
     const active = rowIsActive(headers, row);
     let closedDisp = cell(col("Дата закрытия", "Дата закрытия норм", "closed_at", "X", "D"));
     if (normalizeClosedCell(closedDisp) === "") closedDisp = "";
-    let apr = 0;
-    for (const ia of [
-      col("APR", "APR из Revert", "APR расчетный", "fee_apr", "apr", "S", "U"),
-    ]) {
-      if (ia < 0) continue;
-      const v = parseAprPercentCell(row[ia]);
-      if (v != null) {
-        apr = v;
-        break;
-      }
-    }
+    const apr = feeApyPercentFromSheetRow(headers, row);
     const feesUsd = feesUsdFromSheetRow(headers, row);
-    const iFeeTier = col("Fee tier", "fee_tier", "BJ", "V");
+    const iFeeTier = col("Fee tier (%)", "Fee tier", "fee_tier", "BJ", "V");
     const platform = normalizePlatformLabel(platformRaw) || dexFromLink(link, "DEX");
     const pair = `${t0} / ${t1}`.replace(/\s*\/\s*$|^\s*\/\s*/g, "").trim();
     const item = {
@@ -550,7 +581,14 @@
       "BD",
       "Истинный диапазон (макс)"
     );
-    const iMkt = col("Текущая цена", "Asset market price", "BW", "Рыночная цена", "market_price");
+    const iMkt = col(
+      "Цена пула",
+      "Текущая цена",
+      "Asset market price",
+      "BW",
+      "Рыночная цена",
+      "market_price"
+    );
     if (iLower >= 0 && iUpper >= 0) {
       const lower = parseSheetFloat(row[iLower]);
       const upper = parseSheetFloat(row[iUpper]);

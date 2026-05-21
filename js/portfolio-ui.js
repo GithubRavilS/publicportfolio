@@ -149,16 +149,11 @@
       p.platform && String(p.platform).trim() && p.platform !== "DEX"
         ? p.platform
         : dexFromLink(p.link, p.platform);
-    const aprShown = (!p.isActive && Number(p.apr || 0) === 0) ? "—" : `${Number(p.apr || 0).toFixed(2)}%`;
+    const aprShown = Number(p.apr || 0) > 0 ? `${Number(p.apr).toFixed(2)}%` : "—";
     const period = `${p.openedAt || "-"} → ${p.closedAt || (ctx.lang === "ru" ? "активна" : "active")}`;
     const statusRu = p.isActive ? "Активна" : "Закрыта";
     const statusEn = p.isActive ? "Active" : "Closed";
-    const valBlock =
-      Number(p.valueUsd) > 0
-        ? ctx.fmtUsdSmart(p.valueUsd)
-        : p.isActive
-          ? ctx.fmtUsdSmart(0)
-          : "—";
+    const valBlock = Number(p.valueUsd) > 0 ? ctx.fmtUsdSmart(p.valueUsd) : "—";
     return `<div class="pool-card">
       <div class="pool-card-head">
         ${chainBadgeHtml(p.chain, 28)}
@@ -356,7 +351,7 @@
     }
     for (const n of names) {
       const needle = String(n || "").trim().toLowerCase();
-      if (!needle) continue;
+      if (!needle || needle.length < 2) continue;
       for (let i = 0; i < headers.length; i++) {
         const h = String(headers[i] || "").trim().toLowerCase();
         if (h === needle || h.startsWith(needle) || h.includes(needle)) return i;
@@ -458,6 +453,8 @@
       const v = sanePositionUsd(cellFloat(c(k)));
       if (v > 0) return v;
     }
+    const withdrawn = sanePositionUsd(cellFloat(c("Выведено, USD")));
+    if (withdrawn > 0) return withdrawn;
     return 0;
   }
 
@@ -503,8 +500,8 @@
     let link = cell(col("Ссылка на позицию", "position_url", "position_link", "link", "url", "revert_link"));
     if (!link) link = buildRevertLink(chain, platformRaw, nftId);
     const posId = revertPositionId(link) || String(nftId || "").replace(/\D/g, "");
-    const t0 = cell(col("Токен 0", "token0", "AK", "AM", "E"));
-    const t1 = cell(col("Токен 1", "token1", "AL", "AN", "F"));
+    const t0 = cell(col("Токен 0", "token0", "AK", "AM"));
+    const t1 = cell(col("Токен 1", "token1", "AL", "AN"));
     if (!posId && !t0 && !t1) return null;
     const active = rowIsActive(headers, row);
     let closedDisp = cell(col("Дата закрытия", "Дата закрытия норм", "closed_at", "X", "D"));
@@ -537,25 +534,23 @@
       feeTier: feeTierFromSheetRaw(iFeeTier >= 0 ? row[iFeeTier] : ""),
       link,
       positionId: posId,
-      valueUsd: active ? Math.round(liveValueUsdFromSheetRow(headers, row) * 100) / 100 : 0,
+      valueUsd: Math.round(liveValueUsdFromSheetRow(headers, row) * 100) / 100,
     };
     const iLower = col(
       "Мин. цена диапазона",
       "Мин. цена для",
       "price_lower",
       "BE",
-      "Истинный диапазон (мин)",
-      "M"
+      "Истинный диапазон (мин)"
     );
     const iUpper = col(
       "Макс. цена диапазона",
       "Макс. цена для",
       "price_upper",
       "BD",
-      "Истинный диапазон (макс)",
-      "N"
+      "Истинный диапазон (макс)"
     );
-    const iMkt = col("Текущая цена", "Asset market price", "BW", "Рыночная цена", "market_price", "O");
+    const iMkt = col("Текущая цена", "Asset market price", "BW", "Рыночная цена", "market_price");
     if (iLower >= 0 && iUpper >= 0) {
       const lower = parseSheetFloat(row[iLower]);
       const upper = parseSheetFloat(row[iUpper]);

@@ -775,11 +775,23 @@
     };
 
     renderPositions();
-    if (window.PortfolioUI?.enrichLpRangesFromSheet) {
-      window.PortfolioUI.enrichLpRangesFromSheet(lp, {
-        sheetId: GOOGLE_SHEET_ID,
-        sheetName: PUBLIC_SHEET_NAME
-      }).then(() => renderPositions());
+    const syncLp = window.PortfolioUI?.syncLiquidityPositionsFromSheet || window.PortfolioUI?.enrichLpRangesFromSheet;
+    if (syncLp) {
+      const run = window.PortfolioUI.syncLiquidityPositionsFromSheet
+        ? () => window.PortfolioUI.syncLiquidityPositionsFromSheet({
+            sheetId: GOOGLE_SHEET_ID,
+            sheetName: PUBLIC_SHEET_NAME,
+            fallback: lp,
+          })
+        : () => window.PortfolioUI.enrichLpRangesFromSheet(lp, {
+            sheetId: GOOGLE_SHEET_ID,
+            sheetName: PUBLIC_SHEET_NAME,
+          });
+      run().then((fresh) => {
+        const list = Array.isArray(fresh) ? fresh : lp;
+        lp.splice(0, lp.length, ...list);
+        renderPositions();
+      });
     }
 
     document.querySelectorAll(".btn[data-tab]").forEach((btn) => {

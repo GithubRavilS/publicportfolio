@@ -398,7 +398,12 @@
         const data = window.PORTFOLIO_DATA || { snapshots: [], transactions: [], prices: { BTC: 0, ETH: 0 }, initialCapitalUsd: 15500 };
     const aprAuditByDay = Object.fromEntries((data.aprAudit || []).map((x) => [x.date, x]));
     const GOOGLE_SHEET_ID = data.googleSheetId || "1yq5nbZ-fws8o9C0PCZWjlZjxUqZs60E4hfPiI7L0GD8";
-    const PUBLIC_SHEET_NAME = data.publicPortfolioSheetName || "Public Portfolio";
+    const PUBLIC_SHEET_NAME = data.publicPortfolioSheetName || "Public portfolio";
+    const PORTFOLIO_WALLET = (
+      data.portfolioWallet
+      || (Array.isArray(data.debankWallets) && data.debankWallets[0])
+      || "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355"
+    ).trim();
 
     function feeBasedAprFromSnapshots(snaps) {
       return (snaps || []).map((s, i) => {
@@ -484,8 +489,10 @@
     };
     const fmtPct = (n) => Number(n || 0).toFixed(2) + "%";
     const fmtFeeTier = (v) => {
-      const n = Number(v || 0);
+      let n = Number(v || 0);
       if (!n) return "—";
+      if (n >= 50) n = n / 10000;
+      else if (n > 1 && n <= 100) n = n / 100;
       let s = n < 0.01 ? n.toFixed(4) : n < 1 ? n.toFixed(3) : n.toFixed(2);
       if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
       return s + "%";
@@ -781,11 +788,13 @@
         ? () => window.PortfolioUI.syncLiquidityPositionsFromSheet({
             sheetId: GOOGLE_SHEET_ID,
             sheetName: PUBLIC_SHEET_NAME,
+            walletAddress: PORTFOLIO_WALLET,
             fallback: lp,
           })
         : () => window.PortfolioUI.enrichLpRangesFromSheet(lp, {
             sheetId: GOOGLE_SHEET_ID,
             sheetName: PUBLIC_SHEET_NAME,
+            walletAddress: PORTFOLIO_WALLET,
           });
       run().then((fresh) => {
         const list = Array.isArray(fresh) ? fresh : lp;

@@ -754,10 +754,7 @@
       });
     });
 
-    let lp = data.liquidityPositions || [];
-    if (window.PortfolioUI?.applyLpRangeToPosition) {
-      lp.forEach((p) => window.PortfolioUI.applyLpRangeToPosition(p));
-    }
+    let lp = [];
     const lending = data.lendingPositions || [];
     const lpEl = document.getElementById("lpPositions");
     const lendEl = document.getElementById("lendingPositions");
@@ -781,26 +778,29 @@
       lendEl.innerHTML = lending.map((p) => window.PortfolioUI.renderLendingCard(p, cardCtx())).join("") || `<div class="muted">${lang === "ru" ? "Нет данных по лендинг-позициям" : "No lending positions"}</div>`;
     };
 
-    renderPositions();
+    const lpFallback = data.liquidityPositions || [];
     const syncLp = window.PortfolioUI?.syncLiquidityPositionsFromSheet || window.PortfolioUI?.enrichLpRangesFromSheet;
+    const finishLpLoad = (list) => {
+      lp.splice(0, lp.length, ...(Array.isArray(list) && list.length ? list : lpFallback));
+      if (window.PortfolioUI?.applyLpRangeToPosition) lp.forEach((p) => window.PortfolioUI.applyLpRangeToPosition(p));
+      renderPositions();
+    };
     if (syncLp) {
       const run = window.PortfolioUI.syncLiquidityPositionsFromSheet
         ? () => window.PortfolioUI.syncLiquidityPositionsFromSheet({
             sheetId: GOOGLE_SHEET_ID,
             sheetName: PUBLIC_SHEET_NAME,
             walletAddress: PORTFOLIO_WALLET,
-            fallback: lp,
+            fallback: lpFallback,
           })
-        : () => window.PortfolioUI.enrichLpRangesFromSheet(lp, {
+        : () => window.PortfolioUI.enrichLpRangesFromSheet([], {
             sheetId: GOOGLE_SHEET_ID,
             sheetName: PUBLIC_SHEET_NAME,
             walletAddress: PORTFOLIO_WALLET,
           });
-      run().then((fresh) => {
-        const list = Array.isArray(fresh) ? fresh : lp;
-        lp.splice(0, lp.length, ...list);
-        renderPositions();
-      });
+      run().then(finishLpLoad).catch(() => finishLpLoad(lpFallback));
+    } else {
+      finishLpLoad(lpFallback);
     }
 
     document.querySelectorAll(".btn[data-tab]").forEach((btn) => {

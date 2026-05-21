@@ -1378,7 +1378,7 @@ def lending_chain_for_position(
     p = (protocol or "").lower()
     coll = (collateral_asset or "").upper()
     if "fluid" in p:
-        return "arb"
+        return "eth"
     if "compound" in p:
         if "CBBTC" in coll:
             return "base"

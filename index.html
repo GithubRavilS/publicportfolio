@@ -442,23 +442,45 @@
       });
     }
 
-    function chartDailyYieldSeries(snaps, rawSeries, maxApr = 80) {
-      const raw = rawSeries || [];
-      const cap = (v) => Math.max(0, Math.min(Number(v) || 0, maxApr));
-      const nonzero = raw.filter((v) => Number(v) > 0.5).length;
-      if (nonzero >= 10 && raw.length === (snaps || []).length) {
-        return raw.map(cap);
+    function rebuildSnapshotsFromEquityRef(snaps, equityByDay) {
+      if (!equityByDay || !Object.keys(equityByDay).length) return snaps || [];
+      const byDay = {};
+      for (const s of snaps || []) {
+        const d = (s.timestamp || "").slice(0, 10);
+        if (d) byDay[d] = { ...s };
       }
+      for (const [d, row] of Object.entries(equityByDay)) {
+        const prev = byDay[d] || {};
+        byDay[d] = {
+          timestamp: `${d}T00:00:00.000Z`,
+          collateralUsd: Number(row.collateralUsd ?? prev.collateralUsd ?? 0),
+          debtUsd: Number(row.debtUsd ?? prev.debtUsd ?? 0),
+          liquidityUsd: Number(row.liquidityUsd ?? prev.liquidityUsd ?? 0),
+          equityUsd: Number(row.equityUsd ?? prev.equityUsd ?? 0),
+          dailyFeeIncomeUsd: Number(row.dailyFeeIncomeUsd ?? prev.dailyFeeIncomeUsd ?? 0)
+        };
+      }
+      return Object.keys(byDay).sort().map((d) => byDay[d]);
+    }
+
+    function chartDailyYieldSeries(snaps, rawSeries, yieldByDay, maxApr = 80) {
+      const cap = (v) => Math.max(0, Math.min(Number(v) || 0, maxApr));
+      const ref = yieldByDay || {};
       const feeBased = feeBasedAprFromSnapshots(snaps);
       let lastGood = 0;
-      return (snaps || []).map((_, i) => {
+      return (snaps || []).map((s, i) => {
+        const d = (s.timestamp || "").slice(0, 10);
+        const refApr = Number(ref[d] || 0);
         const feeApr = Number(feeBased[i] || 0);
-        const r = Number(raw[i] || 0);
-        let chosen = r > 0 ? r : feeApr;
+        const r = Number(rawSeries?.[i] || 0);
+        let chosen = 0;
+        if (refApr > 0.5) chosen = refApr;
+        else if (0.5 < feeApr && feeApr <= 55) chosen = feeApr;
+        else if (r > 0.5) chosen = r;
         if (chosen > 0 && feeApr > 0 && chosen > Math.max(feeApr * 3.5, 60)) chosen = feeApr;
         chosen = cap(chosen);
         if (chosen > 0) lastGood = chosen;
-        else if (lastGood > 0 && feeApr <= 0) chosen = lastGood;
+        else if (lastGood > 0) chosen = lastGood;
         return chosen;
       });
     }
@@ -494,7 +516,10 @@
 
     const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
     const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
-    const snapshots = data.snapshots || [];
+    let snapshots = rebuildSnapshotsFromEquityRef(
+      data.snapshots || [],
+      data.equityHistoryByDay || null
+    );
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
@@ -662,7 +687,12 @@
 
     const labels = snapshots.map(s => (s.timestamp || "").slice(0, 10));
     const baseEquity = snapshots.map((s) => Number(s.equityUsd || 0) + manualEquityAdj);
-    const dailyYieldSeries = chartDailyYieldSeries(snapshots, data.dailyYieldSeries || [], 80);
+    const dailyYieldSeries = chartDailyYieldSeries(
+      snapshots,
+      data.dailyYieldSeries || [],
+      data.chartYieldByDay || null,
+      80
+    );
 
     let unit = "USD";
     const toUnit = (usd) => {

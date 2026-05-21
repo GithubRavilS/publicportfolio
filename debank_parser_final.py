@@ -358,10 +358,67 @@ def parse_health_factor_lines(line: str, next_line: str = "") -> str | None:
 
 def detect_chain_before_lending(lines: list[str], lending_index: int) -> str:
     for j in range(lending_index - 1, max(-1, lending_index - 24), -1):
+        key = lines[j].strip().lower()
+        if key not in PROFILE_CHAIN_NAMES:
+            continue
         slug = chain_slug_from_line(lines[j].strip())
         if slug:
             return slug
     return ""
+
+
+PROFILE_CHAIN_NAMES = frozenset(
+    {"op", "optimism", "base", "ethereum", "arbitrum", "polygon", "matic", "bsc", "bnb chain", "plasma"}
+)
+
+
+def parse_profile_chain_totals(lines: list[str], max_lines: int = 120) -> dict[str, float]:
+    """Сводка DeBank (блок All Chain → Wallet): «Ethereum» + «$501», не цена токена ETH."""
+    totals: dict[str, float] = {}
+    limit = min(len(lines), max_lines)
+    start, end = 0, limit
+    for i in range(limit):
+        low = lines[i].strip().lower()
+        if low == "all chain":
+            start = i
+        elif low == "wallet" and i > start:
+            end = i
+            break
+    for i in range(start, end - 1):
+        key = lines[i].strip().lower()
+        if key not in PROFILE_CHAIN_NAMES:
+            continue
+        slug = chain_slug_from_line(lines[i].strip())
+        if not slug:
+            continue
+        m = re.search(r"^\$([\d,]+\.?\d*)$", lines[i + 1].strip())
+        if m:
+            totals[slug] = float(m.group(1).replace(",", ""))
+    return totals
+
+
+def nearest_chain_by_position_usd(usd: float, chain_totals: dict[str, float]) -> str:
+    if usd <= 0 or not chain_totals:
+        return ""
+    best_slug = ""
+    best_diff = float("inf")
+    for slug, chain_usd in chain_totals.items():
+        diff = abs(chain_usd - usd)
+        if diff < best_diff:
+            best_diff = diff
+            best_slug = slug
+    if best_slug and best_diff <= max(80.0, usd * 0.25):
+        return best_slug
+    return ""
+
+
+def lending_position_usd_before(lines: list[str], lending_index: int) -> float:
+    """Паттерн DeBank: «Fluid» → «$487» → «Lending»."""
+    if lending_index >= 2:
+        m = re.search(r"^\$([\d,]+\.?\d*)$", lines[lending_index - 1].strip())
+        if m:
+            return float(m.group(1).replace(",", ""))
+    return 0.0
 
 
 def run_parse_and_save(lines: list[str], wallet: str) -> int:
@@ -373,6 +430,7 @@ def run_parse_and_save(lines: list[str], wallet: str) -> int:
 
     print("\n🔍 Parsing lending positions...")
 
+    chain_totals = parse_profile_chain_totals(lines)
     positions = []
     i = 0
 
@@ -382,7 +440,10 @@ def run_parse_and_save(lines: list[str], wallet: str) -> int:
         if line.lower() == "lending":
             protocol = "Unknown"
             health_factor = None
+            pos_usd = lending_position_usd_before(lines, i)
             chain = detect_chain_before_lending(lines, i)
+            if not chain and pos_usd > 0:
+                chain = nearest_chain_by_position_usd(pos_usd, chain_totals)
             supplied = []
             borrowed = []
 

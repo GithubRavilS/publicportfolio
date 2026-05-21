@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import csv
 import json
+import re
 import sqlite3
 from io import StringIO
 from pathlib import Path
@@ -141,15 +142,112 @@ def invested_usd_from_row(r: dict[str, str]) -> float:
     return 0.0
 
 
+def normalize_closed_cell(raw: str) -> str:
+    """Пустая строка = позиция не закрыта (по колонке даты/статуса)."""
+    s = (raw or "").strip().replace("\xa0", " ")
+    if not s:
+        return ""
+    low = s.lower()
+    if low in ("null", "none", "n/a", "-", "false", "no", "0"):
+        return ""
+    return s
+
+
+def liquidity_is_active_from_row(row: dict[str, str]) -> bool:
+    ia = (row.get("is_active") or "").strip().lower()
+    if ia in ("true", "yes", "1", "да"):
+        return True
+    if ia in ("false", "no", "0", "нет"):
+        return False
+    closed_norm = normalize_closed_cell(
+        row_get(row, "closed_at", "Дата закрытия норм", "X")
+    )
+    return closed_norm == ""
+
+
+def closed_display_from_row(row: dict[str, str], is_active: bool) -> str:
+    if is_active:
+        return ""
+    raw = row_get(row, "Дата закрытия норм", "closed_at", "X").strip()
+    if not raw:
+        return ""
+    return raw if normalize_closed_cell(raw) else ""
+
+
+def apr_percent_from_cell(raw: str) -> float:
+    """APR в процентах: из ячейки с % или из доли (<3 считаем долей от 1)."""
+    s = (raw or "").strip()
+    if not s:
+        return 0.0
+    p = parse_pct(s)
+    if p <= 0:
+        return 0.0
+    if "%" in s or p >= 3.0:
+        return min(p, 500.0)
+    return min(p * 100.0, 500.0)
+
+
+def active_apr_from_public_row(row: dict[str, str]) -> float:
+    for key in ("APR из Revert", "APR расчетный", "apr", "S"):
+        raw = (row.get(key) or "").strip()
+        if raw:
+            v = apr_percent_from_cell(raw)
+            if v > 0:
+                return v
+    return 0.0
+
+
+def fees_usd_public_row(row: dict[str, str]) -> float:
+    for key in ("Заработано комиссий итого", "fees_value", "AG"):
+        v = parse_float(row.get(key, ""))
+        if v > 0:
+            return v
+    return 0.0
+
+
+def fee_tier_public_row(row: dict[str, str]) -> float:
+    for key in ("fee_tier", "BJ"):
+        v = parse_float(row.get(key, ""))
+        if v > 0:
+            return v / 10000.0
+    return 0.0
+
+
+def live_value_usd_public_row(row: dict[str, str]) -> float:
+    keys = (
+        "Инвестировано ВСЕГО (сейчас)",
+        "underlying_value",
+        "AA",
+        "AH",
+        "AF",
+        "AE",
+        "AD",
+        "AC",
+    )
+    for k in keys:
+        v = parse_float(row.get(k, ""))
+        if v > 0:
+            return v
+    token0 = (row.get("token0") or row.get("AK") or "").strip().upper()
+    token1 = (row.get("token1") or row.get("AL") or "").strip().upper()
+    stable_symbols = {"USDC", "USDT", "DAI", "USDE", "FDUSD", "TUSD", "USD"}
+    amt0 = parse_float(row.get("AU", "")) or parse_float(row.get("current_amount0", ""))
+    amt1 = parse_float(row.get("AV", "")) or parse_float(row.get("current_amount1", ""))
+    if token0 in stable_symbols or token1 in stable_symbols:
+        return max(0.0, amt0) + max(0.0, amt1)
+    return 0.0
+
+
 def closed_position_apr(row: dict[str, str]) -> float:
-    opened = parse_date(row.get("W", ""))
-    closed = parse_date(row.get("X", ""))
+    opened = parse_date(row_get(row, "Дата открытия норм", "W", "first_mint_ts"))
+    closed_raw = row_get(row, "Дата закрытия норм", "closed_at", "X")
+    closed = parse_date(closed_raw)
     if not opened or not closed:
         return 0.0
     days = (closed - opened).days
     if days <= 0:
         return 0.0
-    fees = parse_float(row.get("AG", ""))
+    fees = fees_usd_public_row(row)
     invested = invested_usd_from_row(row)
     if invested <= 0 or fees <= 0:
         return 0.0
@@ -403,6 +501,22 @@ def build_apr_audit(
     return audit
 
 
+def revert_position_id(link: str) -> str:
+    s = (link or "").strip()
+    if not s:
+        return ""
+    m = re.search(r"/(\d+)(?:\?.*)?$", s)
+    return m.group(1) if m else ""
+
+
+def row_get(row: dict[str, str], *keys: str) -> str:
+    for k in keys:
+        v = (row.get(k) or "").strip()
+        if v:
+            return v
+    return ""
+
+
 def dex_from_revert_link(link: str) -> str:
     s = (link or "").lower()
     if "aerodrome" in s:
@@ -599,38 +713,51 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
         rows = load_google_sheet_rows(sheet_id, str(config.get("revert_pools_gid", "")).strip())
     out = []
     for r in rows:
-        token0 = (r.get("AK", "") or "").strip()
-        token1 = (r.get("AL", "") or "").strip()
+        token0 = row_get(r, "token0", "AK")
+        token1 = row_get(r, "token1", "AL")
         if not token0 and not token1:
             continue
-        closed_raw = (r.get("X", "") or r.get("closed_at", "") or "").strip()
-        if closed_raw.lower() in ("null", "none", "n/a"):
-            closed_raw = ""
-        is_active = not closed_raw
-        apr = (parse_pct(r.get("S", "")) * 100) if is_active else closed_position_apr(r)
+        is_active = liquidity_is_active_from_row(r)
+        closed_at = closed_display_from_row(r, is_active)
+        apr = active_apr_from_public_row(r) if is_active else closed_position_apr(r)
         if (not is_active) and apr <= 0:
             apr = 0.0
-        # BJ в шите в «тысячных»; после /1000 получалось в 10 раз больше реального tier (3% вместо 0.3%)
-        bj = parse_float(r.get("BJ", ""))
-        fee_tier = (bj / 10000) if bj > 0 else 0.0
-        link = (r.get("I", "") or "").strip()
+        fee_tier = fee_tier_public_row(r)
+        link = row_get(r, "Ссылка на позицию", "I")
         dex = dex_from_revert_link(link)
+        pos_id = revert_position_id(link)
+        val_usd = live_value_usd_public_row(r) if is_active else 0.0
         item = {
             "platform": dex,
             "dataSource": "Revert Finance",
-            "chain": (r.get("BH", "") or "").strip(),
+            "chain": row_get(r, "network", "BH"),
             "pair": f"{token0} / {token1}".strip(" /"),
-            "feesUsd": parse_float(r.get("AG", "")),
+            "feesUsd": fees_usd_public_row(r),
             "apr": apr,
-            "openedAt": (r.get("W", "") or "").strip(),
-            "closedAt": (r.get("X", "") or "").strip(),
+            "openedAt": row_get(r, "Дата открытия норм", "W", "first_mint_ts"),
+            "closedAt": closed_at,
             "isActive": is_active,
             "feeTier": fee_tier,
             "link": link,
+            "positionId": pos_id,
+            "valueUsd": round(val_usd, 2),
         }
         item.update(parse_position_range(r))
         out.append(item)
-    return out
+    by_key: dict[str, dict] = {}
+    for item in out:
+        key = (item.get("positionId") or "").strip() or (item.get("link") or "").strip()
+        if not key:
+            key = f"{item.get('chain')}|{item.get('pair')}|{len(by_key)}"
+        by_key[key] = item
+
+    def sort_key(it: dict) -> tuple:
+        active_rank = 0 if it.get("isActive") else 1
+        d = parse_date(str(it.get("openedAt") or ""))
+        ts = d.timestamp() if d else 0.0
+        return (active_rank, -ts)
+
+    return sorted(by_key.values(), key=sort_key)
 
 
 def strategy_lp_positions(config: dict) -> list[dict]:
@@ -638,26 +765,15 @@ def strategy_lp_positions(config: dict) -> list[dict]:
     sheet_name = config.get("strategy_one_sheet_name", "Strategy 1")
     rows = load_google_sheet_rows_by_name(sheet_id, sheet_name)
     out: list[dict] = []
-    stable_symbols = {"USDC", "USDT", "DAI", "USDE", "FDUSD", "TUSD", "USD"}
     for r in rows:
-        token0 = (r.get("AK", "") or "").strip()
-        token1 = (r.get("AL", "") or "").strip()
-        if token0 or token1:
-            pair = f"{token0} / {token1}".strip(" /")
-            value_candidates = [
-                parse_float(r.get("AA", "")),
-                parse_float(r.get("AH", "")),
-                parse_float(r.get("AF", "")),
-                parse_float(r.get("AE", "")),
-                parse_float(r.get("AD", "")),
-                parse_float(r.get("AC", "")),
-            ]
-            value_usd = next((v for v in value_candidates if v > 0), 0.0)
-            amt0 = parse_float(r.get("AU", ""))
-            amt1 = parse_float(r.get("AV", ""))
-            # If sheet has only token amounts for stable pairs, use them as USD proxy.
-            if value_usd <= 0 and (token0.upper() in stable_symbols or token1.upper() in stable_symbols):
-                value_usd = max(0.0, amt0) + max(0.0, amt1)
+        token0 = (r.get("AK", "") or r.get("token0", "") or "").strip()
+        token1 = (r.get("AL", "") or r.get("token1", "") or "").strip()
+        if not token0 and not token1:
+            continue
+        pair = f"{token0} / {token1}".strip(" /")
+        value_usd = live_value_usd_public_row(r)
+        fees_usd = fees_usd_public_row(r)
+        if fees_usd <= 0:
             fees_candidates = [
                 parse_float(r.get("AG", "")),
                 parse_float(r.get("AN", "")) + parse_float(r.get("AM", "")),
@@ -665,30 +781,32 @@ def strategy_lp_positions(config: dict) -> list[dict]:
                 parse_float(r.get("AM", "")),
             ]
             fees_usd = next((v for v in fees_candidates if v > 0), 0.0)
-            link = (r.get("I", "") or "").strip()
-            closed_raw = (r.get("X", "") or r.get("closed_at", "") or "").strip()
-        if closed_raw.lower() in ("null", "none", "n/a"):
-            closed_raw = ""
-        is_active = not closed_raw
-            item = {
-                "instrument": "LP",
-                "platform": dex_from_revert_link(link),
-                "dataSource": "Revert Finance",
-                "pair": pair or "Pool",
-                "chain": (r.get("BH", "") or "").strip(),
-                "feesUsd": fees_usd,
-                "apr": parse_pct(r.get("S", "")) * 100 if parse_pct(r.get("S", "")) > 0 else 0.0,
-                "openedAt": (r.get("W", "") or "").strip(),
-                "closedAt": (r.get("X", "") or "").strip(),
-                "isActive": is_active,
-                "feeTier": (parse_float(r.get("BJ", "")) / 10000.0) if parse_float(r.get("BJ", "")) > 0 else 0.0,
-                "link": link,
-                "valueUsd": value_usd if is_active else 0.0,
-            }
-            item.update(parse_position_range(r))
-            out.append(item)
+        link = (r.get("I", "") or "").strip()
+        is_active = liquidity_is_active_from_row(r)
+        closed_at = closed_display_from_row(r, is_active)
+        apr = active_apr_from_public_row(r) if is_active else closed_position_apr(r)
+        if (not is_active) and apr <= 0:
+            apr = 0.0
+        fee_tier = fee_tier_public_row(r)
+        item = {
+            "instrument": "LP",
+            "platform": dex_from_revert_link(link),
+            "dataSource": "Revert Finance",
+            "pair": pair or "Pool",
+            "chain": (r.get("BH", "") or r.get("network", "") or "").strip(),
+            "feesUsd": fees_usd,
+            "apr": apr,
+            "openedAt": row_get(r, "Дата открытия норм", "W", "first_mint_ts"),
+            "closedAt": closed_at,
+            "isActive": is_active,
+            "feeTier": fee_tier,
+            "link": link,
+            "positionId": revert_position_id(link),
+            "valueUsd": value_usd if is_active else 0.0,
+        }
+        item.update(parse_position_range(r))
+        out.append(item)
     return out
-
 
 def pendle_positions(wallet: str) -> tuple[list[dict], float]:
     if not wallet:

@@ -1147,16 +1147,76 @@ def merge_strategy_one_positions(
     return out
 
 
-def strategy_one_weighted_fee_apr(positions: list[dict]) -> float:
-    active = [p for p in positions if p.get("isActive")]
-    total = sum(float(p.get("valueUsd") or 0.0) for p in active)
-    if total <= 0:
+def _strategy_one_days_between(start_day: str, end_day: str) -> int:
+    try:
+        d0 = datetime.strptime(start_day[:10], "%Y-%m-%d").date()
+        d1 = datetime.strptime(end_day[:10], "%Y-%m-%d").date()
+        return max(1, (d1 - d0).days)
+    except ValueError:
+        return 1
+
+
+def strategy_one_display_apr_from_position(
+    p: dict,
+    *,
+    as_of_day: str,
+    portfolio_start_day: str,
+) -> float:
+    """Та же логика, что на карточках в index.html (Fee APY / рост от $10)."""
+    instrument = str(p.get("instrument") or "")
+    if instrument == "LP":
+        return float(p.get("apr") or 0.0)
+    base_usd = 10.0
+    value_usd = float(p.get("valueUsd") or 0.0)
+    if value_usd <= 0:
         return 0.0
-    w_apr = 0.0
-    for p in active:
-        w = float(p.get("valueUsd") or 0.0) / total
-        w_apr += w * float(p.get("apr") or 0.0)
-    return w_apr
+    opened = str(p.get("openedAt") or "").strip()
+    start_day = portfolio_start_day
+    if opened and re.match(r"\d{2}\.\d{2}\.\d{4}", opened):
+        dd, mm, yyyy = opened.split(".")
+        start_day = f"{yyyy}-{mm}-{dd}"
+    days = _strategy_one_days_between(start_day, as_of_day)
+    return ((value_usd - base_usd) / base_usd / days) * 365.0 * 100.0
+
+
+def strategy_one_arithmetic_mean_apr(
+    positions: list[dict],
+    *,
+    as_of_day: str,
+    portfolio_start_day: str,
+) -> float:
+    """Среднее арифметическое доходности активных позиций (3 шт. ≈ 2.5%, не 0.33%)."""
+    aprs: list[float] = []
+    for p in positions:
+        if p.get("isActive") is False:
+            continue
+        apr = strategy_one_display_apr_from_position(
+            p, as_of_day=as_of_day, portfolio_start_day=portfolio_start_day
+        )
+        if apr > 0:
+            aprs.append(apr)
+    if not aprs:
+        return 0.0
+    return sum(aprs) / len(aprs)
+
+
+def strategy_one_attach_display_apr(
+    positions: list[dict],
+    *,
+    as_of_day: str,
+    portfolio_start_day: str,
+) -> list[dict]:
+    out: list[dict] = []
+    for p in positions:
+        row = dict(p)
+        row["displayApr"] = round(
+            strategy_one_display_apr_from_position(
+                row, as_of_day=as_of_day, portfolio_start_day=portfolio_start_day
+            ),
+            4,
+        )
+        out.append(row)
+    return out
 
 
 def strategy_one_chart_yield_series(
@@ -1164,21 +1224,18 @@ def strategy_one_chart_yield_series(
     positions: list[dict],
     *,
     max_apr: float = 25.0,
+    portfolio_start_day: str = "",
 ) -> list[float]:
-    fee_apr = strategy_one_weighted_fee_apr(positions)
-    out: list[float] = []
-    for i, _ in enumerate(snapshots):
-        if i == 0:
-            out.append(0.0)
-            continue
-        prev_eq = max(float(snapshots[i - 1].get("equityUsd") or 0.0), 1e-9)
-        cur_eq = float(snapshots[i].get("equityUsd") or 0.0)
-        eq_apr = ((cur_eq - prev_eq) / prev_eq) * 365.0 * 100.0
-        chosen = eq_apr if abs(eq_apr) <= max_apr else fee_apr
-        if chosen <= 0 or chosen > max_apr:
-            chosen = fee_apr
-        out.append(max(0.0, min(chosen, max_apr)))
-    return clamp_apr_spikes(out, max_apr=max_apr, window_days=5)
+    """Правый график S1: одно значение — среднее арифметическое APR активных позиций."""
+    if not snapshots:
+        return []
+    as_of = str(snapshots[-1].get("timestamp", ""))[:10]
+    start_day = portfolio_start_day or str(snapshots[0].get("timestamp", ""))[:10]
+    mean_apr = strategy_one_arithmetic_mean_apr(
+        positions, as_of_day=as_of, portfolio_start_day=start_day
+    )
+    mean_apr = max(0.0, min(mean_apr, max_apr))
+    return [0.0] + [mean_apr] * (len(snapshots) - 1)
 
 
 def strategy_one_apr_from_snapshots(snapshots: list[dict], *, max_apr: float = 120.0) -> list[float]:
@@ -2016,9 +2073,22 @@ def main() -> None:
         pendle_usd=s_pendle_usd,
         hyper_usd=s_hyper_usd,
     )
-    strategy_one["dailyYieldSeries"] = strategy_one_chart_yield_series(
-        strategy_one["snapshots"], s1_positions, max_apr=25.0
+    s1_start_day = (
+        str(strategy_one["snapshots"][0].get("timestamp", ""))[:10] if strategy_one.get("snapshots") else today
     )
+    s1_positions = strategy_one_attach_display_apr(
+        s1_positions, as_of_day=today, portfolio_start_day=s1_start_day
+    )
+    s1_mean_apr = strategy_one_arithmetic_mean_apr(
+        s1_positions, as_of_day=today, portfolio_start_day=s1_start_day
+    )
+    strategy_one["dailyYieldSeries"] = strategy_one_chart_yield_series(
+        strategy_one["snapshots"],
+        s1_positions,
+        max_apr=25.0,
+        portfolio_start_day=s1_start_day,
+    )
+    strategy_one["meanDisplayApr"] = round(s1_mean_apr, 4)
     strategy_one["positions"] = s1_positions
     conn.close()
 

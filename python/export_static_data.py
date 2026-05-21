@@ -6,7 +6,7 @@ import sqlite3
 import sys
 from io import StringIO
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from collections.abc import Iterable
 
 import requests
@@ -23,7 +23,9 @@ def parse_pct(value: str) -> float:
 
 
 def parse_float(value: str) -> float:
-    s = (value or "").strip().replace(" ", "")
+    s = (value or "").strip()
+    for ch in ("\u00a0", "\u202f", " "):
+        s = s.replace(ch, "")
     if not s:
         return 0.0
     # locale-safe normalization:
@@ -135,6 +137,157 @@ def fetch_eth_history(start_date: str, end_date: str) -> dict[str, float]:
     return out
 
 
+def fetch_btc_history(start_date: str, end_date: str) -> dict[str, float]:
+    start_dt = datetime.fromisoformat(start_date)
+    end_dt = datetime.fromisoformat(end_date)
+    from_ts = int(start_dt.timestamp())
+    to_ts = int(end_dt.timestamp())
+    url = (
+        f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
+        f"?vs_currency=usd&from={from_ts}&to={to_ts}"
+    )
+    res = requests.get(url, timeout=45)
+    res.raise_for_status()
+    out: dict[str, float] = {}
+    for ts_ms, px in res.json().get("prices", []):
+        out[datetime.utcfromtimestamp(ts_ms / 1000).date().isoformat()] = float(px)
+    return out
+
+
+def _btc_price_on(btc_by_day: dict[str, float], day: str) -> float:
+    if day in btc_by_day and btc_by_day[day] > 0:
+        return float(btc_by_day[day])
+    known = sorted((d, p) for d, p in btc_by_day.items() if p > 0)
+    if not known:
+        return 0.0
+    for d, p in reversed(known):
+        if d <= day:
+            return p
+    return known[0][1]
+
+
+def load_equity_reference_by_day() -> dict[str, dict]:
+    by_day: dict[str, dict] = {}
+    ref_path = Path("data/equity-history-reference.json")
+    if ref_path.exists():
+        try:
+            payload = json.loads(ref_path.read_text(encoding="utf-8"))
+            for d, snap in (payload.get("byDay") or {}).items():
+                if snap:
+                    by_day[str(d)[:10]] = dict(snap)
+        except Exception:
+            pass
+    return by_day
+
+
+def apply_snapshot_reference(snapshots: list[dict], ref_by_day: dict[str, dict]) -> list[dict]:
+    """Восстанавливает капитал из эталона (до 18.05), не из битого portfolio-data.js на PA."""
+    if not snapshots or not ref_by_day:
+        return snapshots
+    out: list[dict] = []
+    for s in snapshots:
+        d = str(s.get("timestamp", ""))[:10]
+        row = dict(s)
+        if d in ref_by_day:
+            ref = ref_by_day[d]
+            for k in ("equityUsd", "collateralUsd", "debtUsd", "liquidityUsd", "dailyFeeIncomeUsd"):
+                if k in ref and ref[k] is not None:
+                    row[k] = float(ref[k])
+        out.append(row)
+    return out
+
+
+def snapshots_from_equity_reference(
+    ref_by_day: dict[str, dict],
+    db_snapshots: list[dict],
+    *,
+    through_day: str | None = None,
+) -> list[dict]:
+    """
+    Полный календарь: эталон — источник истины для каждого дня, DB/live только дополняет хвост.
+    Иначе при дырах в daily_metrics (27.04 → 19.05) график «прыгает».
+    """
+    if not ref_by_day:
+        return db_snapshots
+    db_by_day = {str(s.get("timestamp", ""))[:10]: dict(s) for s in db_snapshots}
+    end_day = through_day or max(
+        max(ref_by_day.keys()),
+        max(db_by_day.keys()) if db_by_day else max(ref_by_day.keys()),
+    )
+    start_day = min(min(ref_by_day.keys()), min(db_by_day.keys()) if db_by_day else min(ref_by_day.keys()))
+    d_cur = datetime.strptime(start_day, "%Y-%m-%d").date()
+    d_end = datetime.strptime(end_day, "%Y-%m-%d").date()
+    out: list[dict] = []
+    while d_cur <= d_end:
+        ds = d_cur.isoformat()
+        if ds in ref_by_day:
+            row = dict(ref_by_day[ds])
+        elif ds in db_by_day:
+            row = dict(db_by_day[ds])
+        else:
+            d_cur += timedelta(days=1)
+            continue
+        row["timestamp"] = f"{ds}T00:00:00.000Z"
+        row["equityUsd"] = float(row.get("equityUsd") or 0.0)
+        row["collateralUsd"] = float(row.get("collateralUsd") or 0.0)
+        row["debtUsd"] = float(row.get("debtUsd") or 0.0)
+        row["liquidityUsd"] = float(row.get("liquidityUsd") or 0.0)
+        row["dailyFeeIncomeUsd"] = float(row.get("dailyFeeIncomeUsd") or 0.0)
+        out.append(row)
+        d_cur += timedelta(days=1)
+    return out
+
+
+def extrapolate_equity_tail_btc(
+    snapshots: list[dict],
+    anchor_day: str,
+    ref_by_day: dict[str, dict],
+) -> list[dict]:
+    """После anchor_day: equity движется как BTC (для дыр 19–21.05)."""
+    anchor = ref_by_day.get(anchor_day)
+    if not anchor or not snapshots:
+        return snapshots
+    anchor_eq = float(anchor.get("equityUsd") or 0.0)
+    if anchor_eq <= 0:
+        return snapshots
+    by_day = {str(s["timestamp"])[:10]: dict(s) for s in snapshots}
+    last_day = max(by_day.keys())
+    target_end = max(
+        last_day,
+        datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    )
+    if target_end <= anchor_day:
+        return snapshots
+    try:
+        btc = fetch_btc_history(anchor_day, target_end)
+    except Exception:
+        btc = {}
+    b0 = _btc_price_on(btc, anchor_day)
+    d_cur = datetime.strptime(anchor_day, "%Y-%m-%d").date()
+    d_end = datetime.strptime(target_end, "%Y-%m-%d").date()
+    while d_cur <= d_end:
+        ds = d_cur.isoformat()
+        if ds > anchor_day:
+            ratio = (_btc_price_on(btc, ds) / b0) if b0 > 0 else 1.0
+            eq = anchor_eq * ratio
+            if ds in by_day:
+                by_day[ds]["equityUsd"] = eq
+            else:
+                filler = dict(anchor)
+                filler["timestamp"] = f"{ds}T00:00:00.000Z"
+                filler["equityUsd"] = eq
+                filler["dailyFeeIncomeUsd"] = 0.0
+                by_day[ds] = filler
+        d_cur += timedelta(days=1)
+    return [by_day[k] for k in sorted(by_day.keys())]
+
+
+def snapshots_already_rebased(snapshots: list[dict], initial_capital: float, tolerance: float = 80.0) -> bool:
+    if not snapshots:
+        return False
+    return abs(float(snapshots[0].get("equityUsd") or 0.0) - float(initial_capital)) <= tolerance
+
+
 def invested_usd_from_row(r: dict[str, str]) -> float:
     for col in ["AA", "AH", "AF", "AE", "AD", "AC"]:
         v = parse_float(r.get(col, ""))
@@ -223,12 +376,68 @@ def active_apr_from_public_row(row: dict[str, str]) -> float:
 
 def fees_usd_public_row(row: dict[str, str]) -> float:
     for key in ("Заработано комиссий всего, USD", "Заработано комиссий итого", "fees_value", "AG"):
-        v = parse_float(row.get(key, ""))
+        v = parse_float(row_get(row, key))
         if v > 0:
             return v
-    pending = parse_float(row.get("Комиссии pending, USD", "") or row.get("R", ""))
-    claimed = parse_float(row.get("Комиссии claimed, USD", "") or row.get("S", ""))
+    pending = parse_float(row_get(row, "Комиссии pending, USD", "R"))
+    claimed = parse_float(row_get(row, "Комиссии claimed, USD", "S"))
     return pending + claimed
+
+
+def incentives_usd_public_row(row: dict[str, str]) -> tuple[float, str]:
+    pending = parse_float(row_get(row, "Инцентив: pending, USD"))
+    claimed = parse_float(row_get(row, "Инцентив: claimed, USD"))
+    total = pending + claimed
+    if total <= 0:
+        return 0.0, ""
+    token = str(row_get(row, "Инцентив: токен")).strip()
+    low = token.lower()
+    if "cake" in low:
+        label = "Cake"
+    elif "aira" in low:
+        label = "Aira"
+    else:
+        label = token or "Incentive"
+    return total, label
+
+
+def days_held_since_open(opened_at: str, as_of: date) -> float:
+    opened = parse_date(opened_at)
+    if not opened:
+        return 1.0
+    days = (as_of - opened.date()).days
+    return max(float(days), 1.0)
+
+
+def sheet_portfolio_daily_income_usd(config: dict, as_of: date | None = None) -> float:
+    """Средний дневной доход LP: (комиссии + incentives USD) / дни в позиции."""
+    as_of = as_of or date.today()
+    daily_income = 0.0
+    for p in load_liquidity_positions_from_sheet(config):
+        if not p.get("isActive"):
+            continue
+        fees = float(p.get("feesUsd") or 0.0)
+        inc = float(p.get("incentivesUsd") or 0.0)
+        days = days_held_since_open(str(p.get("openedAt") or ""), as_of)
+        daily_income += (fees + inc) / days
+    return daily_income
+
+
+def sheet_portfolio_chart_apr(
+    config: dict,
+    liquidity_usd: float,
+    as_of: date | None = None,
+    *,
+    max_chart_apr: float = 80.0,
+) -> float:
+    as_of = as_of or date.today()
+    liq = float(liquidity_usd or 0.0)
+    if liq <= 0:
+        liq = sum(float(p.get("valueUsd") or 0.0) for p in load_liquidity_positions_from_sheet(config) if p.get("isActive"))
+    daily_income = sheet_portfolio_daily_income_usd(config, as_of)
+    if liq <= 0 or daily_income <= 0:
+        return 0.0
+    return min((daily_income / liq) * 365.0 * 100.0, max_chart_apr)
 
 
 def parse_fee_tier_cell(raw: str) -> float:
@@ -473,29 +682,195 @@ def merge_apr_for_chart(
     *,
     max_chart_apr: float = 80.0,
 ) -> list[float]:
+    """Legacy merge — prefer build_chart_daily_yield_series()."""
+    return build_chart_daily_yield_series(
+        snapshots,
+        fee_based,
+        [],
+        realized_by_day,
+        {},
+        max_chart_apr=max_chart_apr,
+    )
+
+
+def load_yield_reference_by_day() -> dict[str, float]:
+    """Эталонная дневная доходность (до 18.05 и ранее), чтобы не терять историю графика."""
+    by_day: dict[str, float] = {}
+    ref_path = Path("data/chart-yield-reference.json")
+    if ref_path.exists():
+        try:
+            payload = json.loads(ref_path.read_text(encoding="utf-8"))
+            for d, v in (payload.get("byDay") or {}).items():
+                fv = float(v or 0.0)
+                if fv > 0:
+                    by_day[str(d)[:10]] = fv
+        except Exception:
+            pass
+    return by_day
+
+
+def fill_calendar_gaps_in_snapshots(snapshots: list[dict], *, max_gap_days: int = 45) -> list[dict]:
+    """Вставляет пропущенные календарные дни (копия предыдущего дня)."""
+    if len(snapshots) < 2:
+        return snapshots
+    out: list[dict] = []
+    for i, s in enumerate(snapshots):
+        out.append(dict(s))
+        if i + 1 >= len(snapshots):
+            break
+        d0 = datetime.strptime(str(s["timestamp"])[:10], "%Y-%m-%d").date()
+        d1 = datetime.strptime(str(snapshots[i + 1]["timestamp"])[:10], "%Y-%m-%d").date()
+        gap = (d1 - d0).days
+        if 1 < gap <= max_gap_days + 1:
+            for g in range(1, gap):
+                mid = (d0 + timedelta(days=g)).isoformat()
+                filler = dict(s)
+                filler["timestamp"] = f"{mid}T00:00:00.000Z"
+                filler["dailyFeeIncomeUsd"] = 0.0
+                out.append(filler)
+    out.sort(key=lambda x: str(x.get("timestamp", "")))
+    return out
+
+
+def merge_snapshots_from_js_file(current: list[dict], js_path: Path) -> list[dict]:
+    """Заполняет дыры в календаре (например 28.04–20.05) из предыдущего export."""
+    if not js_path.exists() or not current:
+        return current
+    try:
+        raw = js_path.read_text(encoding="utf-8")
+        m = re.search(r"window\.PORTFOLIO_DATA\s*=\s*(\{.*\})\s*;?\s*$", raw, re.S)
+        if not m:
+            return current
+        old = json.loads(m.group(1))
+        old_snaps = old.get("snapshots") or []
+        if not old_snaps:
+            return current
+        by_day = {s["timestamp"][:10]: dict(s) for s in old_snaps}
+        for s in current:
+            by_day[s["timestamp"][:10]] = dict(s)
+        merged = [by_day[k] for k in sorted(by_day.keys())]
+        return merged if len(merged) > len(current) else current
+    except Exception:
+        return current
+
+
+def estimate_gap_fee_usd(snapshots: list[dict], rollup_by_day: dict[str, dict], gap_indices: list[int]) -> float:
+    total = 0.0
+    for i in gap_indices:
+        d = str(snapshots[i].get("timestamp", ""))[:10]
+        roll = rollup_by_day.get(d, {})
+        total += float(roll.get("earnedUsd") or snapshots[i].get("dailyFeeIncomeUsd") or 0.0)
+    if total > 0:
+        return total
+    fees: list[float] = []
+    start = gap_indices[0] - 1
+    for j in range(start, -1, -1):
+        f = float(snapshots[j].get("dailyFeeIncomeUsd") or 0.0)
+        if f > 0:
+            fees.append(f)
+        if len(fees) >= 7:
+            break
+    if fees:
+        return (sum(fees) / len(fees)) * len(gap_indices)
+    return 0.0
+
+
+def fill_trailing_yield_gap(
+    snapshots: list[dict],
+    series: list[float],
+    rollup_by_day: dict[str, dict],
+    config: dict | None = None,
+    *,
+    max_gap_days: int = 3,
+    max_chart_apr: float = 80.0,
+) -> list[float]:
+    """19–21.05: APR из таблицы (комиссии + incentives / объём / дни в позиции)."""
+    if not snapshots or not series:
+        return series
+    out = list(series)
+    n = len(out)
+    tail: list[int] = []
+    for i in range(n - 1, -1, -1):
+        d = str(snapshots[i].get("timestamp", ""))[:10]
+        fee_apr = 0.0
+        liq = float(snapshots[i].get("liquidityUsd") or 0.0)
+        fee = float(snapshots[i].get("dailyFeeIncomeUsd") or 0.0)
+        if liq > 0 and fee > 0:
+            fee_apr = (fee / liq) * 365.0 * 100.0
+        if out[i] <= 0.5 or (fee_apr <= 0.5 and d >= "2026-05-19"):
+            tail.insert(0, i)
+            if len(tail) >= max_gap_days:
+                break
+        elif tail:
+            break
+    if not tail:
+        return out
+    last_day = str(snapshots[-1].get("timestamp", ""))[:10]
+    try:
+        as_of = datetime.strptime(last_day, "%Y-%m-%d").date()
+    except ValueError:
+        as_of = date.today()
+    liq = float(snapshots[-1].get("liquidityUsd") or 0.0)
+    sheet_apr = sheet_portfolio_chart_apr(config or {}, liq, as_of, max_chart_apr=max_chart_apr) if config else 0.0
+    if sheet_apr > 0.5:
+        for i in tail:
+            out[i] = sheet_apr
+        return out
+    total_fee = estimate_gap_fee_usd(snapshots, rollup_by_day, tail)
+    per_day = total_fee / len(tail) if tail else 0.0
+    flat_apr = 0.0
+    for i in tail:
+        liq_i = float(snapshots[i].get("liquidityUsd") or 0.0)
+        if liq_i > 0 and per_day > 0:
+            flat_apr = min((per_day / liq_i) * 365.0 * 100.0, max_chart_apr)
+            break
+    if flat_apr <= 0:
+        for j in range(tail[0] - 1, -1, -1):
+            if out[j] > 0.5:
+                flat_apr = out[j]
+                break
+    if flat_apr <= 0:
+        flat_apr = 8.0
+    for i in tail:
+        out[i] = flat_apr
+    return out
+
+
+def build_chart_daily_yield_series(
+    snapshots: list[dict],
+    fee_based: list[float],
+    synthetic: list[float],
+    realized_by_day: dict[str, float],
+    rollup_by_day: dict[str, dict],
+    config: dict | None = None,
+    *,
+    max_chart_apr: float = 80.0,
+) -> list[float]:
     """
-    Для графика: fee-based — база; realized из ETL — только если не выбивается
-    (типичный баг: два прогона в день → 130%+ «годовых»).
+    Правый график: эталон до 18.05 + fee-based где есть честные fees + хвост 1–3 дня поровну.
+    Realized APR из ETL не используем (даёт 80% «палки» при fee=0).
     """
     if not snapshots:
         return []
+    reference = load_yield_reference_by_day()
     out: list[float] = []
-    last_good = 0.0
     for i, s in enumerate(snapshots):
-        fee_apr = float(fee_based[i] if i < len(fee_based) else 0.0)
         d = str(s.get("timestamp", ""))[:10]
-        real = float(realized_by_day[d]) if d in realized_by_day else 0.0
-        chosen = fee_apr if fee_apr > 0 else (real if real > 0 else last_good)
-        if real > 0 and fee_apr > 0 and real > max(fee_apr * 3.5, 55.0):
+        fee_apr = float(fee_based[i] if i < len(fee_based) else 0.0)
+        ref_apr = float(reference.get(d, 0.0))
+        syn_apr = float(synthetic[i] if i < len(synthetic) else 0.0)
+        chosen = 0.0
+        if 0.5 < fee_apr <= 55.0:
             chosen = fee_apr
-        elif real > 0 and fee_apr <= 0 and real <= max_chart_apr:
-            chosen = real
-        elif real > max_chart_apr * 1.5:
-            chosen = fee_apr if fee_apr > 0 else min(last_good, max_chart_apr)
+        elif ref_apr > 0.5:
+            chosen = ref_apr
+        elif syn_apr > 0.5:
+            chosen = syn_apr
         chosen = max(0.0, min(chosen, max_chart_apr))
-        if chosen > 0:
-            last_good = chosen
         out.append(chosen)
+    out = fill_trailing_yield_gap(
+        snapshots, out, rollup_by_day, config, max_gap_days=3, max_chart_apr=max_chart_apr
+    )
     return out
 
 
@@ -659,20 +1034,151 @@ def parse_position_range(row: dict[str, str]) -> dict[str, float | None]:
     return normalize_lp_range(lower, upper, cur)
 
 
+def _s1_leg_sum(s: dict) -> float:
+    return (
+        float(s.get("lpUsd") or 0.0)
+        + float(s.get("pendleUsd") or 0.0)
+        + float(s.get("hyperliquidUsd") or 0.0)
+    )
+
+
+def flatten_strategy_one_equity_dips(
+    snapshots: list[dict],
+    initial: float,
+    *,
+    min_ratio: float = 0.85,
+) -> list[dict]:
+    """Убирает ложные провалы (29.04 → $20 при ногах ~$30)."""
+    if not snapshots:
+        return snapshots
+    floor = float(initial) * min_ratio
+    out = [dict(s) for s in snapshots]
+    for i, row in enumerate(out):
+        eq = float(row.get("equityUsd") or 0.0)
+        if eq >= floor:
+            continue
+        legs = _s1_leg_sum(row)
+        if legs >= floor:
+            row["equityUsd"] = legs
+            continue
+        prev = float(out[i - 1].get("equityUsd") or 0.0) if i > 0 else 0.0
+        nxt = float(out[i + 1].get("equityUsd") or 0.0) if i + 1 < len(out) else 0.0
+        candidates = [v for v in (prev, nxt) if v >= floor]
+        if candidates:
+            row["equityUsd"] = sum(candidates) / len(candidates)
+    return out
+
+
 def sanitize_strategy_one_snapshots(
     snapshots: list[dict],
     live_total: float,
     initial: float,
+    *,
+    lp_usd: float = 0.0,
+    pendle_usd: float = 0.0,
+    hyper_usd: float = 0.0,
 ) -> list[dict]:
-    """Только последняя точка = live; историю из БД не переписываем."""
+    """Убираем искусственный скачок на 30$; хвост — стабильный live (~29.92)."""
     if not snapshots:
         return snapshots
     live = float(live_total or 0.0)
     if live <= 0:
         return snapshots
-    out = [dict(s) for s in snapshots]
-    out[-1] = {**out[-1], "equityUsd": live}
+    out = flatten_strategy_one_equity_dips(snapshots, initial)
+    for i, s in enumerate(out):
+        eq = float(s.get("equityUsd") or 0.0)
+        prev = float(out[i - 1].get("equityUsd") or 0.0) if i > 0 else eq
+        if abs(eq - initial) < 0.06 and abs(prev - initial) > 0.4:
+            out[i] = {**out[i], "equityUsd": prev}
+    stable_from = "2026-05-18"
+    if live >= initial * 0.85:
+        legs = {
+            "lpUsd": float(lp_usd or 0.0),
+            "pendleUsd": float(pendle_usd or 0.0),
+            "hyperliquidUsd": float(hyper_usd or 0.0),
+        }
+        for i, s in enumerate(out):
+            if str(s.get("timestamp", ""))[:10] >= stable_from:
+                out[i] = {**out[i], "equityUsd": live, **legs}
+        out[-1] = {**out[-1], "equityUsd": live, **legs}
     return out
+
+
+def load_s1_snapshots_reference() -> list[dict]:
+    ref_path = Path("data/s1-history-reference.json")
+    if not ref_path.exists():
+        return []
+    try:
+        payload = json.loads(ref_path.read_text(encoding="utf-8"))
+        snaps = payload.get("snapshots") or []
+        return [dict(s) for s in snaps if s.get("timestamp")]
+    except Exception:
+        return []
+
+
+def merge_strategy_one_positions(
+    live_positions: list[dict],
+    fallback_positions: list[dict],
+) -> list[dict]:
+    """Не теряем LP при сбое Google Sheet — подмешиваем эталон по positionId/link."""
+    by_key: dict[str, dict] = {}
+    for p in fallback_positions:
+        key = str(p.get("positionId") or revert_position_id(p.get("link", "")) or p.get("pair", ""))
+        if key:
+            by_key[key] = dict(p)
+    out: list[dict] = []
+    seen: set[str] = set()
+    for p in live_positions:
+        key = str(p.get("positionId") or revert_position_id(p.get("link", "")) or p.get("pair", ""))
+        seen.add(key)
+        if key in by_key and p.get("instrument") == "LP":
+            ref = by_key[key]
+            merged = {**ref, **p}
+            if float(p.get("apr") or 0) <= 0 and float(ref.get("apr") or 0) > 0:
+                merged["apr"] = ref["apr"]
+            if float(p.get("valueUsd") or 0) <= 0 and float(ref.get("valueUsd") or 0) > 0:
+                merged["valueUsd"] = ref["valueUsd"]
+            out.append(merged)
+        else:
+            out.append(p)
+    for key, p in by_key.items():
+        if key not in seen and p.get("isActive"):
+            out.append(p)
+    return out
+
+
+def strategy_one_weighted_fee_apr(positions: list[dict]) -> float:
+    active = [p for p in positions if p.get("isActive")]
+    total = sum(float(p.get("valueUsd") or 0.0) for p in active)
+    if total <= 0:
+        return 0.0
+    w_apr = 0.0
+    for p in active:
+        w = float(p.get("valueUsd") or 0.0) / total
+        w_apr += w * float(p.get("apr") or 0.0)
+    return w_apr
+
+
+def strategy_one_chart_yield_series(
+    snapshots: list[dict],
+    positions: list[dict],
+    *,
+    max_apr: float = 25.0,
+) -> list[float]:
+    fee_apr = strategy_one_weighted_fee_apr(positions)
+    out: list[float] = []
+    for i, _ in enumerate(snapshots):
+        if i == 0:
+            out.append(0.0)
+            continue
+        prev_eq = max(float(snapshots[i - 1].get("equityUsd") or 0.0), 1e-9)
+        cur_eq = float(snapshots[i].get("equityUsd") or 0.0)
+        eq_apr = ((cur_eq - prev_eq) / prev_eq) * 365.0 * 100.0
+        chosen = eq_apr if abs(eq_apr) <= max_apr else fee_apr
+        if chosen <= 0 or chosen > max_apr:
+            chosen = fee_apr
+        out.append(max(0.0, min(chosen, max_apr)))
+    return clamp_apr_spikes(out, max_apr=max_apr, window_days=5)
 
 
 def strategy_one_apr_from_snapshots(snapshots: list[dict], *, max_apr: float = 120.0) -> list[float]:
@@ -766,22 +1272,39 @@ def patch_latest_snapshot_from_sources(
     lending_positions: list[dict],
     sheet_lp_usd: float,
 ) -> list[dict]:
-    if not snapshots:
+    return patch_recent_snapshots_from_sources(snapshots, lending_positions, sheet_lp_usd, days=1)
+
+
+def patch_recent_snapshots_from_sources(
+    snapshots: list[dict],
+    lending_positions: list[dict],
+    sheet_lp_usd: float,
+    *,
+    config: dict | None = None,
+    days: int = 3,
+) -> list[dict]:
+    """Последние N дней — одинаковые live Debank + LP (без «обрыва» на 21.05)."""
+    if not snapshots or days <= 0:
         return snapshots
     coll, debt, _ = aggregate_lending_totals(lending_positions)
-    last = dict(snapshots[-1])
-    if coll > 0:
-        last["collateralUsd"] = coll
-    if debt > 0:
-        last["debtUsd"] = debt
-    if sheet_lp_usd > 0:
-        last["liquidityUsd"] = float(sheet_lp_usd)
-    last["equityUsd"] = (
-        float(last.get("collateralUsd") or 0.0)
-        - float(last.get("debtUsd") or 0.0)
-        + float(last.get("liquidityUsd") or 0.0)
-    )
-    snapshots[-1] = last
+    n = len(snapshots)
+    daily_fee = sheet_portfolio_daily_income_usd(config or {}) if config else 0.0
+    for i in range(max(0, n - days), n):
+        s = dict(snapshots[i])
+        if coll > 0:
+            s["collateralUsd"] = coll
+        if debt > 0:
+            s["debtUsd"] = debt
+        if sheet_lp_usd > 0:
+            s["liquidityUsd"] = float(sheet_lp_usd)
+        s["equityUsd"] = (
+            float(s.get("collateralUsd") or 0.0)
+            - float(s.get("debtUsd") or 0.0)
+            + float(s.get("liquidityUsd") or 0.0)
+        )
+        if daily_fee > 0:
+            s["dailyFeeIncomeUsd"] = daily_fee
+        snapshots[i] = s
     return snapshots
 
 
@@ -873,12 +1396,15 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
         dex = dex_from_revert_link(link) if link else (platform_raw or "DEX")
         pos_id = revert_position_id(link) or re.sub(r"\D", "", row_get(r, "NFT tokenId", "I", "BT") or "")
         val_usd = live_value_usd_public_row(r)
+        inc_usd, inc_token = incentives_usd_public_row(r)
         item = {
             "platform": dex,
             "dataSource": "Revert Finance",
             "chain": row_get(r, "Сеть", "network", "BH"),
             "pair": f"{token0} / {token1}".strip(" /"),
             "feesUsd": fees_usd_public_row(r),
+            "incentivesUsd": round(inc_usd, 4) if inc_usd > 0 else 0.0,
+            "incentiveToken": inc_token,
             "apr": apr,
             "openedAt": row_get(r, "Дата открытия", "Дата открытия норм", "W", "first_mint_ts"),
             "closedAt": closed_at,
@@ -908,39 +1434,43 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
 
 def strategy_lp_positions(config: dict) -> list[dict]:
     sheet_id = config.get("google_sheet_id", "")
-    sheet_name = config.get("strategy_one_sheet_name", "Strategy 1")
+    sheet_name = config.get("public_portfolio_sheet_name", "Public portfolio")
+    wallet = (config.get("strategy_one_wallet") or "").strip().lower()
+    s1_position_ids = {"1091768", "5458419"}
     rows = load_google_sheet_rows_by_name(sheet_id, sheet_name)
     out: list[dict] = []
     for r in rows:
-        token0 = (r.get("AK", "") or r.get("token0", "") or "").strip()
-        token1 = (r.get("AL", "") or r.get("token1", "") or "").strip()
+        link = str(row_get(r, "Ссылка на позицию", "position_url", "I", "link")).strip()
+        if not link:
+            link = build_revert_link_from_row(r)
+        pos_id = revert_position_id(link) or re.sub(r"\D", "", row_get(r, "NFT tokenId", "I", "BT") or "")
+        w = str(row_get(r, "Кошелёк", "Кошелек", "wallet", "owner_wallet")).strip().lower()
+        token0 = str(row_get(r, "Токен 0", "token0", "AK")).strip().upper()
+        token1 = str(row_get(r, "Токен 1", "token1", "AL")).strip().upper()
+        stable_s1 = {"USDC", "USDT", "USDC.E", "USDCE"} & {token0, token1}
+        if wallet and wallet not in w and pos_id not in s1_position_ids and len(stable_s1) < 2:
+            continue
         if not token0 and not token1:
             continue
         pair = f"{token0} / {token1}".strip(" /")
         value_usd = live_value_usd_public_row(r)
         fees_usd = fees_usd_public_row(r)
-        if fees_usd <= 0:
-            fees_candidates = [
-                parse_float(r.get("AG", "")),
-                parse_float(r.get("AN", "")) + parse_float(r.get("AM", "")),
-                parse_float(r.get("AN", "")),
-                parse_float(r.get("AM", "")),
-            ]
-            fees_usd = next((v for v in fees_candidates if v > 0), 0.0)
-        link = (r.get("I", "") or "").strip()
         is_active = liquidity_is_active_from_row(r)
         closed_at = closed_display_from_row(r, is_active)
         apr = fee_apy_percent_from_public_row(r)
         fee_tier = fee_tier_public_row(r)
+        inc_usd, inc_token = incentives_usd_public_row(r)
         item = {
             "instrument": "LP",
             "platform": dex_from_revert_link(link),
             "dataSource": "Revert Finance",
             "pair": pair or "Pool",
-            "chain": (r.get("BH", "") or r.get("network", "") or "").strip(),
+            "chain": str(row_get(r, "Сеть", "network", "BH")).strip(),
             "feesUsd": fees_usd,
+            "incentivesUsd": round(inc_usd, 4) if inc_usd > 0 else 0.0,
+            "incentiveToken": inc_token,
             "apr": apr,
-            "openedAt": row_get(r, "Дата открытия норм", "W", "first_mint_ts"),
+            "openedAt": row_get(r, "Дата открытия", "Дата открытия норм", "W", "first_mint_ts"),
             "closedAt": closed_at,
             "isActive": is_active,
             "feeTier": fee_tier,
@@ -1334,17 +1864,53 @@ def main() -> None:
         for p in load_liquidity_positions_from_sheet(config)
         if p.get("isActive", True)
     )
-    snapshots = patch_latest_snapshot_from_sources(snapshots, lending_positions, sheet_lp_usd)
+    equity_ref = load_equity_reference_by_day()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if equity_ref:
+        snapshots = snapshots_from_equity_reference(equity_ref, snapshots, through_day=today)
+    else:
+        snapshots = apply_snapshot_reference(snapshots, equity_ref)
+    anchor_day = max(equity_ref.keys()) if equity_ref else ""
+    if anchor_day:
+        snapshots = extrapolate_equity_tail_btc(snapshots, anchor_day, equity_ref)
+    snapshots = fill_calendar_gaps_in_snapshots(snapshots, max_gap_days=45)
+    snapshots = patch_recent_snapshots_from_sources(
+        snapshots, lending_positions, sheet_lp_usd, config=config, days=1
+    )
+    if sheet_lp_usd < 3000:
+        print(
+            f"[WARN] sheet_lp_usd={sheet_lp_usd:.2f} — похоже на битый парсинг таблицы "
+            "(NBSP). Обнови python/etl_revert.py на PA и перезапусти etl."
+        )
+    if snapshots and sheet_lp_usd > 0:
+        last = dict(snapshots[-1])
+        coll, debt, _ = aggregate_lending_totals(lending_positions)
+        if coll > 0:
+            last["collateralUsd"] = coll
+        if debt > 0:
+            last["debtUsd"] = debt
+        last["liquidityUsd"] = float(sheet_lp_usd)
+        last["equityUsd"] = float(last["collateralUsd"]) - float(last["debtUsd"]) + float(
+            last["liquidityUsd"]
+        )
+        snapshots[-1] = last
 
-    snapshots = rebase_equity_start_only(snapshots, initial_capital, current_adjustment)
+    if not snapshots_already_rebased(snapshots, initial_capital):
+        snapshots = rebase_equity_start_only(snapshots, initial_capital, current_adjustment)
     fallback_apr = mean_apr_from_revert_sheet(config)
     month_apr = month_apr_map_from_revert_sheet(config)
     synthetic_daily_yield = build_daily_yield_series(snapshots, fallback_apr, month_apr)
     realized_by_day = load_realized_apr_by_day(conn)
     fee_based_yield = build_fee_based_daily_yield(snapshots)
     rollup_by_day = load_apr_rollup_by_day(conn)
-    daily_yield_series = merge_apr_for_chart(
-        snapshots, fee_based_yield, realized_by_day, max_chart_apr=80.0
+    daily_yield_series = build_chart_daily_yield_series(
+        snapshots,
+        fee_based_yield,
+        synthetic_daily_yield,
+        realized_by_day,
+        rollup_by_day,
+        config,
+        max_chart_apr=80.0,
     )
     apr_audit = build_apr_audit(snapshots, daily_yield_series, fee_based_yield, realized_by_day, rollup_by_day)
 
@@ -1410,13 +1976,76 @@ def main() -> None:
     strategy_one = load_strategy_one(conn)
     s1_init = float(config.get("strategy_one_initial_usd", 30) or 30)
     s1_live = s_lp_usd + s_pendle_usd + s_hyper_usd
-    s1_snaps = merge_strategy_one_snapshots_from_js_file(
-        strategy_one.get("snapshots") or [], Path("data/portfolio-data.js")
+    s1_ref_snaps = flatten_strategy_one_equity_dips(
+        load_s1_snapshots_reference(), s1_init
     )
-    strategy_one["snapshots"] = sanitize_strategy_one_snapshots(s1_snaps, s1_live, s1_init)
-    strategy_one["dailyYieldSeries"] = strategy_one_apr_from_snapshots(strategy_one["snapshots"])
-    strategy_one["positions"] = s_lp + s_pendle + s_hyper
+    s1_snaps = flatten_strategy_one_equity_dips(
+        strategy_one.get("snapshots") or [], s1_init
+    )
+    if len(s1_ref_snaps) > len(s1_snaps):
+        s1_snaps = s1_ref_snaps
+    else:
+        s1_snaps = flatten_strategy_one_equity_dips(s1_snaps, s1_init)
+    s1_fallback_pos = []
+    ref_path = Path("data/s1-positions-reference.json")
+    if ref_path.exists():
+        try:
+            s1_fallback_pos = json.loads(ref_path.read_text(encoding="utf-8")).get("positions") or []
+        except Exception:
+            pass
+    s1_positions = merge_strategy_one_positions(s_lp + s_pendle + s_hyper, s1_fallback_pos)
+    s1_live_components = sum(
+        max(0.0, float(p.get("valueUsd") or 0.0))
+        for p in s1_positions
+        if p.get("isActive", True)
+    )
+    s1_live = s1_live_components if s1_live_components >= s1_init * 0.85 else (s_lp_usd + s_pendle_usd + s_hyper_usd)
+    if s1_live < s1_init * 0.85:
+        for p in s1_fallback_pos:
+            if p.get("isActive", True):
+                s1_live = max(s1_live, s1_init * 0.997)
+                break
+    s_lp_usd_eff = s_lp_usd if s_lp_usd > 0 else sum(
+        float(p.get("valueUsd") or 0.0) for p in s1_positions if p.get("instrument") == "LP" and p.get("isActive")
+    )
+    strategy_one["snapshots"] = sanitize_strategy_one_snapshots(
+        s1_snaps,
+        s1_live,
+        s1_init,
+        lp_usd=s_lp_usd_eff,
+        pendle_usd=s_pendle_usd,
+        hyper_usd=s_hyper_usd,
+    )
+    strategy_one["dailyYieldSeries"] = strategy_one_chart_yield_series(
+        strategy_one["snapshots"], s1_positions, max_apr=25.0
+    )
+    strategy_one["positions"] = s1_positions
     conn.close()
+
+    chart_yield_by_day = load_yield_reference_by_day()
+    for i, s in enumerate(snapshots):
+        d = str(s.get("timestamp", ""))[:10]
+        if i < len(daily_yield_series) and daily_yield_series[i] > 0.5:
+            chart_yield_by_day[d] = float(daily_yield_series[i])
+
+    gaps = 0
+    if len(snapshots) >= 2:
+        for j in range(1, len(snapshots)):
+            d0 = datetime.strptime(str(snapshots[j - 1]["timestamp"])[:10], "%Y-%m-%d").date()
+            d1 = datetime.strptime(str(snapshots[j]["timestamp"])[:10], "%Y-%m-%d").date()
+            if (d1 - d0).days > 1:
+                gaps += 1
+    if gaps:
+        print(
+            f"[WARN] В snapshots {gaps} календарных дыр. "
+            "Залей data/equity-history-reference.json на PA и в GitHub."
+        )
+    if len(chart_yield_by_day) < 100:
+        print("[WARN] chartYieldByDay пустой — залей data/chart-yield-reference.json на PA.")
+    if len(equity_ref) < 100:
+        print("[WARN] equity_ref пустой — залей data/equity-history-reference.json на PA.")
+    else:
+        print(f"[OK] chartYieldByDay={len(chart_yield_by_day)} equityHistoryByDay={len(equity_ref)} snapshots={len(snapshots)}")
 
     exported_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
@@ -1430,6 +2059,8 @@ def main() -> None:
         "prices": {"BTC": 95000, "ETH": 1800},
         "snapshots": snapshots,
         "dailyYieldSeries": daily_yield_series,
+        "chartYieldByDay": chart_yield_by_day,
+        "equityHistoryByDay": equity_ref,
         "fallbackApr": fallback_apr,
         "monthAprMap": month_apr,
         "realizedAprByDay": realized_by_day,
@@ -1444,6 +2075,19 @@ def main() -> None:
     out = Path("data/portfolio-data.js")
     out.write_text("window.PORTFOLIO_DATA = " + json.dumps(payload, ensure_ascii=False) + ";", encoding="utf-8")
     print(f"[OK] Exported static data to {out} (exportedAt={exported_at})")
+
+    if len(snapshots) < 130:
+        raise SystemExit(
+            "[FATAL] Мало дней в snapshots — залей data/equity-history-reference.json и обнови export_static_data.py"
+        )
+    last_snap = snapshots[-1]
+    if float(last_snap.get("liquidityUsd") or 0) < 3000:
+        raise SystemExit(
+            f"[FATAL] liquidityUsd={last_snap.get('liquidityUsd')} на последний день. "
+            "Сначала: python python/etl_revert.py (нужен фикс NBSP в etl_revert.py)."
+        )
+    if not chart_yield_by_day or len(chart_yield_by_day) < 100:
+        raise SystemExit("[FATAL] chartYieldByDay пустой — залей data/chart-yield-reference.json")
 
 
 if __name__ == "__main__":

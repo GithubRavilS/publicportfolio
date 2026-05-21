@@ -85,6 +85,8 @@
       .pool-apr-hero { font-size: 20px; width: auto; margin-top: 0; }
       .pool-meta-grid--3 { grid-template-columns: 1fr 1fr; }
       .pool-meta-grid--3 > div:last-child { grid-column: 1 / -1; }
+      .pool-meta-grid--4 > div:nth-child(3),
+      .pool-meta-grid--4 > div:nth-child(4) { grid-column: span 1; }
       .range-bar-stage { padding-top: 18px; }
       .range-lbl-pos { font-size: 9px; }
       .range-lbl-cur { max-width: 48%; }
@@ -131,7 +133,17 @@
     .pool-open-link:hover { background: rgba(78,161,255,0.18); }
     .pool-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 12px; }
     .pool-meta-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .pool-meta-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .pool-meta-grid .lbl { color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+    .pool-status-pill {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+      padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); flex-shrink: 0;
+    }
+    .pool-status-pill--active { color: var(--green); border-color: rgba(50,194,106,0.45); background: rgba(50,194,106,0.08); }
+    .pool-status-pill--closed { color: var(--muted); border-color: rgba(159,176,211,0.25); background: rgba(255,255,255,0.03); }
+    @media (min-width: 880px) {
+      .pool-meta-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
     .chain-icon-wrap {
       --sz: 26px;
       width: var(--sz);
@@ -753,7 +765,7 @@
         b.style.display = posType === "lp" ? "inline-block" : "none";
       });
 
-      const lpFiltered = lp.filter(p => filter === "active" ? p.isActive : !p.isActive);
+      const lpFiltered = lp.filter((p) => (filter === "active" ? !!p.isActive : !p.isActive));
       lpEl.style.display = posType === "lp" ? "grid" : "none";
       lendEl.style.display = posType === "lending" ? "block" : "none";
       lendEl.className = posType === "lending" ? "lend-list" : "pos-grid";
@@ -762,6 +774,7 @@
       lendEl.innerHTML = lending.map((p) => window.PortfolioUI.renderLendingCard(p, cardCtx())).join("") || `<div class="muted">${lang === "ru" ? "Нет данных по лендинг-позициям" : "No lending positions"}</div>`;
     };
 
+    renderPositions();
     if (window.PortfolioUI?.enrichLpRangesFromSheet) {
       window.PortfolioUI.enrichLpRangesFromSheet(lp, {
         sheetId: GOOGLE_SHEET_ID,

@@ -485,16 +485,13 @@ def merge_apr_for_chart(
         fee_apr = float(fee_based[i] if i < len(fee_based) else 0.0)
         d = str(s.get("timestamp", ""))[:10]
         real = float(realized_by_day[d]) if d in realized_by_day else 0.0
-        chosen = fee_apr
-        if real > 0:
-            if fee_apr > 0 and real > max(fee_apr * 3.5, 60.0):
-                chosen = fee_apr
-            elif real > max_chart_apr * 2:
-                chosen = fee_apr if fee_apr > 0 else min(last_good, max_chart_apr)
-            else:
-                chosen = real
-        elif last_good > 0 and fee_apr <= 0:
-            chosen = last_good
+        chosen = fee_apr if fee_apr > 0 else (real if real > 0 else last_good)
+        if real > 0 and fee_apr > 0 and real > max(fee_apr * 3.5, 55.0):
+            chosen = fee_apr
+        elif real > 0 and fee_apr <= 0 and real <= max_chart_apr:
+            chosen = real
+        elif real > max_chart_apr * 1.5:
+            chosen = fee_apr if fee_apr > 0 else min(last_good, max_chart_apr)
         chosen = max(0.0, min(chosen, max_chart_apr))
         if chosen > 0:
             last_good = chosen
@@ -1429,6 +1426,7 @@ def main() -> None:
         "portfolioWallet": ((config.get("debank_wallets") or [""]) + [""])[0],
         "debankWallets": config.get("debank_wallets") or [],
         "initialCapitalUsd": initial_capital,
+        "manualVisualAdjustmentUsd": current_adjustment,
         "prices": {"BTC": 95000, "ETH": 1800},
         "snapshots": snapshots,
         "dailyYieldSeries": daily_yield_series,

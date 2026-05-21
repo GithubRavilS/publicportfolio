@@ -345,7 +345,22 @@ def ingest_revert(config: dict[str, Any]) -> None:
 
         cur.execute("DELETE FROM revert_positions WHERE as_of_date = ?", (as_of_date,))
         cur.execute("DELETE FROM revert_positions_daily WHERE as_of_date = ?", (as_of_date,))
+
+        # Unified sheet: current USD per open pool (Стоимость позиции), not token qty × price.
         liquidity_usd = 0.0
+        for row in pools_rows:
+            if not liquidity_open_from_row(row):
+                continue
+            pos_val = parse_float(
+                row_get(
+                    row,
+                    pools_cols.get("position_value_usd", ""),
+                    "Стоимость позиции, USD",
+                    "Внесено, USD",
+                )
+            )
+            if pos_val > 0:
+                liquidity_usd += pos_val
 
         for row in pools_rows:
             position_id = row.get(pools_cols["position_id"])
@@ -371,7 +386,6 @@ def ingest_revert(config: dict[str, Any]) -> None:
                 symbol = normalize_symbol(str(symbol_raw))
                 px = prices.get(symbol, 0.0)
                 usd_value = amount * px
-                liquidity_usd += usd_value
 
                 cur.execute(
                     """
@@ -385,16 +399,19 @@ def ingest_revert(config: dict[str, Any]) -> None:
             for row in pools_rows:
                 if not liquidity_open_from_row(row):
                     continue
-                pos_val = parse_float(
-                    row_get(
-                        row,
-                        pools_cols.get("position_value_usd", ""),
-                        "Стоимость позиции, USD",
-                        "Внесено, USD",
-                    )
-                )
-                if pos_val > 0:
-                    liquidity_usd += pos_val
+                token_items_fb: list[tuple[str, Any]] = []
+                if pair_mode:
+                    token_items_fb = [
+                        (str(row.get(pools_cols["token0_symbol"], "")), row.get(pools_cols["token0_amount"])),
+                        (str(row.get(pools_cols["token1_symbol"], "")), row.get(pools_cols["token1_amount"])),
+                    ]
+                for symbol_raw, amount_raw in token_items_fb:
+                    try:
+                        amount = float(amount_raw)
+                    except (TypeError, ValueError):
+                        continue
+                    symbol = normalize_symbol(str(symbol_raw or ""))
+                    liquidity_usd += amount * prices.get(symbol, 0.0)
 
         latest_fee_total_usd = 0.0
         # Preferred source: AG in pools sheet is cumulative total fee in USD by position.

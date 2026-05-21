@@ -1219,23 +1219,75 @@ def strategy_one_attach_display_apr(
     return out
 
 
+def patch_strategy_one_stuck_yield_tail(
+    series: list[float],
+    mean_apr: float,
+    *,
+    patch_tail_days: int = 5,
+    stuck_near: float = 0.33,
+    stuck_eps: float = 0.06,
+    max_apr: float = 25.0,
+) -> list[float]:
+    """Меняем только «залипшие» ~0.33% и хвост из patch_tail_days дней, историю не трогаем."""
+    if not series:
+        return series
+    mean_v = max(0.0, min(float(mean_apr), max_apr))
+    out = [float(v or 0.0) for v in series]
+    n = len(out)
+    tail_start = max(1, n - patch_tail_days)
+    for i in range(1, n):
+        v = out[i]
+        stuck = abs(v - stuck_near) <= stuck_eps
+        tail_low = i >= tail_start and 0 <= v < 0.55 and mean_v > 1.0
+        if stuck or tail_low:
+            out[i] = mean_v
+    return out
+
+
 def strategy_one_chart_yield_series(
     snapshots: list[dict],
     positions: list[dict],
     *,
+    base_series: list[float] | None = None,
+    reference_snapshots: list[dict] | None = None,
+    patch_tail_days: int = 5,
     max_apr: float = 25.0,
     portfolio_start_day: str = "",
 ) -> list[float]:
-    """Правый график S1: одно значение — среднее арифметическое APR активных позиций."""
+    """Правый график S1: история из equity-эталона; хвост ~0.33% → среднее по 3 позициям."""
     if not snapshots:
         return []
+    n = len(snapshots)
+    ref_by_day = {
+        str(s.get("timestamp", ""))[:10]: s
+        for s in (reference_snapshots or snapshots)
+    }
+    # До 14 мая — волатильная история из эталона; с 14 мая — уже выровненные snapshots.
+    tail_from = "2026-05-14"
+    aligned: list[dict] = []
+    for s in snapshots:
+        day = str(s.get("timestamp", ""))[:10]
+        if day >= tail_from:
+            aligned.append(s)
+        else:
+            aligned.append(ref_by_day.get(day, s))
+    out = strategy_one_apr_from_snapshots(aligned, max_apr=max_apr)
+    if base_series and len(base_series) == n:
+        for i in range(1, n):
+            b = float(base_series[i] or 0.0)
+            if b > 0.5 and abs(b - 0.33) > 0.06:
+                out[i] = min(b, max_apr)
     as_of = str(snapshots[-1].get("timestamp", ""))[:10]
     start_day = portfolio_start_day or str(snapshots[0].get("timestamp", ""))[:10]
     mean_apr = strategy_one_arithmetic_mean_apr(
         positions, as_of_day=as_of, portfolio_start_day=start_day
     )
-    mean_apr = max(0.0, min(mean_apr, max_apr))
-    return [0.0] + [mean_apr] * (len(snapshots) - 1)
+    return patch_strategy_one_stuck_yield_tail(
+        out,
+        mean_apr,
+        patch_tail_days=patch_tail_days,
+        max_apr=max_apr,
+    )
 
 
 def strategy_one_apr_from_snapshots(snapshots: list[dict], *, max_apr: float = 120.0) -> list[float]:
@@ -1274,15 +1326,68 @@ def clamp_apr_spikes(series: list[float], max_apr: float = 200.0, window_days: i
     return out
 
 
-def lending_chain_from_protocol(protocol: str) -> str:
+def estimate_lending_health_factor(collateral_usd: float, borrow_usd: float) -> float:
+    """Грубая оценка HF, если DeBank отдал «>10» или ошибочное 10."""
+    if borrow_usd <= 0 or collateral_usd <= 0:
+        return 0.0
+    return (collateral_usd / borrow_usd) * 0.93
+
+
+def sanitize_lending_health_factor(
+    hf: float,
+    *,
+    collateral_usd: float,
+    borrow_usd: float,
+) -> float:
+    if borrow_usd <= 0:
+        return 0.0
+    est = estimate_lending_health_factor(collateral_usd, borrow_usd)
+    if hf <= 0:
+        return round(est, 2) if est > 0 else 0.0
+    # «>10» часто парсится как 10; для реального долга это неверно.
+    if hf >= 9.5 and borrow_usd >= 50 and 1.05 <= est <= 5.0:
+        return round(est, 2)
+    if hf > 25:
+        return round(min(hf, 25.0), 2)
+    return round(hf, 2)
+
+
+def lending_chain_for_position(
+    protocol: str,
+    *,
+    chain_raw: str = "",
+    collateral_asset: str = "",
+    borrow_asset: str = "",
+) -> str:
+    slug = (chain_raw or "").strip().lower()
+    if slug in ("op", "optimism", "10"):
+        return "op"
+    if slug in ("base",):
+        return "base"
+    if slug in ("arb", "arbitrum", "42161"):
+        return "arb"
+    if slug in ("eth", "ethereum", "1"):
+        return "eth"
+    if slug in ("matic", "polygon", "137"):
+        return "matic"
+    if slug in ("bsc", "56"):
+        return "bsc"
+    if slug:
+        return slug
+
     p = (protocol or "").lower()
-    if "compound" in p:
-        return "ethereum"
-    if "aave" in p:
-        return "ethereum"
+    coll = (collateral_asset or "").upper()
     if "fluid" in p:
-        return "arbitrum"
-    return "ethereum"
+        return "arb"
+    if "compound" in p:
+        if "CBBTC" in coll:
+            return "base"
+        if "WBTC" in coll:
+            return "op"
+        return "base"
+    if "aave" in p:
+        return "eth"
+    return "eth"
 
 
 def dedupe_lending_positions(positions: list[dict]) -> list[dict]:
@@ -1399,17 +1504,25 @@ def load_latest_debank_lending_csv(config: dict) -> list[dict]:
             collateral_asset = r.get("collateral_asset", "")
             collateral_usd = parse_float(r.get("collateral_usd", ""))
             collateral_amount = parse_float(r.get("collateral_amount", ""))
-            hf = parse_float(r.get("health_factor", ""))
-            market_price = (collateral_usd / collateral_amount) if collateral_amount > 0 else 0.0
-            liquidation_price = (market_price / hf) if hf > 0 and hf <= 10 and market_price > 0 else 0.0
-            chain_raw = (r.get("chain") or r.get("chain_id") or "").strip()
-            if not chain_raw:
-                chain_raw = lending_chain_from_protocol(r.get("protocol", ""))
             borrow_asset = r.get("borrow_asset", "")
             borrow_amount = parse_float(r.get("borrow_amount", ""))
             borrow_usd = parse_float(r.get("borrow_usd", ""))
+            hf_raw = parse_float(r.get("health_factor", ""))
+            market_price = (collateral_usd / collateral_amount) if collateral_amount > 0 else 0.0
             if borrow_usd <= 0 and borrow_amount > 0 and market_price > 0:
                 borrow_usd = borrow_amount * market_price
+            hf = sanitize_lending_health_factor(
+                hf_raw,
+                collateral_usd=collateral_usd,
+                borrow_usd=borrow_usd,
+            )
+            liquidation_price = (market_price / hf) if hf > 0 and hf <= 25 and market_price > 0 else 0.0
+            chain_raw = lending_chain_for_position(
+                r.get("protocol", ""),
+                chain_raw=(r.get("chain") or r.get("chain_id") or "").strip(),
+                collateral_asset=collateral_asset,
+                borrow_asset=borrow_asset,
+            )
             out.append(
                 {
                     "protocol": r.get("protocol", ""),
@@ -2082,9 +2195,13 @@ def main() -> None:
     s1_mean_apr = strategy_one_arithmetic_mean_apr(
         s1_positions, as_of_day=today, portfolio_start_day=s1_start_day
     )
+    s1_ref_for_yield = load_s1_snapshots_reference() or s1_ref_snaps
     strategy_one["dailyYieldSeries"] = strategy_one_chart_yield_series(
         strategy_one["snapshots"],
         s1_positions,
+        base_series=strategy_one.get("dailyYieldSeries") or [],
+        reference_snapshots=s1_ref_for_yield,
+        patch_tail_days=5,
         max_apr=25.0,
         portfolio_start_day=s1_start_day,
     )

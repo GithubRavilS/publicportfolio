@@ -1,7 +1,7 @@
 import json
 import sqlite3
 import csv
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -75,6 +75,28 @@ def load_google_sheet_rows(sheet_id: str, gid: str) -> list[dict[str, Any]]:
     res.raise_for_status()
     reader = csv.reader(StringIO(res.text))
     raw_rows = list(reader)
+    return _sheet_csv_to_row_dicts(raw_rows)
+
+
+def load_google_sheet_rows_by_name(sheet_id: str, sheet_name: str) -> list[dict[str, Any]]:
+    if not sheet_id or not sheet_name:
+        return []
+    for name in (sheet_name, "Public portfolio", "Public Portfolio"):
+        url = (
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq"
+            f"?tqx=out:csv&sheet={requests.utils.quote(name)}"
+        )
+        res = requests.get(url, timeout=30)
+        if not res.ok:
+            continue
+        raw_rows = list(csv.reader(StringIO(res.text)))
+        rows = _sheet_csv_to_row_dicts(raw_rows)
+        if rows:
+            return rows
+    return []
+
+
+def _sheet_csv_to_row_dicts(raw_rows: list[list[str]]) -> list[dict[str, Any]]:
     if not raw_rows:
         return []
     headers = [str(x).strip() for x in raw_rows[0]]
@@ -88,6 +110,36 @@ def load_google_sheet_rows(sheet_id: str, gid: str) -> list[dict[str, Any]]:
                 cleaned[headers[i]] = value.strip() if isinstance(value, str) else value
         rows.append(cleaned)
     return rows
+
+
+def row_get(row: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if not key:
+            continue
+        if key in row and row[key] not in (None, ""):
+            return row[key]
+    return ""
+
+
+def parse_fee_apy_pct(raw: Any) -> float:
+    s = str(raw or "").strip()
+    if not s or s in ("-", "—", "0"):
+        return 0.0
+    p = parse_float(s.replace("%", ""))
+    if p <= 0:
+        return 0.0
+    if "%" in s or p >= 3:
+        return min(p, 500.0)
+    return min(p * 100.0, 500.0)
+
+
+def liquidity_open_from_row(row: dict[str, Any]) -> bool:
+    oc = str(row_get(row, "Open/Closed", "N")).strip().upper()
+    if oc == "OPEN":
+        return True
+    if oc == "CLOSED":
+        return False
+    return not str(row_get(row, "Дата закрытия", "H", "X")).strip()
 
 
 def upsert_market_prices(conn: sqlite3.Connection, as_of_date: str, prices: dict[str, float]) -> None:
@@ -215,6 +267,12 @@ def ingest_revert(config: dict[str, Any]) -> None:
     sheet_id = config.get("google_sheet_id", "")
     pools_gid = str(config.get("revert_pools_gid", "")).strip()
     fees_gid = str(config.get("revert_fees_gid", "")).strip()
+    pools_sheet_name = str(config.get("revert_pools_sheet_name", "") or "").strip()
+    fee_total_col = str(
+        config.get("revert_fee_total_column", "")
+        or config.get("revert_pools_columns", {}).get("fee_total_usd", "")
+        or "Заработано комиссий всего, USD"
+    ).strip()
 
     if revert_source == "excel" and (not excel_path or not Path(excel_path).exists()):
         raise FileNotFoundError(f"Excel file not found: {excel_path}")
@@ -235,7 +293,10 @@ def ingest_revert(config: dict[str, Any]) -> None:
         pools_rows: list[dict[str, Any]]
         fees_rows_data: list[dict[str, Any]]
         if revert_source == "google_sheets":
-            pools_rows = load_google_sheet_rows(sheet_id, pools_gid)
+            if pools_sheet_name:
+                pools_rows = load_google_sheet_rows_by_name(sheet_id, pools_sheet_name)
+            else:
+                pools_rows = load_google_sheet_rows(sheet_id, pools_gid)
             fees_rows_data = load_google_sheet_rows(sheet_id, fees_gid) if fees_gid else []
             if not pools_rows:
                 raise ValueError("Pools Google Sheet is empty or not accessible")
@@ -320,12 +381,27 @@ def ingest_revert(config: dict[str, Any]) -> None:
                     (as_of_date, str(position_id), symbol, amount, usd_value),
                 )
 
+        if liquidity_usd <= 0:
+            for row in pools_rows:
+                if not liquidity_open_from_row(row):
+                    continue
+                pos_val = parse_float(
+                    row_get(
+                        row,
+                        pools_cols.get("position_value_usd", ""),
+                        "Стоимость позиции, USD",
+                        "Внесено, USD",
+                    )
+                )
+                if pos_val > 0:
+                    liquidity_usd += pos_val
+
         latest_fee_total_usd = 0.0
         # Preferred source: AG in pools sheet is cumulative total fee in USD by position.
         fee_total_from_ag = 0.0
         fee_ag_count = 0
         for row in pools_rows:
-            v = parse_float(row.get("AG"))
+            v = parse_float(row_get(row, fee_total_col, "AG", "Заработано комиссий всего, USD"))
             if v > 0:
                 fee_total_from_ag += v
                 fee_ag_count += 1
@@ -389,7 +465,10 @@ def ingest_revert(config: dict[str, Any]) -> None:
             prev_total = float(prev["total_fee_usd"] or 0.0)
             earned_since_prev = max(0.0, latest_fee_total_usd - prev_total)
             if elapsed_hours > 0 and liquidity_usd > 0 and earned_since_prev > 0:
-                apr_annualized = (earned_since_prev / liquidity_usd) * (24.0 * 365.0 / elapsed_hours) * 100.0
+                # Минимум ~20ч между прогонами: иначе при двух запусках в день APR раздувается до 100%+.
+                eff_hours = max(elapsed_hours, 20.0)
+                apr_annualized = (earned_since_prev / liquidity_usd) * (24.0 * 365.0 / eff_hours) * 100.0
+                apr_annualized = min(apr_annualized, 500.0)
 
         cur.execute(
             """
@@ -443,22 +522,30 @@ def ingest_revert(config: dict[str, Any]) -> None:
         )
 
         for r in pools_rows:
-            position_id = str(r.get("BT", "")).strip()
+            position_id = str(row_get(r, pools_cols["position_id"], "NFT tokenId", "BT")).strip()
             if not position_id:
                 continue
-            token0 = str(r.get("AK", "") or "").strip()
-            token1 = str(r.get("AL", "") or "").strip()
+            token0 = str(row_get(r, pools_cols.get("token0_symbol", ""), "Токен 0", "AK") or "").strip()
+            token1 = str(row_get(r, pools_cols.get("token1_symbol", ""), "Токен 1", "AL") or "").strip()
             pair = f"{token0} / {token1}".strip(" /")
-            chain = str(r.get("BH", "") or "").strip()
-            opened_at = str(r.get("W", "") or "").strip()
-            closed_at = str(r.get("X", "") or "").strip()
-            is_active = 0 if closed_at else 1
-            invested_usd = parse_float(r.get("AA", ""))
-            bj = parse_float(r.get("BJ", ""))
-            fee_tier_pct = (bj / 10000.0) if bj > 0 else 0.0
-            total_fee_usd = parse_float(r.get("AG", ""))
-            apr_pct = parse_float(r.get("S", "")) * 100 if is_active else 0.0
-            link = str(r.get("I", "") or "").strip()
+            chain = str(row_get(r, "Сеть", "BH") or "").strip()
+            opened_at = str(row_get(r, "Дата открытия", "W") or "").strip()
+            closed_at = str(row_get(r, "Дата закрытия", "X") or "").strip()
+            is_active = 1 if liquidity_open_from_row(r) else 0
+            invested_usd = parse_float(
+                row_get(r, pools_cols.get("invested_usd", ""), "Внесено, USD", "AA")
+            )
+            fee_tier_raw = row_get(r, "Fee tier (%)", "Fee tier", "BJ")
+            fee_tier_pct = parse_float(str(fee_tier_raw).replace("%", ""))
+            if "%" in str(fee_tier_raw) and fee_tier_pct >= 1000:
+                fee_tier_pct /= 1000000
+            elif "%" in str(fee_tier_raw) and fee_tier_pct >= 1:
+                fee_tier_pct /= 100
+            elif fee_tier_pct >= 50:
+                fee_tier_pct /= 10000
+            total_fee_usd = parse_float(row_get(r, fee_total_col, "AG", "Заработано комиссий всего, USD"))
+            apr_pct = parse_fee_apy_pct(row_get(r, "Fee APY", "S")) if is_active else 0.0
+            link = str(row_get(r, "Ссылка на позицию", "I") or "").strip()
             cur.execute(
                 """
                 INSERT INTO revert_positions_daily(

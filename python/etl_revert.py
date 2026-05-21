@@ -34,8 +34,15 @@ def normalize_symbol(symbol: str) -> str:
     return s
 
 
+def _strip_number_grouping(s: str) -> str:
+    # Google Sheets RU locale: "4\u00a0287,58" (NBSP), not "4 287,58"
+    for ch in ("\u00a0", "\u202f", " "):
+        s = s.replace(ch, "")
+    return s
+
+
 def parse_float(value: Any) -> float:
-    s = str(value or "").strip().replace(" ", "")
+    s = _strip_number_grouping(str(value or "").strip())
     if not s:
         return 0.0
     if "," in s and "." in s:

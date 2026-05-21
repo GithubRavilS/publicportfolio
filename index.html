@@ -449,11 +449,18 @@
       });
     }
 
-    function sanitizeS1Snapshots(snaps, liveTotal) {
+    function sanitizeS1Snapshots(snaps, liveTotal, initial) {
       const out = (snaps || []).map((s) => ({ ...s }));
       if (!out.length) return out;
       const live = Number(liveTotal || 0);
-      if (live > 0) out[out.length - 1].equityUsd = live;
+      const init = Number(initial || 30);
+      if (live <= 0) return out;
+      for (let i = 0; i < out.length; i++) {
+        const d = (out[i].timestamp || "").slice(0, 10);
+        const eq = Number(out[i].equityUsd || 0);
+        if (d >= "2026-05-18" || eq >= init * 1.001) out[i].equityUsd = live;
+      }
+      out[out.length - 1].equityUsd = live;
       return out;
     }
 
@@ -946,7 +953,7 @@
 
     const s1Pos = s1.positions || [];
     const s1ActiveUsdEarly = s1Pos.filter(isActivePos).reduce((sum, p) => sum + Math.max(0, Number(p.valueUsd || 0)), 0);
-    s1Snapshots = sanitizeS1Snapshots(s1Snapshots, s1ActiveUsdEarly);
+    s1Snapshots = sanitizeS1Snapshots(s1Snapshots, s1ActiveUsdEarly, s1Initial);
     const s1Labels = s1Snapshots.map(s => (s.timestamp || "").slice(0, 10));
     const s1EquityData = s1Snapshots.map(s => Number(s.equityUsd || 0));
     const s1StartDate = s1Labels.length ? s1Labels[0] : "";
@@ -962,7 +969,7 @@
     const s1AprFromPosition = (p) => {
       if (p.instrument === "LP") {
         const apr = Number(p.apr || 0);
-        return Number.isFinite(apr) ? Math.max(0, apr) : 0;
+        if (Number.isFinite(apr) && apr > 0) return Math.min(apr, 500);
       }
       const baseUsd = 10;
       const valueUsd = Number(p.valueUsd || 0);
@@ -992,10 +999,14 @@
       }, 0);
       return Number.isFinite(weighted) ? weighted : 0;
     })();
-    let s1Apr = s1AprFromSnapshots(s1Snapshots, 120);
-    const s1AprSeries = s1Apr.some((x) => Math.abs(x) > 0.0001)
-      ? s1Apr
-      : s1Labels.map(() => s1WeightedApr);
+    const s1AprExported = (s1.dailyYieldSeries || []).map((v) => Math.max(0, Math.min(Number(v) || 0, 25)));
+    let s1Apr = s1AprFromSnapshots(s1Snapshots, 25);
+    const s1AprSeries =
+      s1AprExported.length === s1Labels.length && s1AprExported.some((x) => x > 0.0001)
+        ? s1AprExported
+        : s1Apr.some((x) => Math.abs(x) > 0.0001)
+          ? s1Apr.map((v) => Math.max(0, Math.min(v, 25)))
+          : s1Labels.map(() => Math.min(s1WeightedApr, 25));
     const s1Charts = { equity: null, apr: null };
     const initS1Charts = () => {
       if (s1Charts.equity && s1Charts.apr) {

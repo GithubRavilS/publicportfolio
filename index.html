@@ -416,17 +416,21 @@
       });
     }
 
-    function sanitizeYieldSeries(snaps, rawSeries, maxApr = 80) {
-      const feeBased = feeBasedAprFromSnapshots(snaps);
+    function chartDailyYieldSeries(snaps, rawSeries, maxApr = 80) {
       const raw = rawSeries || [];
+      const cap = (v) => Math.max(0, Math.min(Number(v) || 0, maxApr));
+      const nonzero = raw.filter((v) => Number(v) > 0.5).length;
+      if (nonzero >= 10 && raw.length === (snaps || []).length) {
+        return raw.map(cap);
+      }
+      const feeBased = feeBasedAprFromSnapshots(snaps);
       let lastGood = 0;
       return (snaps || []).map((_, i) => {
         const feeApr = Number(feeBased[i] || 0);
         const r = Number(raw[i] || 0);
-        let chosen = r;
-        if (feeApr > 0 && r > Math.max(feeApr * 3.5, 60)) chosen = feeApr;
-        else if (r > maxApr) chosen = feeApr > 0 ? feeApr : Math.min(r, maxApr);
-        chosen = Math.max(0, Math.min(chosen, maxApr));
+        let chosen = r > 0 ? r : feeApr;
+        if (chosen > 0 && feeApr > 0 && chosen > Math.max(feeApr * 3.5, 60)) chosen = feeApr;
+        chosen = cap(chosen);
         if (chosen > 0) lastGood = chosen;
         else if (lastGood > 0 && feeApr <= 0) chosen = lastGood;
         return chosen;
@@ -457,6 +461,7 @@
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
+    const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 2000);
     let lending = data.lendingPositions || [];
     if (window.PortfolioUI?.dedupeLendingPositions) {
       lending = window.PortfolioUI.dedupeLendingPositions(lending);
@@ -571,9 +576,10 @@
         debankCollateral > 0 ? debankCollateral : Number(lend.collateral || 0);
       const debt = debankDebt > 0 ? debankDebt : Number(lend.debt || 0);
       const liveLiq = Number(activeLpUsd || 0) > 0 ? Number(activeLpUsd) : staticLiquidity;
-      const equity = window.PortfolioUI?.calcLiveEquityUsd
+      let equity = window.PortfolioUI?.calcLiveEquityUsd
         ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq)
         : staticEquity;
+      if (manualEquityAdj > 0) equity += manualEquityAdj;
       const ret = ((equity - initial) / initial) * 100;
       document.getElementById("currentUsd").textContent = fmtUsd(equity);
       const retEl = document.getElementById("returnPct");
@@ -619,7 +625,7 @@
 
     const labels = snapshots.map(s => (s.timestamp || "").slice(0, 10));
     const baseEquity = snapshots.map(s => Number(s.equityUsd || 0));
-    const dailyYieldSeries = sanitizeYieldSeries(snapshots, data.dailyYieldSeries || [], 80);
+    const dailyYieldSeries = chartDailyYieldSeries(snapshots, data.dailyYieldSeries || [], 80);
 
     let unit = "USD";
     const toUnit = (usd) => {

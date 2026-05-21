@@ -469,10 +469,9 @@
     const c = (...names) => sheetColIndex(headers, ...names);
     const cellFloat = (i) => (i >= 0 ? parseSheetFloat(row[i]) : 0);
     const keys = [
-      "Внесено, USD",
       "Стоимость позиции, USD",
       "К hold, USD",
-      "Сейчас токен0, USD",
+      "Внесено, USD",
       "Инвестировано ВСЕГО (сейчас)",
       "underlying_value",
     ];
@@ -670,6 +669,23 @@
     return positions;
   }
 
+  function sumActiveLpValueUsd(positions) {
+    return (positions || []).reduce((sum, p) => {
+      const active = p.isActive !== false && !String(p.closedAt || "").trim();
+      if (!active) return sum;
+      const v = Number(p.valueUsd || 0);
+      return sum + (Number.isFinite(v) && v > 0 ? v : 0);
+    }, 0);
+  }
+
+  function calcLiveEquityUsd(collateralUsd, debtUsd, activeLpUsd) {
+    return (
+      Math.max(0, Number(collateralUsd || 0)) -
+      Math.max(0, Number(debtUsd || 0)) +
+      Math.max(0, Number(activeLpUsd || 0))
+    );
+  }
+
   window.PortfolioUI = {
     chainLabelUi,
     chainBadgeHtml,
@@ -679,6 +695,8 @@
     renderLpCard,
     renderLendingCard,
     renderS1Card,
+    sumActiveLpValueUsd,
+    calcLiveEquityUsd,
     syncLiquidityPositionsFromSheet,
     enrichLpRangesFromSheet,
   };

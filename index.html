@@ -378,13 +378,46 @@
   <script src="./js/portfolio-ui.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script>
+    window.enrichPortfolioHistoryReferences = async function (data) {
+      if (!data) return data;
+      const bust = new URLSearchParams(window.location.search).get("r") || String(Date.now());
+      const eqN = Object.keys(data.equityHistoryByDay || {}).length;
+      const yN = Object.keys(data.chartYieldByDay || {}).length;
+      if (eqN < 50) {
+        try {
+          const r = await fetch(`./data/equity-history-reference.json?r=${encodeURIComponent(bust)}`);
+          if (r.ok) {
+            const j = await r.json();
+            data.equityHistoryByDay = j.byDay || j;
+          }
+        } catch (e) {
+          console.warn("equity-history-reference.json", e);
+        }
+      }
+      if (yN < 50) {
+        try {
+          const r = await fetch(`./data/chart-yield-reference.json?r=${encodeURIComponent(bust)}`);
+          if (r.ok) {
+            const j = await r.json();
+            data.chartYieldByDay = j.byDay || j;
+          }
+        } catch (e) {
+          console.warn("chart-yield-reference.json", e);
+        }
+      }
+      return data;
+    };
+
     (function () {
       const qs = new URLSearchParams(window.location.search);
       const bust = qs.get("r") || String(Date.now());
       const s = document.createElement("script");
       s.src = `./data/portfolio-data.js?r=${encodeURIComponent(bust)}`;
-      s.onload = function () {
+      s.onload = async function () {
         window.__portfolioDataLoaded = true;
+        if (window.PORTFOLIO_DATA) {
+          await window.enrichPortfolioHistoryReferences(window.PORTFOLIO_DATA);
+        }
         if (typeof window.__initPortfolioApp === "function" && window.__vipAuthOk) {
           window.__initPortfolioApp();
         }
@@ -396,9 +429,11 @@
     })();
   </script>
   <script>
-    window.__initPortfolioApp = function () {
+    window.__initPortfolioApp = async function () {
     if (window.__portfolioAppStarted) return;
     if (!window.PORTFOLIO_DATA) return;
+    await window.enrichPortfolioHistoryReferences(window.PORTFOLIO_DATA);
+    if (window.__portfolioAppStarted) return;
     window.__portfolioAppStarted = true;
     try {
 

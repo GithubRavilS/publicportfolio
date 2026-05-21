@@ -213,8 +213,24 @@
       .join("");
   }
 
+  function estimateLendingHealthFactor(collateralUsd, borrowUsd) {
+    const coll = Number(collateralUsd || 0);
+    const debt = Number(borrowUsd || 0);
+    if (debt <= 0 || coll <= 0) return 0;
+    return (coll / debt) * 0.93;
+  }
+
+  function displayLendingHealthFactor(p) {
+    const coll = Number(p.collateralUsd || 0);
+    const debt = Number(p.borrowUsd || 0);
+    let hf = Number(p.healthFactor || 0);
+    const est = estimateLendingHealthFactor(coll, debt);
+    if (debt >= 50 && est >= 1.05 && est <= 5 && (hf <= 0 || hf >= 9.5)) return est;
+    return hf;
+  }
+
   function renderLendingCard(p, ctx) {
-    const hf = Number(p.healthFactor || 0);
+    const hf = displayLendingHealthFactor(p);
     const hfClass = hf > 0 && hf < 1.2 ? " lend-hf--warn" : hf > 0 && hf < 1.5 ? " lend-hf--mid" : "";
     const supplied = p.supplied?.length
       ? p.supplied

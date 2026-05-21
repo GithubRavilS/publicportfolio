@@ -11,20 +11,25 @@ REMOTE="https://GithubRavilS:${TOKEN}@github.com/GithubRavilS/publicportfolio.gi
 
 git_recover() {
   if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-    echo "[WARN] Прерванный rebase — откатываю (git rebase --abort)"
+    echo "[WARN] Прерванный rebase — git rebase --abort"
     git rebase --abort || true
   fi
   if [ -f .git/MERGE_HEAD ]; then
-    echo "[WARN] Незавершённый merge — откатываю (git merge --abort)"
+    echo "[WARN] Прерванный merge — git merge --abort"
     git merge --abort || true
   fi
   git checkout -f main 2>/dev/null || git checkout -B main
 }
 
-git_recover
-git fetch "$REMOTE" main
-# Для cron надёжнее merge, чем rebase (rebase оставляет «no branch, rebasing» при сбое)
-git pull --no-rebase "$REMOTE" main
+sync_code_from_github() {
+  git_recover
+  git fetch "$REMOTE" main
+  # Код и эталоны — с GitHub; локальные «зависшие» коммиты на PA сбрасываем
+  git reset --hard FETCH_HEAD
+  echo "[OK] Код синхронизирован с GitHub (main)"
+}
+
+sync_code_from_github
 
 python debank_parser_final.py
 if ls debank_lending_*.csv >/dev/null 2>&1; then
@@ -33,10 +38,15 @@ else
   echo "[WARN] No debank_lending_*.csv, skip import_debank_csv"
 fi
 
-python python/etl_revert.py
+python python/etl_revert.py | tee /tmp/etl_last.log
+if ! grep -q "liquidity_usd=[5-9]" /tmp/etl_last.log && ! grep -q "liquidity_usd=8" /tmp/etl_last.log; then
+  echo "[FATAL] etl_revert: liquidity_usd ~444 — на GitHub старый etl_revert.py без фикса NBSP."
+  echo "        Залей с Mac python/etl_revert.py, затем снова запусти этот скрипт."
+  exit 1
+fi
+
 python python/export_static_data.py
 
-# Обязательно в репозитории (для export + фронта на Vercel):
 git add \
   data/portfolio-data.js \
   data/snapshots.json \

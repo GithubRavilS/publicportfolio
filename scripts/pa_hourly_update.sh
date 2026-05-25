@@ -46,9 +46,11 @@ if ! grep -q "liquidity_usd=[5-9]" /tmp/etl_last.log && ! grep -q "liquidity_usd
 fi
 
 python python/export_static_data.py
+python scripts/validate_portfolio_export.py data/portfolio-data.js || echo "[WARN] export audit warnings (non-fatal)"
 
 git add \
   data/portfolio-data.js \
+  data/lp-income-snapshots.json \
   data/snapshots.json \
   data/chart-yield-reference.json \
   data/equity-history-reference.json \
@@ -58,6 +60,8 @@ git add \
   js/portfolio-ui.js \
   python/etl_revert.py \
   python/export_static_data.py \
+  python/lp_income_snapshots.py \
+  scripts/validate_portfolio_export.py \
   python/config.json \
   scripts/pa_hourly_update.sh
 

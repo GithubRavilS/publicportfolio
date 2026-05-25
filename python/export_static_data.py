@@ -11,6 +11,8 @@ from collections.abc import Iterable
 
 import requests
 
+from lp_income_snapshots import apr_from_snapshot_row, fill_daily_income_on_snapshots
+
 
 def parse_pct(value: str) -> float:
     s = (value or "").strip().replace("%", "").replace(",", ".")
@@ -238,46 +240,35 @@ def snapshots_from_equity_reference(
     return out
 
 
-def extrapolate_equity_tail_btc(
+def forward_fill_equity_calendar_tail(
     snapshots: list[dict],
     anchor_day: str,
     ref_by_day: dict[str, dict],
 ) -> list[dict]:
-    """После anchor_day: equity движется как BTC (для дыр 19–21.05)."""
+    """Календарный хвост после anchor_day без привязки к BTC (не даёт ложных −$1000)."""
     anchor = ref_by_day.get(anchor_day)
     if not anchor or not snapshots:
         return snapshots
-    anchor_eq = float(anchor.get("equityUsd") or 0.0)
-    if anchor_eq <= 0:
-        return snapshots
     by_day = {str(s["timestamp"])[:10]: dict(s) for s in snapshots}
-    last_day = max(by_day.keys())
     target_end = max(
-        last_day,
+        max(by_day.keys()),
         datetime.now(timezone.utc).strftime("%Y-%m-%d"),
     )
     if target_end <= anchor_day:
         return snapshots
-    try:
-        btc = fetch_btc_history(anchor_day, target_end)
-    except Exception:
-        btc = {}
-    b0 = _btc_price_on(btc, anchor_day)
     d_cur = datetime.strptime(anchor_day, "%Y-%m-%d").date()
     d_end = datetime.strptime(target_end, "%Y-%m-%d").date()
+    last_row = dict(anchor)
     while d_cur <= d_end:
         ds = d_cur.isoformat()
-        if ds > anchor_day:
-            ratio = (_btc_price_on(btc, ds) / b0) if b0 > 0 else 1.0
-            eq = anchor_eq * ratio
-            if ds in by_day:
-                by_day[ds]["equityUsd"] = eq
-            else:
-                filler = dict(anchor)
-                filler["timestamp"] = f"{ds}T00:00:00.000Z"
-                filler["equityUsd"] = eq
-                filler["dailyFeeIncomeUsd"] = 0.0
-                by_day[ds] = filler
+        if ds in by_day:
+            last_row = dict(by_day[ds])
+        elif ds > anchor_day:
+            filler = dict(last_row)
+            filler["timestamp"] = f"{ds}T00:00:00.000Z"
+            filler["dailyFeeIncomeUsd"] = 0.0
+            by_day[ds] = filler
+            last_row = filler
         d_cur += timedelta(days=1)
     return [by_day[k] for k in sorted(by_day.keys())]
 
@@ -409,6 +400,16 @@ def days_held_since_open(opened_at: str, as_of: date) -> float:
     return max(float(days), 1.0)
 
 
+def sheet_portfolio_cumulative_income_usd(config: dict) -> float:
+    """Сумма комиссий + инсентивов по всем активным LP (накопительно из таблицы)."""
+    total = 0.0
+    for p in load_liquidity_positions_from_sheet(config):
+        if not p.get("isActive"):
+            continue
+        total += float(p.get("feesUsd") or 0.0) + float(p.get("incentivesUsd") or 0.0)
+    return total
+
+
 def sheet_portfolio_daily_income_usd(config: dict, as_of: date | None = None) -> float:
     """Средний дневной доход LP: (комиссии + incentives USD) / дни в позиции."""
     as_of = as_of or date.today()
@@ -421,6 +422,145 @@ def sheet_portfolio_daily_income_usd(config: dict, as_of: date | None = None) ->
         days = days_held_since_open(str(p.get("openedAt") or ""), as_of)
         daily_income += (fees + inc) / days
     return daily_income
+
+
+def distribute_rollup_income_to_snapshots(
+    out: list[dict],
+    dates: list[str],
+    rollup_by_day: dict[str, dict],
+) -> dict[str, float]:
+    """
+    Заполняет dailyFeeIncomeUsd из revert_daily_rollup (БД на PA).
+    Между двумя датами rollup делит earned (или дельту total_fee) поровну по календарю.
+    """
+    income_by_day: dict[str, float] = {}
+    roll_dates = sorted(rollup_by_day.keys())
+    if len(roll_dates) < 2:
+        return income_by_day
+
+    date_to_idx = {d: i for i, d in enumerate(dates)}
+
+    for k in range(1, len(roll_dates)):
+        d0, d1 = roll_dates[k - 1], roll_dates[k]
+        r0, r1 = rollup_by_day[d0], rollup_by_day[d1]
+        earned = float(r1.get("earnedUsd") or 0.0)
+        if earned <= 0:
+            t0 = float(r0.get("totalFeeUsd") or 0.0)
+            t1 = float(r1.get("totalFeeUsd") or 0.0)
+            if t1 > t0:
+                earned = t1 - t0
+        if earned <= 0:
+            continue
+        try:
+            gap_days = max((date.fromisoformat(d1) - date.fromisoformat(d0)).days, 1)
+        except ValueError:
+            gap_days = 1
+        per_day = earned / gap_days
+        try:
+            d_cur = date.fromisoformat(d0) + timedelta(days=1)
+            d_end = date.fromisoformat(d1)
+        except ValueError:
+            continue
+        while d_cur <= d_end:
+            ds = d_cur.isoformat()
+            income_by_day[ds] = income_by_day.get(ds, 0.0) + per_day
+            if ds in date_to_idx:
+                i = date_to_idx[ds]
+                if float(out[i].get("dailyFeeIncomeUsd") or 0) <= 0:
+                    out[i]["dailyFeeIncomeUsd"] = round(per_day, 6)
+            d_cur += timedelta(days=1)
+
+    for i, s in enumerate(out):
+        d = dates[i]
+        earned = float((rollup_by_day.get(d) or {}).get("earnedUsd") or 0.0)
+        if earned > 0 and float(s.get("dailyFeeIncomeUsd") or 0) <= 0:
+            s["dailyFeeIncomeUsd"] = earned
+            income_by_day[d] = earned
+
+    return income_by_day
+
+
+def assign_daily_fee_income_to_snapshots(
+    snapshots: list[dict],
+    rollup_by_day: dict[str, dict],
+    config: dict,
+    positions: list[dict],
+) -> tuple[list[dict], dict[str, float]]:
+    """
+    Дневной доход LP:
+    1) revert_daily_rollup (БД, каждый hourly ETL);
+    2) lp-income-snapshots.json (дельта по позициям);
+    3) дельта cumulative из Google Sheet между прогонами.
+    """
+    if not snapshots:
+        return snapshots, {}
+    as_of = str(snapshots[-1].get("timestamp", ""))[:10]
+    out = [dict(s) for s in snapshots]
+    dates = [str(s.get("timestamp", ""))[:10] for s in out]
+    income_by_day = distribute_rollup_income_to_snapshots(out, dates, rollup_by_day)
+
+    snap_income, income_from_store = fill_daily_income_on_snapshots(
+        snapshots, positions, as_of_day=as_of or None
+    )
+    for i, s in enumerate(snap_income):
+        fee_store = float(s.get("dailyFeeIncomeUsd") or 0.0)
+        if fee_store > 0:
+            out[i] = dict(s)
+            income_by_day[dates[i]] = fee_store
+
+    dates = [str(s.get("timestamp", ""))[:10] for s in out]
+
+    for i, s in enumerate(out):
+        d = dates[i]
+        earned = float((rollup_by_day.get(d) or {}).get("earnedUsd") or 0.0)
+        if earned > 0:
+            s["dailyFeeIncomeUsd"] = earned
+            income_by_day[d] = earned
+
+    cum_now = sheet_portfolio_cumulative_income_usd(config)
+    roll_dates = sorted(rollup_by_day.keys())
+    last_roll_day = roll_dates[-1] if roll_dates else ""
+    last_roll_cum = float(rollup_by_day[last_roll_day].get("totalFeeUsd") or 0.0) if last_roll_day else 0.0
+
+    if last_roll_day and cum_now > last_roll_cum:
+        gap_idx = [i for i, d in enumerate(dates) if d > last_roll_day]
+        if gap_idx and len(gap_idx) <= 14:
+            delta = cum_now - last_roll_cum
+            per_day = delta / len(gap_idx)
+            for i in gap_idx:
+                if float(out[i].get("dailyFeeIncomeUsd") or 0) <= 0:
+                    out[i]["dailyFeeIncomeUsd"] = per_day
+                    income_by_day[dates[i]] = per_day
+
+    for i in range(1, len(out)):
+        if float(out[i].get("dailyFeeIncomeUsd") or 0) > 0:
+            continue
+        prev_cum = 0.0
+        dprev = ""
+        for j in range(i - 1, -1, -1):
+            dprev = dates[j]
+            if dprev in rollup_by_day:
+                prev_cum = float(rollup_by_day[dprev].get("totalFeeUsd") or 0.0)
+                break
+        if prev_cum > 0 and dprev and dates[i] in rollup_by_day:
+            cur_cum = float(rollup_by_day[dates[i]].get("totalFeeUsd") or 0.0)
+            if cur_cum > prev_cum:
+                gap = (datetime.strptime(dates[i], "%Y-%m-%d") - datetime.strptime(dprev, "%Y-%m-%d")).days
+                inc = (cur_cum - prev_cum) / max(gap, 1)
+                out[i]["dailyFeeIncomeUsd"] = inc
+                income_by_day[dates[i]] = inc
+
+    if out and float(out[-1].get("dailyFeeIncomeUsd") or 0) <= 0:
+        try:
+            as_of = datetime.strptime(dates[-1], "%Y-%m-%d").date()
+        except ValueError:
+            as_of = date.today()
+        est = sheet_portfolio_daily_income_usd(config, as_of)
+        if est > 0:
+            out[-1]["dailyFeeIncomeUsd"] = est
+            income_by_day[dates[-1]] = est
+
+    return out, income_by_day
 
 
 def sheet_portfolio_chart_apr(
@@ -662,17 +802,20 @@ def merge_realized_apr(
     return out
 
 
-def build_fee_based_daily_yield(snapshots: list[dict]) -> list[float]:
-    """APR из дневного fee income / liquidity (наиболее честная дневная метрика)."""
-    out: list[float] = []
-    for s in snapshots:
-        liq = float(s.get("liquidityUsd") or 0.0)
-        fee = float(s.get("dailyFeeIncomeUsd") or 0.0)
-        if liq > 0 and fee > 0:
-            out.append((fee / liq) * 365.0 * 100.0)
-        else:
-            out.append(0.0)
-    return out
+def portfolio_base_usd_from_snapshot(s: dict) -> float:
+    """База для APR: залог − долг + ликвидность (без визуальной поправки)."""
+    coll = float(s.get("collateralUsd") or 0.0)
+    debt = float(s.get("debtUsd") or 0.0)
+    liq = float(s.get("liquidityUsd") or 0.0)
+    base = coll - debt + liq
+    if base > 0:
+        return base
+    return max(float(s.get("equityUsd") or 0.0), liq, 1.0)
+
+
+def build_fee_based_daily_yield(snapshots: list[dict], *, max_apr: float = 80.0) -> list[float]:
+    """APR (годовых) = (дневной доход USD / ликвидность LP) × 365 × 100."""
+    return [apr_from_snapshot_row(s, max_apr=max_apr) for s in snapshots]
 
 
 def merge_apr_for_chart(
@@ -847,9 +990,10 @@ def build_chart_daily_yield_series(
     max_chart_apr: float = 80.0,
 ) -> list[float]:
     """
-    Правый график: эталон до 18.05 + fee-based где есть честные fees + хвост 1–3 дня поровну.
-    Realized APR из ETL не используем (даёт 80% «палки» при fee=0).
+    Правый график: дневной прирост дохода (fees+incentives) → APR годовых.
+    История до появления fee — из chart-yield-reference; без плоской заглушки 8.27%.
     """
+    del realized_by_day, rollup_by_day, config, synthetic
     if not snapshots:
         return []
     reference = load_yield_reference_by_day()
@@ -857,20 +1001,14 @@ def build_chart_daily_yield_series(
     for i, s in enumerate(snapshots):
         d = str(s.get("timestamp", ""))[:10]
         fee_apr = float(fee_based[i] if i < len(fee_based) else 0.0)
+        if fee_apr > 0.01:
+            out.append(max(0.0, min(fee_apr, max_chart_apr)))
+            continue
         ref_apr = float(reference.get(d, 0.0))
-        syn_apr = float(synthetic[i] if i < len(synthetic) else 0.0)
-        chosen = 0.0
-        if 0.5 < fee_apr <= 55.0:
-            chosen = fee_apr
-        elif ref_apr > 0.5:
-            chosen = ref_apr
-        elif syn_apr > 0.5:
-            chosen = syn_apr
-        chosen = max(0.0, min(chosen, max_chart_apr))
-        out.append(chosen)
-    out = fill_trailing_yield_gap(
-        snapshots, out, rollup_by_day, config, max_gap_days=3, max_chart_apr=max_chart_apr
-    )
+        if ref_apr > 0.5:
+            out.append(min(ref_apr, max_chart_apr))
+        else:
+            out.append(0.0)
     return out
 
 
@@ -1450,7 +1588,6 @@ def patch_recent_snapshots_from_sources(
         return snapshots
     coll, debt, _ = aggregate_lending_totals(lending_positions)
     n = len(snapshots)
-    daily_fee = sheet_portfolio_daily_income_usd(config or {}) if config else 0.0
     for i in range(max(0, n - days), n):
         s = dict(snapshots[i])
         if coll > 0:
@@ -1464,8 +1601,6 @@ def patch_recent_snapshots_from_sources(
             - float(s.get("debtUsd") or 0.0)
             + float(s.get("liquidityUsd") or 0.0)
         )
-        if daily_fee > 0:
-            s["dailyFeeIncomeUsd"] = daily_fee
         snapshots[i] = s
     return snapshots
 
@@ -2042,10 +2177,10 @@ def main() -> None:
         snapshots = apply_snapshot_reference(snapshots, equity_ref)
     anchor_day = max(equity_ref.keys()) if equity_ref else ""
     if anchor_day:
-        snapshots = extrapolate_equity_tail_btc(snapshots, anchor_day, equity_ref)
+        snapshots = forward_fill_equity_calendar_tail(snapshots, anchor_day, equity_ref)
     snapshots = fill_calendar_gaps_in_snapshots(snapshots, max_gap_days=45)
     snapshots = patch_recent_snapshots_from_sources(
-        snapshots, lending_positions, sheet_lp_usd, config=config, days=1
+        snapshots, lending_positions, sheet_lp_usd, config=config, days=12
     )
     if sheet_lp_usd < 3000:
         print(
@@ -2067,12 +2202,16 @@ def main() -> None:
 
     if not snapshots_already_rebased(snapshots, initial_capital):
         snapshots = rebase_equity_start_only(snapshots, initial_capital, current_adjustment)
+    liquidity_positions_pre = load_liquidity_positions_from_sheet(config)
     fallback_apr = mean_apr_from_revert_sheet(config)
     month_apr = month_apr_map_from_revert_sheet(config)
     synthetic_daily_yield = build_daily_yield_series(snapshots, fallback_apr, month_apr)
     realized_by_day = load_realized_apr_by_day(conn)
-    fee_based_yield = build_fee_based_daily_yield(snapshots)
     rollup_by_day = load_apr_rollup_by_day(conn)
+    snapshots, income_by_day = assign_daily_fee_income_to_snapshots(
+        snapshots, rollup_by_day, config, liquidity_positions_pre
+    )
+    fee_based_yield = build_fee_based_daily_yield(snapshots)
     daily_yield_series = build_chart_daily_yield_series(
         snapshots,
         fee_based_yield,
@@ -2086,7 +2225,7 @@ def main() -> None:
 
     tx_path = Path("data/transactions.json")
     transactions = json.loads(tx_path.read_text(encoding="utf-8")) if tx_path.exists() else []
-    liquidity_positions = load_liquidity_positions_from_sheet(config)
+    liquidity_positions = liquidity_positions_pre or load_liquidity_positions_from_sheet(config)
     if not lending_positions:
         lending_positions = load_latest_debank_lending_csv(config)
 
@@ -2252,6 +2391,7 @@ def main() -> None:
         "monthAprMap": month_apr,
         "realizedAprByDay": realized_by_day,
         "aprAudit": apr_audit,
+        "incomeByDay": {k: round(float(v), 6) for k, v in sorted(income_by_day.items())},
         "liquidityPositions": liquidity_positions,
         "lendingPositions": lending_positions,
         "transactions": transactions,
@@ -2262,6 +2402,23 @@ def main() -> None:
     out = Path("data/portfolio-data.js")
     out.write_text("window.PORTFOLIO_DATA = " + json.dumps(payload, ensure_ascii=False) + ";", encoding="utf-8")
     print(f"[OK] Exported static data to {out} (exportedAt={exported_at})")
+
+    validate_script = Path(__file__).resolve().parent.parent / "scripts" / "validate_portfolio_export.py"
+    if validate_script.exists():
+        import subprocess
+
+        proc = subprocess.run(
+            [sys.executable, str(validate_script), str(out)],
+            cwd=str(Path(__file__).resolve().parent.parent),
+            capture_output=True,
+            text=True,
+        )
+        if proc.stdout.strip():
+            print(proc.stdout.strip())
+        if proc.returncode != 0:
+            if proc.stderr.strip():
+                print(proc.stderr.strip(), file=sys.stderr)
+            print("[WARN] validate_portfolio_export.py reported issues (export kept)", file=sys.stderr)
 
     if len(snapshots) < 130:
         raise SystemExit(

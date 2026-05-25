@@ -467,12 +467,20 @@
       || "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355"
     ).trim();
 
+    function portfolioBaseUsd(s) {
+      const coll = Number(s.collateralUsd || 0);
+      const debt = Number(s.debtUsd || 0);
+      const liq = Number(s.liquidityUsd || 0);
+      const base = coll - debt + liq;
+      if (base > 0) return base;
+      return Math.max(Number(s.equityUsd || 0), liq, 0);
+    }
+
     function feeBasedAprFromSnapshots(snaps) {
-      return (snaps || []).map((s, i) => {
-        if (i === 0) return 0;
-        const liq = Number(s.liquidityUsd || 0);
+      return (snaps || []).map((s) => {
+        const base = portfolioBaseUsd(s);
         const fee = Number(s.dailyFeeIncomeUsd || 0);
-        if (liq > 0 && fee >= 0) return (fee / liq) * 365 * 100;
+        if (base > 0 && fee > 0) return (fee / base) * 365 * 100;
         return 0;
       });
     }
@@ -502,21 +510,15 @@
       const cap = (v) => Math.max(0, Math.min(Number(v) || 0, maxApr));
       const ref = yieldByDay || {};
       const feeBased = feeBasedAprFromSnapshots(snaps);
-      let lastGood = 0;
       return (snaps || []).map((s, i) => {
         const d = (s.timestamp || "").slice(0, 10);
-        const refApr = Number(ref[d] || 0);
         const feeApr = Number(feeBased[i] || 0);
+        if (feeApr > 0.01) return cap(feeApr);
+        const refApr = Number(ref[d] || 0);
+        if (refApr > 0.5) return cap(refApr);
         const r = Number(rawSeries?.[i] || 0);
-        let chosen = 0;
-        if (refApr > 0.5) chosen = refApr;
-        else if (0.5 < feeApr && feeApr <= 55) chosen = feeApr;
-        else if (r > 0.5) chosen = r;
-        if (chosen > 0 && feeApr > 0 && chosen > Math.max(feeApr * 3.5, 60)) chosen = feeApr;
-        chosen = cap(chosen);
-        if (chosen > 0) lastGood = chosen;
-        else if (lastGood > 0) chosen = lastGood;
-        return chosen;
+        if (r > 0.5) return cap(r);
+        return 0;
       });
     }
 
@@ -744,7 +746,11 @@
     `).join("");
 
     const labels = snapshots.map(s => (s.timestamp || "").slice(0, 10));
-    const baseEquity = snapshots.map((s) => Number(s.equityUsd || 0) + manualEquityAdj);
+    const baseEquity = snapshots.map((s, i) => {
+      const raw = Number(s.equityUsd || 0);
+      if (i === snapshots.length - 1 && manualEquityAdj > 0) return raw + manualEquityAdj;
+      return raw;
+    });
     const dailyYieldSeries = chartDailyYieldSeries(
       snapshots,
       data.dailyYieldSeries || [],
@@ -1113,13 +1119,31 @@
       const sum = active.reduce((acc, p) => acc + s1AprFromPosition(p), 0);
       return sum / active.length;
     })();
+    const patchS1StuckTail = (series, meanApr, tailDays = 5) => {
+      const mean = Math.max(0, Math.min(Number(meanApr) || 0, 25));
+      const out = (series || []).map((v) => Math.max(0, Math.min(Number(v) || 0, 25)));
+      const n = out.length;
+      const tailStart = Math.max(1, n - tailDays);
+      for (let i = 1; i < n; i++) {
+        const v = out[i];
+        const stuck = Math.abs(v - 0.33) <= 0.06;
+        const tailLow = i >= tailStart && v >= 0 && v < 0.55 && mean > 1;
+        if (stuck || tailLow) out[i] = mean;
+      }
+      return out;
+    };
     const s1AprExported = (s1.dailyYieldSeries || []).map((v) => Math.max(0, Math.min(Number(v) || 0, 25)));
     const exportedMean = Number(s1.meanDisplayApr || 0);
     const chartMean = exportedMean > 0 ? exportedMean : s1MeanApr;
-    const s1AprSeries =
-      s1AprExported.length === s1Labels.length && s1AprExported.length > 1
-        ? s1AprExported
-        : s1Labels.map((_, i) => (i === 0 ? 0 : Math.min(chartMean, 25)));
+    const s1AprFlatExported =
+      s1AprExported.length > 2 &&
+      new Set(s1AprExported.slice(1).map((v) => v.toFixed(2))).size === 1;
+    let s1AprSeries;
+    if (s1AprExported.length === s1Labels.length && s1AprExported.length > 1 && !s1AprFlatExported) {
+      s1AprSeries = patchS1StuckTail(s1AprExported, chartMean);
+    } else {
+      s1AprSeries = patchS1StuckTail(s1AprFromSnapshots(s1Snapshots, 25), chartMean);
+    }
     const s1Charts = { equity: null, apr: null };
     const initS1Charts = () => {
       if (s1Charts.equity && s1Charts.apr) {

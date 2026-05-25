@@ -1,9 +1,0 @@
-{
-  "collateralTokens": [
-    { "symbol": "BTC", "amount": 0.12 },
-    { "symbol": "ETH", "amount": 2.4 }
-  ],
-  "debtTokens": [
-    { "symbol": "USDC", "amount": 3200 }
-  ]
-}

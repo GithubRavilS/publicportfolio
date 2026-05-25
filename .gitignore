@@ -1,5 +1,12 @@
 .venv/
-data/portfolio.db
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.github_pat
 python/config.json
-data/source/
+*.db
+*.sqlite
 debank_lending_*.csv
+/tmp/

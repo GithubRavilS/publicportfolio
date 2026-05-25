@@ -94,7 +94,6 @@ git add \
   python/export_static_data.py \
   python/lp_income_snapshots.py \
   scripts/validate_portfolio_export.py \
-  python/config.json \
   scripts/pa_hourly_update.sh
 
 if git diff --cached --quiet; then

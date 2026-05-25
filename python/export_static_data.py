@@ -526,9 +526,10 @@ def build_market_equity_snapshots_calendar(
                 raw = coll - debt + liq
                 market_by_day[d] = (coll, debt, liq, raw)
 
+    yesterday = (datetime.strptime(today, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
     out: list[dict] = []
     for d in days:
-        if d == today:
+        if d in (today, yesterday):
             coll, debt, liq = coll_live, debt_live, lp_live
             equity = coll - debt + liq + adj
         elif d in ref_by_day and d <= ref_through:

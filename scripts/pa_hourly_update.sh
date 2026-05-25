@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PythonAnywhere: Scheduled task (hourly). Обновляет БД + пушит на GitHub → Vercel.
-# PA_HOURLY_SCRIPT_VERSION=2026-05-25-push-v3
+# PA_HOURLY_SCRIPT_VERSION=2026-05-25-push-v4
 set -euo pipefail
 cd ~/Public_portfolio
-echo "[OK] pa_hourly_update.sh version 2026-05-25-push-v3"
+echo "[OK] pa_hourly_update.sh version 2026-05-25-push-v4"
 source .venv/bin/activate
 export TMPDIR="${TMPDIR:-$HOME/tmp}"
 mkdir -p "$TMPDIR"
@@ -86,7 +86,7 @@ set +e
 PUSH_TS="$(date -u +%Y-%m-%dT%H%MZ)"
 PUSH_MSG="chore: portfolio data update ${PUSH_TS}"
 
-for f in data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json index.html; do
+for f in data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json; do
   if [ ! -f "$f" ]; then
     echo "[FATAL] Нет файла $f — push отменён"
     set -e
@@ -97,17 +97,14 @@ done
 cp data/portfolio-data.js "${TMPDIR}/portfolio-data.js.push"
 cp data/lp-income-snapshots.json "${TMPDIR}/lp-income-snapshots.json.push"
 cp data/chart-yield-reference.json "${TMPDIR}/chart-yield-reference.json.push"
-cp index.html "${TMPDIR}/index.html.push"
-
 git fetch "$REMOTE" main
 git reset --hard FETCH_HEAD
 
 cp "${TMPDIR}/portfolio-data.js.push" data/portfolio-data.js
 cp "${TMPDIR}/lp-income-snapshots.json.push" data/lp-income-snapshots.json
 cp "${TMPDIR}/chart-yield-reference.json.push" data/chart-yield-reference.json
-cp "${TMPDIR}/index.html.push" index.html
 
-git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json index.html
+git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json
 
 if git diff --cached --quiet; then
   echo "[OK] Файлы совпадают с GitHub — push не требуется"

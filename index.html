@@ -500,7 +500,7 @@
           debtUsd: Number(row.debtUsd ?? prev.debtUsd ?? 0),
           liquidityUsd: Number(row.liquidityUsd ?? prev.liquidityUsd ?? 0),
           equityUsd: Number(row.equityUsd ?? prev.equityUsd ?? 0),
-          dailyFeeIncomeUsd: Number(row.dailyFeeIncomeUsd ?? prev.dailyFeeIncomeUsd ?? 0)
+          dailyFeeIncomeUsd: Number(prev.dailyFeeIncomeUsd ?? 0)
         };
       }
       return Object.keys(byDay).sort().map((d) => byDay[d]);
@@ -515,7 +515,7 @@
       const out = (snaps || []).map((s, i) => {
         const d = (s.timestamp || "").slice(0, 10);
         const feeApr = Number(feeBased[i] || 0);
-        if (feeApr > 0.01) return cap(feeApr);
+        if (feeApr > 0.01 && feeApr < maxApr - 0.5) return cap(feeApr);
         const exported = Number(rawSeries?.[i] || 0);
         if (exported > 0.01 && exported < maxApr - 0.5) return cap(exported);
         const refApr = Number(ref[d] || 0);
@@ -596,7 +596,7 @@
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
-    const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 2000);
+    const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 0);
     let lending = data.lendingPositions || [];
     if (window.PortfolioUI?.dedupeLendingPositions) {
       lending = window.PortfolioUI.dedupeLendingPositions(lending);
@@ -759,11 +759,7 @@
     `).join("");
 
     const labels = snapshots.map(s => (s.timestamp || "").slice(0, 10));
-    const baseEquity = snapshots.map((s, i) => {
-      const raw = Number(s.equityUsd || 0);
-      if (i === snapshots.length - 1 && manualEquityAdj > 0) return raw + manualEquityAdj;
-      return raw;
-    });
+    const baseEquity = snapshots.map((s) => Number(s.equityUsd || 0));
     const dailyYieldSeries = chartDailyYieldSeries(
       snapshots,
       data.dailyYieldSeries || [],

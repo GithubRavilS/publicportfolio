@@ -192,7 +192,7 @@ def apply_snapshot_reference(snapshots: list[dict], ref_by_day: dict[str, dict])
         row = dict(s)
         if d in ref_by_day:
             ref = ref_by_day[d]
-            for k in ("equityUsd", "collateralUsd", "debtUsd", "liquidityUsd", "dailyFeeIncomeUsd"):
+            for k in ("equityUsd", "collateralUsd", "debtUsd", "liquidityUsd"):
                 if k in ref and ref[k] is not None:
                     row[k] = float(ref[k])
         out.append(row)
@@ -238,6 +238,23 @@ def snapshots_from_equity_reference(
         out.append(row)
         d_cur += timedelta(days=1)
     return out
+
+
+def equity_history_payload_from_snapshots(snapshots: list[dict]) -> dict[str, dict]:
+    """equityHistoryByDay для фронта — после санитизации fee, не сырой эталон с rollup-скачками."""
+    by_day: dict[str, dict] = {}
+    for s in snapshots:
+        d = str(s.get("timestamp", ""))[:10]
+        if not d:
+            continue
+        by_day[d] = {
+            "equityUsd": float(s.get("equityUsd") or 0.0),
+            "collateralUsd": float(s.get("collateralUsd") or 0.0),
+            "debtUsd": float(s.get("debtUsd") or 0.0),
+            "liquidityUsd": float(s.get("liquidityUsd") or 0.0),
+            "dailyFeeIncomeUsd": float(s.get("dailyFeeIncomeUsd") or 0.0),
+        }
+    return by_day
 
 
 def forward_fill_equity_calendar_tail(
@@ -2646,7 +2663,7 @@ def main() -> None:
         "snapshots": snapshots,
         "dailyYieldSeries": daily_yield_series,
         "chartYieldByDay": chart_yield_by_day,
-        "equityHistoryByDay": equity_ref,
+        "equityHistoryByDay": equity_history_payload_from_snapshots(snapshots),
         "fallbackApr": fallback_apr,
         "monthAprMap": month_apr,
         "realizedAprByDay": realized_by_day,

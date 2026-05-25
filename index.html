@@ -596,6 +596,7 @@
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
+    const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 0);
     let lending = data.lendingPositions || [];
     if (window.PortfolioUI?.dedupeLendingPositions) {
       lending = window.PortfolioUI.dedupeLendingPositions(lending);
@@ -710,9 +711,14 @@
         debankCollateral > 0 ? debankCollateral : Number(lend.collateral || 0);
       const debt = debankDebt > 0 ? debankDebt : Number(lend.debt || 0);
       const liveLiq = Number(activeLpUsd || 0) > 0 ? Number(activeLpUsd) : staticLiquidity;
-      let equity = window.PortfolioUI?.calcLiveEquityUsd
-        ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq)
-        : staticEquity;
+      const liveMode = Number(activeLpUsd || 0) > 0 || collateral > 0;
+      const chartLastEquity = Number(snapshots[snapshots.length - 1]?.equityUsd || 0);
+      let equity = chartLastEquity > 0 ? chartLastEquity : staticEquity;
+      if (liveMode && chartLastEquity <= 0) {
+        equity = window.PortfolioUI?.calcLiveEquityUsd
+          ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq) + manualEquityAdj
+          : staticEquity;
+      }
       const ret = ((equity - initial) / initial) * 100;
       document.getElementById("currentUsd").textContent = fmtUsd(equity);
       const retEl = document.getElementById("returnPct");
@@ -721,7 +727,6 @@
       document.getElementById("collateralUsd").textContent = fmtUsd(collateral);
       document.getElementById("debtUsd").textContent = fmtUsd(debt);
       document.getElementById("liquidityUsd").textContent = fmtUsd(liveLiq);
-      const liveMode = Number(activeLpUsd || 0) > 0 || collateral > 0;
       const exportDay =
         (data.exportedAt && String(data.exportedAt).slice(0, 10)) ||
         (latest.timestamp && latest.timestamp.slice(0, 10)) ||

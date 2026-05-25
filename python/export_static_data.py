@@ -2501,7 +2501,7 @@ def main() -> None:
     if anchor_day:
         snapshots = forward_fill_components_after_ref_anchor(snapshots, anchor_day, equity_ref)
     snapshots = patch_recent_snapshots_from_sources(
-        snapshots, lending_positions, sheet_lp_usd, config=config, days=1
+        snapshots, lending_positions, sheet_lp_usd, config=config, days=3
     )
     snapshots = sync_equity_usd_from_components(snapshots)
     if sheet_lp_usd < 3000:
@@ -2523,8 +2523,7 @@ def main() -> None:
         snapshots[-1] = last
 
     if not snapshots_already_rebased(snapshots, initial_capital):
-        snapshots = rebase_equity_start_only(snapshots, initial_capital, 0.0)
-    snapshots = sync_equity_usd_from_components(snapshots)
+        snapshots = rebase_equity_start_only(snapshots, initial_capital, current_adjustment)
     liquidity_positions_pre = load_liquidity_positions_from_sheet(config)
     fallback_apr = mean_apr_from_revert_sheet(config)
     month_apr = month_apr_map_from_revert_sheet(config)
@@ -2715,7 +2714,7 @@ def main() -> None:
         "portfolioWallet": ((config.get("debank_wallets") or [""]) + [""])[0],
         "debankWallets": config.get("debank_wallets") or [],
         "initialCapitalUsd": initial_capital,
-        "manualVisualAdjustmentUsd": 0,
+        "manualVisualAdjustmentUsd": current_adjustment,
         "prices": {"BTC": 95000, "ETH": 1800},
         "snapshots": snapshots,
         "dailyYieldSeries": daily_yield_series,

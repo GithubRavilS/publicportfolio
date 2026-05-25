@@ -586,6 +586,7 @@
 
     const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
     const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
+    const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 0);
     function patchTodayLiveCapital(snaps) {
       const out = (snaps || []).map((s) => ({ ...s }));
       if (!out.length) return out;
@@ -611,7 +612,6 @@
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
-    const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 0);
     let lending = data.lendingPositions || [];
     if (window.PortfolioUI?.dedupeLendingPositions) {
       lending = window.PortfolioUI.dedupeLendingPositions(lending);
@@ -719,6 +719,7 @@
     const staticEquity = Number(latest.equityUsd || initial);
 
     let equityChartRef = null;
+    let baseEquity = [];
 
     function applyDashboardKpis(activeLpUsd) {
       const lend = window.PortfolioUI?.sumLendingTotals
@@ -763,7 +764,6 @@
         (data.exportedAt && String(data.exportedAt).slice(0, 10)) ||
         (latest.timestamp && latest.timestamp.slice(0, 10)) ||
         "";
-      const today = new Date().toISOString().slice(0, 10);
       if (liveMode) {
         document.getElementById("updatedAt").textContent =
           lang === "ru"
@@ -793,7 +793,7 @@
     `).join("");
 
     const labels = snapshots.map(s => (s.timestamp || "").slice(0, 10));
-    const baseEquity = snapshots.map((s) => Number(s.equityUsd || 0));
+    baseEquity = snapshots.map((s) => Number(s.equityUsd || 0));
     const dailyYieldSeries = chartDailyYieldSeries(
       snapshots,
       data.dailyYieldSeries || [],

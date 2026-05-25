@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # PythonAnywhere: Scheduled task (hourly). Обновляет БД + пушит на GitHub → Vercel.
+# PA_HOURLY_SCRIPT_VERSION=2026-05-25-push-v3
 set -euo pipefail
 cd ~/Public_portfolio
+echo "[OK] pa_hourly_update.sh version 2026-05-25-push-v3"
 source .venv/bin/activate
 export TMPDIR="${TMPDIR:-$HOME/tmp}"
 mkdir -p "$TMPDIR"
@@ -79,47 +81,47 @@ fi
 python python/export_static_data.py
 python scripts/validate_portfolio_export.py data/portfolio-data.js || echo "[WARN] export audit warnings (non-fatal)"
 
-push_portfolio_data_to_github() {
-  local ts msg
-  ts="$(date -u +%Y-%m-%dT%H%MZ)"
-  msg="chore: portfolio data update ${ts}"
+echo "=== PUSH TO GITHUB (v3) ==="
+set +e
+PUSH_TS="$(date -u +%Y-%m-%dT%H%MZ)"
+PUSH_MSG="chore: portfolio data update ${PUSH_TS}"
 
-  git fetch "$REMOTE" main
-
-  for f in data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json; do
-    if [ ! -f "$f" ]; then
-      echo "[WARN] Missing $f — skip push"
-      return 1
-    fi
-  done
-
-  cp data/portfolio-data.js "${TMPDIR:-/tmp}/portfolio-data.js.push"
-  cp data/lp-income-snapshots.json "${TMPDIR:-/tmp}/lp-income-snapshots.json.push"
-  cp data/chart-yield-reference.json "${TMPDIR:-/tmp}/chart-yield-reference.json.push"
-
-  git reset --hard FETCH_HEAD
-  cp "${TMPDIR:-/tmp}/portfolio-data.js.push" data/portfolio-data.js
-  cp "${TMPDIR:-/tmp}/lp-income-snapshots.json.push" data/lp-income-snapshots.json
-  cp "${TMPDIR:-/tmp}/chart-yield-reference.json.push" data/chart-yield-reference.json
-
-  git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json
-
-  if git diff --cached --quiet; then
-    echo "[OK] portfolio-data без изменений относительно GitHub — push не нужен"
-    return 0
+for f in data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json index.html; do
+  if [ ! -f "$f" ]; then
+    echo "[FATAL] Нет файла $f — push отменён"
+    set -e
+    exit 1
   fi
+done
 
-  git commit -m "$msg"
+cp data/portfolio-data.js "${TMPDIR}/portfolio-data.js.push"
+cp data/lp-income-snapshots.json "${TMPDIR}/lp-income-snapshots.json.push"
+cp data/chart-yield-reference.json "${TMPDIR}/chart-yield-reference.json.push"
+cp index.html "${TMPDIR}/index.html.push"
+
+git fetch "$REMOTE" main
+git reset --hard FETCH_HEAD
+
+cp "${TMPDIR}/portfolio-data.js.push" data/portfolio-data.js
+cp "${TMPDIR}/lp-income-snapshots.json.push" data/lp-income-snapshots.json
+cp "${TMPDIR}/chart-yield-reference.json.push" data/chart-yield-reference.json
+cp "${TMPDIR}/index.html.push" index.html
+
+git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json index.html
+
+if git diff --cached --quiet; then
+  echo "[OK] Файлы совпадают с GitHub — push не требуется"
+else
+  git commit -m "$PUSH_MSG"
   if git push "$REMOTE" HEAD:main; then
-    echo "[OK] Pushed to GitHub (main): portfolio-data.js + lp-income + chart-yield-reference"
-    return 0
+    echo "[OK] Pushed to GitHub (main)"
+  else
+    echo "[FATAL] git push failed — проверь ~/.github_pat (права repo)"
+    set -e
+    exit 1
   fi
-
-  echo "[FATAL] git push failed — проверь ~/.github_pat и доступ к репозиторию"
-  return 1
-}
-
-push_portfolio_data_to_github
+fi
+set -e
 
 if [ -f "$CONFIG_BAK" ]; then
   cp "$CONFIG_BAK" python/config.json

@@ -151,13 +151,42 @@
     return `<div class="pool-rewards"><span class="lbl">${lbl}</span><span class="pool-reward-line">${token}: $${usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
   }
 
+  function parseOpenedIso(openedAt) {
+    const s = String(openedAt || "").trim();
+    const dmy = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return "";
+  }
+
+  function daysHeldSinceOpen(openedAt) {
+    const opened = parseOpenedIso(openedAt);
+    if (!opened) return 1;
+    const t0 = new Date(`${opened}T00:00:00Z`).getTime();
+    const t1 = new Date().setUTCHours(0, 0, 0, 0);
+    const days = Math.round((t1 - t0) / (24 * 60 * 60 * 1000));
+    return Math.max(1, days);
+  }
+
+  /** APR с учётом комиссий + инсентивов и дней в позиции (если Fee APY в таблице пустой). */
+  function computeLpDisplayApr(p) {
+    const fromSheet = Number(p.displayApr || p.apr || 0);
+    if (fromSheet > 0) return Math.min(fromSheet, 500);
+    const income = Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
+    const value = Number(p.valueUsd || 0);
+    if (value <= 0 || income <= 0) return 0;
+    const days = daysHeldSinceOpen(p.openedAt);
+    return Math.min((income / value) * (365 / days) * 100, 500);
+  }
+
   function renderLpCard(p, ctx) {
     applyLpRangeToPosition(p);
     const dex =
       p.platform && String(p.platform).trim() && p.platform !== "DEX"
         ? p.platform
         : dexFromLink(p.link, p.platform);
-    const aprShown = Number(p.apr || 0) > 0 ? `${Number(p.apr).toFixed(2)}%` : "—";
+    const aprVal = computeLpDisplayApr(p);
+    const aprShown = aprVal > 0 ? `${aprVal.toFixed(2)}%` : "—";
     const period = `${p.openedAt || "-"} → ${p.closedAt || (ctx.lang === "ru" ? "активна" : "active")}`;
     const statusRu = p.isActive ? "Активна" : "Закрыта";
     const statusEn = p.isActive ? "Active" : "Closed";
@@ -600,9 +629,9 @@
     const active = rowIsActive(headers, row);
     let closedDisp = cell(col("Дата закрытия", "Дата закрытия норм", "closed_at", "X", "D"));
     if (normalizeClosedCell(closedDisp) === "") closedDisp = "";
-    const apr = feeApyPercentFromSheetRow(headers, row);
     const feesUsd = feesUsdFromSheetRow(headers, row);
     const inc = incentivesFromSheetRow(headers, row);
+    const aprSheet = feeApyPercentFromSheetRow(headers, row);
     const iFeeTier = col("Fee tier (%)", "Fee tier", "fee_tier", "BJ", "V");
     const platform = normalizePlatformLabel(platformRaw) || dexFromLink(link, "DEX");
     const pair = `${t0} / ${t1}`.replace(/\s*\/\s*$|^\s*\/\s*/g, "").trim();
@@ -614,7 +643,8 @@
       feesUsd,
       incentivesUsd: inc.usd > 0 ? Math.round(inc.usd * 10000) / 10000 : 0,
       incentiveToken: inc.token,
-      apr,
+      apr: 0,
+      displayApr: 0,
       openedAt: cell(col("Дата открытия", "Дата открытия норм", "W", "first_mint_ts", "opened_at", "C")),
       closedAt: active ? "" : closedDisp,
       isActive: active,
@@ -656,6 +686,9 @@
       }
     }
     applyLpRangeToPosition(item);
+    const calcApr = computeLpDisplayApr(item);
+    item.apr = calcApr > 0 ? Math.round(calcApr * 100) / 100 : aprSheet > 0 ? aprSheet : 0;
+    item.displayApr = item.apr;
     return item;
   }
 

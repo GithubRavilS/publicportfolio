@@ -400,6 +400,68 @@ def days_held_since_open(opened_at: str, as_of: date) -> float:
     return max(float(days), 1.0)
 
 
+MAX_CHART_DAILY_APR_PCT = 55.0
+
+
+def max_daily_fee_usd_for_liquidity(liquidity_usd: float, *, max_apr: float = MAX_CHART_DAILY_APR_PCT) -> float:
+    liq = float(liquidity_usd or 0.0)
+    if liq <= 0:
+        return 0.0
+    return liq * (max_apr / 100.0) / 365.0
+
+
+def position_apr_from_item(p: dict, as_of: date | None = None) -> float:
+    """APR позиции: Fee APY из таблицы или (fees+incentives)/valueUsd/дни×365."""
+    as_of = as_of or date.today()
+    sheet_apr = float(p.get("apr") or 0.0)
+    if sheet_apr > 0:
+        return min(sheet_apr, 500.0)
+    fees = float(p.get("feesUsd") or 0.0) + float(p.get("incentivesUsd") or 0.0)
+    value = float(p.get("valueUsd") or 0.0)
+    if value <= 0 or fees <= 0:
+        return 0.0
+    days = days_held_since_open(str(p.get("openedAt") or ""), as_of)
+    return min((fees / value) * (365.0 / days) * 100.0, 500.0)
+
+
+def reset_spike_fee_days_for_interpolation(
+    out: list[dict],
+    dates: list[str],
+    *,
+    start_day: str,
+    end_day: str,
+    max_apr: float = MAX_CHART_DAILY_APR_PCT,
+) -> None:
+    """Сбрасывает дневной fee на «потолке» APR — дальше заполнит интерполяция."""
+    for i, d in enumerate(dates):
+        if d < start_day or d > end_day:
+            continue
+        liq = float(out[i].get("liquidityUsd") or 0.0)
+        fee = float(out[i].get("dailyFeeIncomeUsd") or 0.0)
+        if liq <= 0 or fee <= 0:
+            continue
+        apr = (fee / liq) * 365.0 * 100.0
+        if apr >= max_apr - 0.5:
+            out[i]["dailyFeeIncomeUsd"] = 0.0
+
+
+def sanitize_snapshot_daily_fees(
+    out: list[dict],
+    dates: list[str],
+    *,
+    max_apr: float = MAX_CHART_DAILY_APR_PCT,
+) -> None:
+    """Убирает артефакты rollup (80% плато): ограничивает дневной fee по ликвидности."""
+    for i, s in enumerate(out):
+        liq = float(s.get("liquidityUsd") or 0.0)
+        fee = float(s.get("dailyFeeIncomeUsd") or 0.0)
+        if liq <= 0 or fee <= 0:
+            continue
+        cap = max_daily_fee_usd_for_liquidity(liq, max_apr=max_apr)
+        if fee > cap * 1.15:
+            s["dailyFeeIncomeUsd"] = round(cap, 6)
+
+
 def sheet_portfolio_cumulative_income_usd(config: dict) -> float:
     """Сумма комиссий + инсентивов по всем активным LP (накопительно из таблицы)."""
     total = 0.0
@@ -463,11 +525,17 @@ def distribute_rollup_income_to_snapshots(
             continue
         while d_cur <= d_end:
             ds = d_cur.isoformat()
-            income_by_day[ds] = income_by_day.get(ds, 0.0) + per_day
+            day_fee = per_day
+            if ds in date_to_idx:
+                liq = float(out[date_to_idx[ds]].get("liquidityUsd") or 0.0)
+                cap = max_daily_fee_usd_for_liquidity(liq)
+                if cap > 0:
+                    day_fee = min(day_fee, cap)
+            income_by_day[ds] = income_by_day.get(ds, 0.0) + day_fee
             if ds in date_to_idx:
                 i = date_to_idx[ds]
                 if float(out[i].get("dailyFeeIncomeUsd") or 0) <= 0:
-                    out[i]["dailyFeeIncomeUsd"] = round(per_day, 6)
+                    out[i]["dailyFeeIncomeUsd"] = round(day_fee, 6)
             d_cur += timedelta(days=1)
 
     for i, s in enumerate(out):
@@ -497,6 +565,7 @@ def assign_daily_fee_income_to_snapshots(
     as_of = str(snapshots[-1].get("timestamp", ""))[:10]
     out = [dict(s) for s in snapshots]
     dates = [str(s.get("timestamp", ""))[:10] for s in out]
+    sanitize_snapshot_daily_fees(out, dates)
     income_by_day = distribute_rollup_income_to_snapshots(out, dates, rollup_by_day)
 
     db_path = str(config.get("db_path", "data/portfolio.db"))
@@ -568,6 +637,11 @@ def assign_daily_fee_income_to_snapshots(
             out[-1]["dailyFeeIncomeUsd"] = est
             income_by_day[dates[-1]] = est
 
+    sanitize_snapshot_daily_fees(out, dates)
+    reset_spike_fee_days_for_interpolation(out, dates, start_day="2026-04-27", end_day="2026-04-30")
+    interpolate_daily_fee_income_gaps(out, dates, anchor_day="2026-04-20")
+    refine_flat_fee_plateaus(out, dates, anchor_day="2026-04-27")
+    sanitize_snapshot_daily_fees(out, dates)
     interpolate_daily_fee_income_gaps(out, dates, anchor_day="2026-05-15")
     refine_flat_fee_plateaus(out, dates, anchor_day="2026-05-19")
     for i, d in enumerate(dates):
@@ -606,8 +680,14 @@ def apply_daily_metrics_fees(
 ) -> None:
     for i, d in enumerate(dates):
         fee = float(fees_by_day.get(d) or 0.0)
-        if fee > 0 and float(out[i].get("dailyFeeIncomeUsd") or 0) <= 0:
-            out[i]["dailyFeeIncomeUsd"] = fee
+        if fee <= 0:
+            continue
+        liq = float(out[i].get("liquidityUsd") or 0.0)
+        cap = max_daily_fee_usd_for_liquidity(liq)
+        if cap > 0:
+            fee = min(fee, cap)
+        if float(out[i].get("dailyFeeIncomeUsd") or 0) <= 0:
+            out[i]["dailyFeeIncomeUsd"] = round(fee, 6)
 
 
 def interpolate_daily_fee_income_gaps(
@@ -1118,11 +1198,11 @@ def build_chart_daily_yield_series(
     rollup_by_day: dict[str, dict],
     config: dict | None = None,
     *,
-    max_chart_apr: float = 80.0,
+    max_chart_apr: float = MAX_CHART_DAILY_APR_PCT,
 ) -> list[float]:
     """
     Правый график: дневной прирост дохода (fees+incentives) → APR годовых.
-    История до появления fee — из chart-yield-reference; без плоской заглушки 8.27%.
+    История без fee — chart-yield-reference, но не плато 80% (игнор ref > max_chart_apr).
     """
     del realized_by_day, rollup_by_day, config, synthetic
     if not snapshots:
@@ -1136,10 +1216,23 @@ def build_chart_daily_yield_series(
             out.append(max(0.0, min(fee_apr, max_chart_apr)))
             continue
         ref_apr = float(reference.get(d, 0.0))
-        if ref_apr > 0.5:
-            out.append(min(ref_apr, max_chart_apr))
+        if 0.5 < ref_apr < max_chart_apr - 0.5:
+            out.append(ref_apr)
         else:
             out.append(0.0)
+    # Дни с 0 между известными APR (27–30.04 и т.п.) — линейная интерполяция
+    for i in range(len(out)):
+        if out[i] > 0.01:
+            continue
+        prev_i = next((j for j in range(i - 1, -1, -1) if out[j] > 0.01), None)
+        next_i = next((j for j in range(i + 1, len(out)) if out[j] > 0.01), None)
+        if prev_i is None or next_i is None:
+            continue
+        span = next_i - prev_i
+        if span <= 0:
+            continue
+        t = (i - prev_i) / span
+        out[i] = max(0.0, min(out[prev_i] + (out[next_i] - out[prev_i]) * t, max_chart_apr))
     return out
 
 
@@ -1841,7 +1934,7 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
             "feesUsd": fees_usd_public_row(r),
             "incentivesUsd": round(inc_usd, 4) if inc_usd > 0 else 0.0,
             "incentiveToken": inc_token,
-            "apr": apr,
+            "apr": 0.0,
             "openedAt": row_get(r, "Дата открытия", "Дата открытия норм", "W", "first_mint_ts"),
             "closedAt": closed_at,
             "isActive": is_active,
@@ -1851,6 +1944,9 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
             "valueUsd": round(val_usd, 2),
         }
         item.update(parse_position_range(r))
+        calc_apr = position_apr_from_item(item)
+        item["apr"] = round(calc_apr, 4) if calc_apr > 0 else round(apr, 4) if apr > 0 else 0.0
+        item["displayApr"] = item["apr"]
         out.append(item)
     by_key: dict[str, dict] = {}
     for item in out:
@@ -2350,7 +2446,7 @@ def main() -> None:
         realized_by_day,
         rollup_by_day,
         config,
-        max_chart_apr=80.0,
+        max_chart_apr=MAX_CHART_DAILY_APR_PCT,
     )
     apr_audit = build_apr_audit(snapshots, daily_yield_series, fee_based_yield, realized_by_day, rollup_by_day)
 

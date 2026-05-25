@@ -511,11 +511,8 @@
     function chartDailyYieldSeries(snaps, rawSeries, yieldByDay, maxApr = CHART_MAX_APR) {
       const cap = (v) => Math.max(0, Math.min(Number(v) || 0, maxApr));
       const ref = yieldByDay || {};
-      const feeBased = feeBasedAprFromSnapshots(snaps);
       const out = (snaps || []).map((s, i) => {
         const d = (s.timestamp || "").slice(0, 10);
-        const feeApr = Number(feeBased[i] || 0);
-        if (feeApr > 0.01 && feeApr < maxApr - 0.5) return cap(feeApr);
         const exported = Number(rawSeries?.[i] || 0);
         if (exported > 0.01 && exported < maxApr - 0.5) return cap(exported);
         const refApr = Number(ref[d] || 0);
@@ -589,9 +586,27 @@
 
     const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
     const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
-    let snapshots = rebuildSnapshotsFromEquityRef(
-      data.snapshots || [],
-      data.equityHistoryByDay || null
+    function patchTodayLiveCapital(snaps) {
+      const out = (snaps || []).map((s) => ({ ...s }));
+      if (!out.length) return out;
+      const today = new Date().toISOString().slice(0, 10);
+      const last = out[out.length - 1];
+      const day = (last.timestamp || "").slice(0, 10);
+      if (day !== today) return out;
+      const coll = Number(last.collateralUsd || 0);
+      const debt = Number(last.debtUsd || 0);
+      const liq = Number(last.liquidityUsd || 0);
+      const base = Math.max(0, coll - debt + liq);
+      const exported = Number(data.currentCapitalUsd || 0);
+      last.equityUsd = exported > 0 ? exported : base + manualEquityAdj;
+      return out;
+    }
+
+    let snapshots = patchTodayLiveCapital(
+      rebuildSnapshotsFromEquityRef(
+        data.snapshots || [],
+        data.equityHistoryByDay || null
+      )
     );
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
@@ -703,6 +718,8 @@
     const staticLiquidity = Number(latest.liquidityUsd || 0);
     const staticEquity = Number(latest.equityUsd || initial);
 
+    let equityChartRef = null;
+
     function applyDashboardKpis(activeLpUsd) {
       const lend = window.PortfolioUI?.sumLendingTotals
         ? window.PortfolioUI.sumLendingTotals(lending)
@@ -712,12 +729,27 @@
       const debt = debankDebt > 0 ? debankDebt : Number(lend.debt || 0);
       const liveLiq = Number(activeLpUsd || 0) > 0 ? Number(activeLpUsd) : staticLiquidity;
       const liveMode = Number(activeLpUsd || 0) > 0 || collateral > 0;
-      const chartLastEquity = Number(snapshots[snapshots.length - 1]?.equityUsd || 0);
-      let equity = chartLastEquity > 0 ? chartLastEquity : staticEquity;
-      if (liveMode && chartLastEquity <= 0) {
-        equity = window.PortfolioUI?.calcLiveEquityUsd
-          ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq) + manualEquityAdj
-          : staticEquity;
+      const base =
+        window.PortfolioUI?.calcLiveEquityUsd
+          ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq)
+          : Math.max(0, collateral - debt + liveLiq);
+      const exportedCurrent = Number(data.currentCapitalUsd || 0);
+      let equity = staticEquity;
+      if (liveMode) {
+        equity = base + manualEquityAdj;
+      } else if (exportedCurrent > 0) {
+        equity = exportedCurrent;
+      } else if (base > 0) {
+        equity = base + manualEquityAdj;
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      if (snapshots.length && (snapshots[snapshots.length - 1].timestamp || "").slice(0, 10) === today) {
+        snapshots[snapshots.length - 1].equityUsd = equity;
+        if (baseEquity.length) baseEquity[baseEquity.length - 1] = equity;
+        if (equityChartRef) {
+          equityChartRef.data.datasets[0].data = baseEquity.map(toUnit);
+          equityChartRef.update("none");
+        }
       }
       const ret = ((equity - initial) / initial) * 100;
       document.getElementById("currentUsd").textContent = fmtUsd(equity);
@@ -745,7 +777,6 @@
     }
 
     document.getElementById("initialUsd").textContent = fmtUsd(initial);
-    applyDashboardKpis(0);
 
     const txBody = document.getElementById("txBody");
     txBody.innerHTML = txs.slice(0, 200).map(tx => `
@@ -777,7 +808,7 @@
       return usd;
     };
 
-    const equityChart = new Chart(document.getElementById("equityChart"), {
+    equityChartRef = new Chart(document.getElementById("equityChart"), {
       type: "line",
       data: {
         labels,
@@ -826,6 +857,8 @@
         }
       }
     });
+
+    applyDashboardKpis(0);
 
     const yieldMin = (() => {
       if (!dailyYieldSeries.length) return 0;
@@ -908,8 +941,8 @@
         unit = btn.dataset.unit || "USD";
         document.querySelectorAll(".btn[data-unit]").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        equityChart.data.datasets[0].data = baseEquity.map(toUnit);
-        equityChart.update();
+        equityChartRef.data.datasets[0].data = baseEquity.map(toUnit);
+        equityChartRef.update();
       });
     });
 

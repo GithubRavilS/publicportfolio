@@ -218,8 +218,9 @@ EQUITY_CHART_START_USD = 15100.0
 EQUITY_CAPITAL_INJECT_DAY = "2026-02-15"
 EQUITY_CAPITAL_INJECT_USD = 200.0
 BTC_EQUITY_BETA = 1.3
-BTC_EQUITY_TAIL_BLEND_DAYS = 2
-EQUITY_CHART_MODEL_VERSION = "btc-beta-1.3-forward-tail-v5"
+JAN_EQUITY_SHAPAN_END_DAY = "2026-01-14"
+EQUITY_BTC_BACKWARD_FROM_DAY = "2026-01-15"
+EQUITY_CHART_MODEL_VERSION = "btc-beta-1.3-backward-jan-v6b"
 EQUITY_CHART_MODEL_MARKER = Path("data/equity-chart-model.txt")
 BTC_PRICES_CACHE_PATH = Path("data/btc-daily-prices.json")
 
@@ -653,25 +654,34 @@ def compute_btc_beta_equity_by_day(
     start_day: str = EQUITY_CHART_START_DAY,
     start_equity: float = EQUITY_CHART_START_USD,
     beta: float = BTC_EQUITY_BETA,
-    tail_blend_days: int = BTC_EQUITY_TAIL_BLEND_DAYS,
+    jan_shapan_end: str = JAN_EQUITY_SHAPAN_END_DAY,
+    backward_from: str = EQUITY_BTC_BACKWARD_FROM_DAY,
 ) -> dict[str, float]:
     """
-    Левый график: от 01.01=15100 вперёд по β×ΔBTC; последние tail_blend_days — мягкий переход к live.
+    Левый график: от live-сегодня назад (β×ΔBTC); 01.01–14.01 — forward от 15100 (подгонка января);
+    с 15.01 — та же backward-цепочка (без blend-хвоста → нет скачка +$3000).
     """
     if not days:
         return {}
+    backward = _equity_by_btc_beta_backward(
+        days, btc_by_day, anchor_day=today, anchor_equity=target_today, beta=beta
+    )
     forward = _equity_by_btc_beta_forward(
         days, btc_by_day, start_day=start_day, start_equity=start_equity, beta=beta
     )
-    merged: dict[str, float] = {d: float(forward.get(d, start_equity)) for d in days}
+    merged: dict[str, float] = {}
+    d_back = datetime.strptime(backward_from, "%Y-%m-%d").date()
+    for d in days:
+        dd = datetime.strptime(d, "%Y-%m-%d").date()
+        if d == start_day:
+            merged[d] = float(start_equity)
+        elif d == today:
+            merged[d] = float(target_today)
+        elif dd < d_back:
+            merged[d] = float(forward.get(d, start_equity))
+        else:
+            merged[d] = float(backward.get(d, target_today))
     merged[start_day] = float(start_equity)
-    n_blend = max(0, min(int(tail_blend_days), len(days)))
-    if n_blend > 0:
-        tail = days[-n_blend:]
-        for i, d in enumerate(tail):
-            t = (i + 1) / len(tail)
-            fwd = float(forward.get(d, start_equity))
-            merged[d] = fwd * (1.0 - t) + float(target_today) * t
     merged[today] = float(target_today)
     return merged
 
@@ -3463,7 +3473,25 @@ def main() -> None:
     out.write_text("window.PORTFOLIO_DATA = " + json.dumps(payload, ensure_ascii=False) + ";", encoding="utf-8")
     print(f"[OK] Exported static data to {out} (exportedAt={exported_at})")
 
-    validate_script = Path(__file__).resolve().parent.parent / "scripts" / "validate_portfolio_export.py"
+    repo_root = Path(__file__).resolve().parent.parent
+    btc_qa = repo_root / "scripts" / "validate_equity_chart_btc.py"
+    if btc_qa.exists():
+        import subprocess
+
+        proc_btc = subprocess.run(
+            [sys.executable, str(btc_qa)],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+        )
+        if proc_btc.stdout.strip():
+            print(proc_btc.stdout.strip())
+        if proc_btc.returncode != 0:
+            if proc_btc.stderr.strip():
+                print(proc_btc.stderr.strip(), file=sys.stderr)
+            raise SystemExit("[FATAL] equity chart BTC QA failed — левый график не выпускаем")
+
+    validate_script = repo_root / "scripts" / "validate_portfolio_export.py"
     if validate_script.exists():
         import subprocess
 

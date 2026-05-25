@@ -1,1 +1,1 @@
-btc-beta-1.3-forward-tail-v5
+btc-beta-1.3-backward-jan-v6b

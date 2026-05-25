@@ -79,44 +79,54 @@ fi
 python python/export_static_data.py
 python scripts/validate_portfolio_export.py data/portfolio-data.js || echo "[WARN] export audit warnings (non-fatal)"
 
-git add \
-  data/portfolio-data.js \
-  data/lp-income-snapshots.json \
-  data/snapshots.json \
-  data/chart-yield-reference.json \
-  data/equity-history-reference.json \
-  data/s1-history-reference.json \
-  data/s1-positions-reference.json \
-  index.html \
-  js/portfolio-ui.js \
-  python/init_db.py \
-  python/etl_revert.py \
-  python/export_static_data.py \
-  python/lp_income_snapshots.py \
-  scripts/validate_portfolio_export.py \
-  python/config.json \
-  scripts/pa_hourly_update.sh
+push_portfolio_data_to_github() {
+  local ts msg
+  ts="$(date -u +%Y-%m-%dT%H%MZ)"
+  msg="chore: portfolio data update ${ts}"
 
-if git diff --cached --quiet; then
-  echo "[OK] Nothing to commit"
-else
-  git commit -m "chore: auto portfolio update $(date -u +%Y-%m-%dT%H%MZ)"
-fi
-
-git fetch "$REMOTE" main
-if git push "$REMOTE" HEAD:main 2>/dev/null; then
-  echo "[OK] Pushed to GitHub (main)"
-else
-  echo "[WARN] Push rejected — syncing and retrying data-only commit"
   git fetch "$REMOTE" main
-  git reset --soft FETCH_HEAD
-  git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json index.html js/portfolio-ui.js 2>/dev/null || true
-  if ! git diff --cached --quiet; then
-    git commit -m "chore: portfolio data update $(date -u +%Y-%m-%dT%H%MZ)"
-    git push "$REMOTE" HEAD:main && echo "[OK] Pushed data files to GitHub"
-  else
-    echo "[WARN] No data changes to push"
+
+  for f in data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json; do
+    if [ ! -f "$f" ]; then
+      echo "[WARN] Missing $f — skip push"
+      return 1
+    fi
+  done
+
+  cp data/portfolio-data.js "${TMPDIR:-/tmp}/portfolio-data.js.push"
+  cp data/lp-income-snapshots.json "${TMPDIR:-/tmp}/lp-income-snapshots.json.push"
+  cp data/chart-yield-reference.json "${TMPDIR:-/tmp}/chart-yield-reference.json.push"
+
+  git reset --hard FETCH_HEAD
+  cp "${TMPDIR:-/tmp}/portfolio-data.js.push" data/portfolio-data.js
+  cp "${TMPDIR:-/tmp}/lp-income-snapshots.json.push" data/lp-income-snapshots.json
+  cp "${TMPDIR:-/tmp}/chart-yield-reference.json.push" data/chart-yield-reference.json
+
+  git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json
+
+  if git diff --cached --quiet; then
+    echo "[OK] portfolio-data без изменений относительно GitHub — push не нужен"
+    return 0
   fi
+
+  git commit -m "$msg"
+  if git push "$REMOTE" HEAD:main; then
+    echo "[OK] Pushed to GitHub (main): portfolio-data.js + lp-income + chart-yield-reference"
+    return 0
+  fi
+
+  echo "[FATAL] git push failed — проверь ~/.github_pat и доступ к репозиторию"
+  return 1
+}
+
+push_portfolio_data_to_github
+
+if [ -f "$CONFIG_BAK" ]; then
+  cp "$CONFIG_BAK" python/config.json
+fi
+if [ -f "$DB_BAK" ]; then
+  mkdir -p data
+  cp "$DB_BAK" data/portfolio.db
 fi
 
 echo "[OK] Done $(date -u +%Y-%m-%dT%H:%M:%SZ)"

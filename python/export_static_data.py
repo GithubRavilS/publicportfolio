@@ -296,42 +296,52 @@ def ensure_equity_calendar_through_day(
     return [by_day[k] for k in sorted(by_day.keys())]
 
 
-def interpolate_equity_calendar_tail(
+def sync_equity_usd_from_components(snapshots: list[dict]) -> list[dict]:
+    """Капитал = залог − долг + ликвидность (без устаревшего +$2000 в equityUsd эталона)."""
+    out: list[dict] = []
+    for s in snapshots:
+        row = dict(s)
+        coll = float(row.get("collateralUsd") or 0.0)
+        debt = float(row.get("debtUsd") or 0.0)
+        liq = float(row.get("liquidityUsd") or 0.0)
+        row["equityUsd"] = coll - debt + liq
+        out.append(row)
+    return out
+
+
+def forward_fill_components_after_ref_anchor(
     snapshots: list[dict],
     anchor_day: str,
     ref_by_day: dict[str, dict] | None = None,
 ) -> list[dict]:
     """
-    После последнего дня equity-эталона — плавный ход капитала до «сегодня» (без плато под копирку).
-    Последняя точка не трогается (туда кладёт live patch).
+    После последнего дня equity-эталона: держим последние известные coll/debt/liq (без выдуманного спада equity).
     """
     if not snapshots or not anchor_day:
         return snapshots
     ref_by_day = ref_by_day or {}
+    anchor_row = dict(ref_by_day.get(anchor_day) or {})
+    if not anchor_row:
+        return snapshots
     by_day = {str(s["timestamp"])[:10]: dict(s) for s in snapshots}
-    end_day = max(by_day.keys())
-    if end_day <= anchor_day:
-        return snapshots
-    anchor_row = ref_by_day.get(anchor_day) or by_day.get(anchor_day) or {}
-    start_eq = float(anchor_row.get("equityUsd") or 0.0)
-    if start_eq <= 0:
-        start_eq = float(by_day.get(anchor_day, {}).get("equityUsd") or 0.0)
-    end_eq = float(by_day[end_day].get("equityUsd") or start_eq)
-    d0 = datetime.strptime(anchor_day, "%Y-%m-%d").date()
-    d1 = datetime.strptime(end_day, "%Y-%m-%d").date()
-    span = (d1 - d0).days
-    if span <= 0:
-        return snapshots
-    d_cur = d0 + timedelta(days=1)
-    while d_cur < d1:
-        ds = d_cur.isoformat()
-        t = (d_cur - d0).days / span
-        row = dict(by_day.get(ds) or by_day.get(anchor_day) or {})
-        row["timestamp"] = f"{ds}T00:00:00.000Z"
-        row["equityUsd"] = start_eq + (end_eq - start_eq) * t
+    for ds in sorted(by_day.keys()):
+        if ds <= anchor_day:
+            continue
+        row = dict(by_day[ds])
+        for k in ("collateralUsd", "debtUsd", "liquidityUsd"):
+            if float(row.get(k) or 0.0) <= 0.0 and float(anchor_row.get(k) or 0.0) > 0.0:
+                row[k] = float(anchor_row[k])
         by_day[ds] = row
-        d_cur += timedelta(days=1)
     return [by_day[k] for k in sorted(by_day.keys())]
+
+
+def interpolate_equity_calendar_tail(
+    snapshots: list[dict],
+    anchor_day: str,
+    ref_by_day: dict[str, dict] | None = None,
+) -> list[dict]:
+    """Устарело: линейная интерполяция equity давала ложный −$3000; используй forward_fill_components + sync."""
+    return snapshots
 
 
 def snapshots_already_rebased(snapshots: list[dict], initial_capital: float, tolerance: float = 80.0) -> bool:
@@ -2488,11 +2498,12 @@ def main() -> None:
     anchor_day = max(equity_ref.keys()) if equity_ref else ""
     snapshots = ensure_equity_calendar_through_day(snapshots, today, equity_ref)
     snapshots = fill_calendar_gaps_in_snapshots(snapshots, max_gap_days=45)
+    if anchor_day:
+        snapshots = forward_fill_components_after_ref_anchor(snapshots, anchor_day, equity_ref)
     snapshots = patch_recent_snapshots_from_sources(
         snapshots, lending_positions, sheet_lp_usd, config=config, days=1
     )
-    if anchor_day:
-        snapshots = interpolate_equity_calendar_tail(snapshots, anchor_day, equity_ref)
+    snapshots = sync_equity_usd_from_components(snapshots)
     if sheet_lp_usd < 3000:
         print(
             f"[WARN] sheet_lp_usd={sheet_lp_usd:.2f} — похоже на битый парсинг таблицы "
@@ -2512,7 +2523,8 @@ def main() -> None:
         snapshots[-1] = last
 
     if not snapshots_already_rebased(snapshots, initial_capital):
-        snapshots = rebase_equity_start_only(snapshots, initial_capital, current_adjustment)
+        snapshots = rebase_equity_start_only(snapshots, initial_capital, 0.0)
+    snapshots = sync_equity_usd_from_components(snapshots)
     liquidity_positions_pre = load_liquidity_positions_from_sheet(config)
     fallback_apr = mean_apr_from_revert_sheet(config)
     month_apr = month_apr_map_from_revert_sheet(config)

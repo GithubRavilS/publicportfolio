@@ -67,6 +67,18 @@ def init_db(db_path: str) -> None:
 
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS equity_chart_daily (
+            as_of_date TEXT PRIMARY KEY,
+            collateral_usd REAL NOT NULL DEFAULT 0,
+            debt_usd REAL NOT NULL DEFAULT 0,
+            liquidity_usd REAL NOT NULL DEFAULT 0,
+            frozen_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS ingestion_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             as_of_date TEXT NOT NULL,

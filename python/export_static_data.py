@@ -296,8 +296,146 @@ def ensure_equity_calendar_through_day(
     return [by_day[k] for k in sorted(by_day.keys())]
 
 
+def apply_uniform_equity_adjustment(snapshots: list[dict], adjustment_usd: float) -> list[dict]:
+    """Рыночная база (coll−debt+liq) + фиксированная сумма на каждый день ряда (без размаза по дням)."""
+    adj = float(adjustment_usd or 0.0)
+    if adj <= 0:
+        return snapshots
+    out: list[dict] = []
+    for s in snapshots:
+        row = dict(s)
+        base = (
+            float(row.get("collateralUsd") or 0.0)
+            - float(row.get("debtUsd") or 0.0)
+            + float(row.get("liquidityUsd") or 0.0)
+        )
+        row["equityUsd"] = base + adj
+        out.append(row)
+    return out
+
+
+def load_frozen_equity_chart_by_day(conn: sqlite3.Connection) -> dict[str, dict]:
+    cur = conn.cursor()
+    try:
+        rows = cur.execute(
+            """
+            SELECT as_of_date, collateral_usd, debt_usd, liquidity_usd
+            FROM equity_chart_daily
+            ORDER BY as_of_date ASC
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {
+        str(r[0])[:10]: {
+            "collateralUsd": float(r[1] or 0),
+            "debtUsd": float(r[2] or 0),
+            "liquidityUsd": float(r[3] or 0),
+        }
+        for r in rows
+    }
+
+
+def overlay_frozen_equity_snapshots(
+    snapshots: list[dict], frozen_by_day: dict[str, dict], *, today: str
+) -> list[dict]:
+    """Прошлые дни — из hourly freeze (не пересчитываем задним числом при смене кода)."""
+    if not frozen_by_day:
+        return snapshots
+    out: list[dict] = []
+    for s in snapshots:
+        row = dict(s)
+        d = str(row.get("timestamp", ""))[:10]
+        if d and d < today and d in frozen_by_day:
+            fr = frozen_by_day[d]
+            row["collateralUsd"] = float(fr.get("collateralUsd") or 0)
+            row["debtUsd"] = float(fr.get("debtUsd") or 0)
+            row["liquidityUsd"] = float(fr.get("liquidityUsd") or 0)
+        out.append(row)
+    return out
+
+
+def persist_equity_chart_snapshots(
+    conn: sqlite3.Connection, snapshots: list[dict], *, today: str
+) -> int:
+    """Сохраняем снимок: прошлые дни INSERT OR IGNORE, сегодня всегда UPDATE."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS equity_chart_daily (
+            as_of_date TEXT PRIMARY KEY,
+            collateral_usd REAL NOT NULL DEFAULT 0,
+            debt_usd REAL NOT NULL DEFAULT 0,
+            liquidity_usd REAL NOT NULL DEFAULT 0,
+            frozen_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    n = 0
+    for s in snapshots:
+        d = str(s.get("timestamp", ""))[:10]
+        if not d:
+            continue
+        coll = float(s.get("collateralUsd") or 0)
+        debt = float(s.get("debtUsd") or 0)
+        liq = float(s.get("liquidityUsd") or 0)
+        if coll <= 0 and debt <= 0 and liq <= 0:
+            continue
+        if d < today:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO equity_chart_daily(
+                    as_of_date, collateral_usd, debt_usd, liquidity_usd, frozen_at
+                ) VALUES (?, ?, ?, ?, datetime('now'))
+                """,
+                (d, coll, debt, liq),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO equity_chart_daily(
+                    as_of_date, collateral_usd, debt_usd, liquidity_usd, frozen_at
+                ) VALUES (?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(as_of_date) DO UPDATE SET
+                    collateral_usd=excluded.collateral_usd,
+                    debt_usd=excluded.debt_usd,
+                    liquidity_usd=excluded.liquidity_usd,
+                    frozen_at=datetime('now')
+                """,
+                (d, coll, debt, liq),
+            )
+        n += 1
+    conn.commit()
+    return n
+
+
+def apply_live_lending_for_today_only(
+    snapshots: list[dict],
+    today: str,
+    lending_positions: list[dict],
+    *,
+    sheet_lp_usd: float = 0.0,
+) -> list[dict]:
+    """Только сегодня — live DeBank + LP; прошлые дни не трогаем (freeze / эталон)."""
+    if not snapshots:
+        return snapshots
+    coll, debt, _ = aggregate_lending_totals(lending_positions)
+    if coll <= 0 and debt <= 0:
+        return snapshots
+    out = [dict(s) for s in snapshots]
+    last = out[-1]
+    if str(last.get("timestamp", ""))[:10] != today:
+        return out
+    last["collateralUsd"] = coll
+    last["debtUsd"] = debt
+    if sheet_lp_usd > 0:
+        last["liquidityUsd"] = float(sheet_lp_usd)
+    out[-1] = last
+    return out
+
+
 def sync_equity_usd_from_components(snapshots: list[dict]) -> list[dict]:
-    """Капитал = залог − долг + ликвидность (без устаревшего +$2000 в equityUsd эталона)."""
+    """Капитал = залог − долг + ликвидность (база до фиксированной поправки)."""
     out: list[dict] = []
     for s in snapshots:
         row = dict(s)
@@ -2480,7 +2618,7 @@ def main() -> None:
     config = json.loads(Path("python/config.json").read_text(encoding="utf-8"))
     db_path = config["db_path"]
     initial_capital = 16300.0
-    current_adjustment = float(config.get("manual_visual_adjustment_usd", 0) or 0)
+    current_adjustment = float(config.get("manual_visual_adjustment_usd", 2600) or 2600)
 
     script_dir = Path(__file__).resolve().parent
     if str(script_dir) not in sys.path:
@@ -2531,29 +2669,22 @@ def main() -> None:
     snapshots = fill_calendar_gaps_in_snapshots(snapshots, max_gap_days=45)
     if anchor_day:
         snapshots = forward_fill_components_after_ref_anchor(snapshots, anchor_day, equity_ref)
-    snapshots = apply_live_lending_to_calendar_tail(
-        snapshots,
-        anchor_day,
-        lending_positions,
-        sheet_lp_usd=sheet_lp_usd,
+    frozen_by_day = load_frozen_equity_chart_by_day(conn)
+    snapshots = overlay_frozen_equity_snapshots(snapshots, frozen_by_day, today=today)
+    snapshots = apply_live_lending_for_today_only(
+        snapshots, today, lending_positions, sheet_lp_usd=sheet_lp_usd
     )
     snapshots = sync_equity_usd_from_components(snapshots)
+    adjustment_usd = float(config.get("manual_visual_adjustment_usd", 2600) or 2600)
+    snapshots = apply_uniform_equity_adjustment(snapshots, adjustment_usd)
+    frozen_n = persist_equity_chart_snapshots(conn, snapshots, today=today)
+    if frozen_n:
+        print(f"[OK] equity_chart_daily: {len(frozen_by_day)} frozen, saved {frozen_n} rows")
     if sheet_lp_usd < 3000:
         print(
             f"[WARN] sheet_lp_usd={sheet_lp_usd:.2f} — похоже на битый парсинг таблицы "
             "(NBSP). Обнови python/etl_revert.py на PA и перезапусти etl."
         )
-    if anchor_day and snapshots:
-        tail_start = (
-            datetime.strptime(anchor_day, "%Y-%m-%d").date() + timedelta(days=1)
-        ).isoformat()
-        print(
-            f"[OK] Хвост equity с {tail_start}: live lending coll/debt "
-            f"(эталон до {anchor_day}, без дневных DeBank)"
-        )
-
-    if not snapshots_already_rebased(snapshots, initial_capital):
-        snapshots = rebase_equity_start_only(snapshots, initial_capital, current_adjustment)
     liquidity_positions_pre = load_liquidity_positions_from_sheet(config)
     fallback_apr = mean_apr_from_revert_sheet(config)
     month_apr = month_apr_map_from_revert_sheet(config)

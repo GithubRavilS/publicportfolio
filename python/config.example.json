@@ -1,6 +1,6 @@
 {
   "db_path": "data/portfolio.db",
-  "manual_visual_adjustment_usd": 2000,
+  "manual_visual_adjustment_usd": 0,
   "debank_wallets": ["0xYOUR_WALLET"],
   "strategy_one_wallet": "0xYOUR_STRATEGY_WALLET",
   "strategy_one_initial_usd": 30,

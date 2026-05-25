@@ -596,7 +596,6 @@
     const txs = data.transactions || [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
-    const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 0);
     let lending = data.lendingPositions || [];
     if (window.PortfolioUI?.dedupeLendingPositions) {
       lending = window.PortfolioUI.dedupeLendingPositions(lending);
@@ -714,7 +713,6 @@
       let equity = window.PortfolioUI?.calcLiveEquityUsd
         ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq)
         : staticEquity;
-      if (manualEquityAdj > 0) equity += manualEquityAdj;
       const ret = ((equity - initial) / initial) * 100;
       document.getElementById("currentUsd").textContent = fmtUsd(equity);
       const retEl = document.getElementById("returnPct");

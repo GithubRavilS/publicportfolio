@@ -21,6 +21,11 @@ git_recover() {
   git checkout -f main 2>/dev/null || git checkout -B main
 }
 
+CONFIG_BAK="${HOME}/.portfolio_pa_config.json.bak"
+GSERVICE_BAK="${HOME}/.portfolio_pa_google_sa.json.bak"
+[ -f python/config.json ] && cp python/config.json "$CONFIG_BAK"
+[ -f python/google-service-account.json ] && cp python/google-service-account.json "$GSERVICE_BAK"
+
 sync_code_from_github() {
   git_recover
   git fetch "$REMOTE" main
@@ -31,9 +36,26 @@ sync_code_from_github() {
 
 sync_code_from_github
 
-python debank_parser_final.py
+if [ -f "$CONFIG_BAK" ]; then
+  cp "$CONFIG_BAK" python/config.json
+  echo "[OK] Восстановлен python/config.json (не в GitHub)"
+fi
+if [ -f "$GSERVICE_BAK" ]; then
+  cp "$GSERVICE_BAK" python/google-service-account.json
+  echo "[OK] Восстановлен google-service-account.json"
+fi
+
+if [ ! -f python/config.json ]; then
+  echo "[FATAL] Нет python/config.json на PA."
+  echo "        Создай: cp python/config.example.json python/config.json && nano python/config.json"
+  echo "        Нужны: google_sheet_id, google_service_account_file, debank_wallets."
+  exit 1
+fi
+
+python debank_parser_final.py || echo "[WARN] debank_parser_final.py failed (на PA часто 0 позиций — ок)"
+
 if ls debank_lending_*.csv >/dev/null 2>&1; then
-  python python/import_debank_csv.py
+  python python/import_debank_csv.py || echo "[WARN] import_debank_csv failed"
 else
   echo "[WARN] No debank_lending_*.csv, skip import_debank_csv"
 fi

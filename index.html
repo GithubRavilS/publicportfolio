@@ -799,7 +799,9 @@
     }
 
     document.getElementById("initialUsd").textContent = fmtUsd(initial);
-    document.getElementById("avgAprPct").textContent = fmtPct(portfolioAvgApr);
+    const avgAprEl = document.getElementById("avgAprPct");
+    avgAprEl.textContent = fmtPct(portfolioAvgApr);
+    avgAprEl.style.color = portfolioAvgApr > 0 ? "var(--green)" : "var(--muted)";
     const avgSub = document.getElementById("avgAprSub");
     if (portfolioEarned > 0 && portfolioPeriodDays > 0) {
       const dep =

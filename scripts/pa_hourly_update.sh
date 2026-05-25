@@ -23,8 +23,10 @@ git_recover() {
 
 CONFIG_BAK="${HOME}/.portfolio_pa_config.json.bak"
 GSERVICE_BAK="${HOME}/.portfolio_pa_google_sa.json.bak"
+DB_BAK="${HOME}/.portfolio_pa.db.bak"
 [ -f python/config.json ] && cp python/config.json "$CONFIG_BAK"
 [ -f python/google-service-account.json ] && cp python/google-service-account.json "$GSERVICE_BAK"
+[ -f data/portfolio.db ] && cp data/portfolio.db "$DB_BAK"
 
 sync_code_from_github() {
   git_recover
@@ -44,6 +46,13 @@ if [ -f "$GSERVICE_BAK" ]; then
   cp "$GSERVICE_BAK" python/google-service-account.json
   echo "[OK] Восстановлен google-service-account.json"
 fi
+if [ -f "$DB_BAK" ]; then
+  mkdir -p data
+  cp "$DB_BAK" data/portfolio.db
+  echo "[OK] Восстановлен data/portfolio.db"
+fi
+
+python python/init_db.py
 
 if [ ! -f python/config.json ]; then
   echo "[FATAL] Нет python/config.json на PA."
@@ -80,6 +89,7 @@ git add \
   data/s1-positions-reference.json \
   index.html \
   js/portfolio-ui.js \
+  python/init_db.py \
   python/etl_revert.py \
   python/export_static_data.py \
   python/lp_income_snapshots.py \

@@ -262,12 +262,13 @@ def previous_day_rollup_row(conn: sqlite3.Connection, as_of_date: str) -> sqlite
 
 def ingest_revert(config: dict[str, Any]) -> None:
     db_path = config["db_path"]
+    from init_db import init_db
+
+    init_db(db_path)
     revert_source = config.get("revert_source", "excel")
     pools_cols = config["revert_pools_columns"]
     fees_cols = config["revert_fees_columns"]
 
-    if not Path(db_path).exists():
-        raise FileNotFoundError(f"DB not found: {db_path}. Run python python/init_db.py first.")
     excel_path = config.get("revert_excel_path", "")
     pools_sheet = config.get("revert_pools_sheet", "pools")
     fees_sheet = config.get("revert_fees_sheet", "fees")

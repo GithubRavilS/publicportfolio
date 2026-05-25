@@ -35,6 +35,9 @@ def pick_latest_csv() -> str:
 def main() -> None:
     cfg = load_config()
     db_path = cfg["db_path"]
+    from init_db import init_db
+
+    init_db(db_path)
     wallets = cfg.get("debank_wallets", [])
     wallet = wallets[0] if wallets else "unknown"
     as_of_date = date.today().isoformat()

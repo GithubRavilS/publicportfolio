@@ -101,7 +101,22 @@ if git diff --cached --quiet; then
   echo "[OK] Nothing to commit"
 else
   git commit -m "chore: auto portfolio update $(date -u +%Y-%m-%dT%H%MZ)"
-  git push "$REMOTE" main
+fi
+
+git fetch "$REMOTE" main
+if git push "$REMOTE" HEAD:main 2>/dev/null; then
+  echo "[OK] Pushed to GitHub (main)"
+else
+  echo "[WARN] Push rejected — syncing and retrying data-only commit"
+  git fetch "$REMOTE" main
+  git reset --soft FETCH_HEAD
+  git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json index.html js/portfolio-ui.js 2>/dev/null || true
+  if ! git diff --cached --quiet; then
+    git commit -m "chore: portfolio data update $(date -u +%Y-%m-%dT%H%MZ)"
+    git push "$REMOTE" HEAD:main && echo "[OK] Pushed data files to GitHub"
+  else
+    echo "[WARN] No data changes to push"
+  fi
 fi
 
 echo "[OK] Done $(date -u +%Y-%m-%dT%H:%M:%SZ)"

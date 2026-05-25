@@ -506,20 +506,33 @@
       return Object.keys(byDay).sort().map((d) => byDay[d]);
     }
 
-    function chartDailyYieldSeries(snaps, rawSeries, yieldByDay, maxApr = 80) {
+    const CHART_MAX_APR = 55;
+
+    function chartDailyYieldSeries(snaps, rawSeries, yieldByDay, maxApr = CHART_MAX_APR) {
       const cap = (v) => Math.max(0, Math.min(Number(v) || 0, maxApr));
       const ref = yieldByDay || {};
       const feeBased = feeBasedAprFromSnapshots(snaps);
-      return (snaps || []).map((s, i) => {
+      const out = (snaps || []).map((s, i) => {
         const d = (s.timestamp || "").slice(0, 10);
         const feeApr = Number(feeBased[i] || 0);
         if (feeApr > 0.01) return cap(feeApr);
+        const exported = Number(rawSeries?.[i] || 0);
+        if (exported > 0.01 && exported < maxApr - 0.5) return cap(exported);
         const refApr = Number(ref[d] || 0);
-        if (refApr > 0.5) return cap(refApr);
-        const r = Number(rawSeries?.[i] || 0);
-        if (r > 0.5) return cap(r);
+        if (refApr > 0.5 && refApr < maxApr - 0.5) return cap(refApr);
         return 0;
       });
+      for (let i = 0; i < out.length; i++) {
+        if (out[i] > 0.01) continue;
+        const prevI = [...Array(i).keys()].reverse().find((j) => out[j] > 0.01);
+        const nextI = out.findIndex((v, j) => j > i && v > 0.01);
+        if (prevI == null || nextI < 0) continue;
+        const span = nextI - prevI;
+        if (span <= 0) continue;
+        const t = (i - prevI) / span;
+        out[i] = cap(out[prevI] + (out[nextI] - out[prevI]) * t);
+      }
+      return out;
     }
 
     function s1LegSum(s) {
@@ -755,7 +768,7 @@
       snapshots,
       data.dailyYieldSeries || [],
       data.chartYieldByDay || null,
-      80
+      CHART_MAX_APR
     );
 
     let unit = "USD";

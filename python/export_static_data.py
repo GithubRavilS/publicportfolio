@@ -644,12 +644,34 @@ def assign_daily_fee_income_to_snapshots(
     sanitize_snapshot_daily_fees(out, dates)
     interpolate_daily_fee_income_gaps(out, dates, anchor_day="2026-05-15")
     refine_flat_fee_plateaus(out, dates, anchor_day="2026-05-19")
+    decouple_identical_tail_daily_fees(out, dates, config)
     for i, d in enumerate(dates):
         fee = float(out[i].get("dailyFeeIncomeUsd") or 0.0)
         if fee > 0:
             income_by_day[d] = fee
 
     return out, income_by_day
+
+
+def decouple_identical_tail_daily_fees(
+    out: list[dict],
+    dates: list[str],
+    config: dict,
+    *,
+    tail_days: int = 4,
+) -> None:
+    """Последние дни с одинаковым fee — пересчёт по календарной дате из Google Sheet."""
+    if len(out) < 2:
+        return
+    start = max(0, len(out) - tail_days)
+    for i in range(start, len(out)):
+        try:
+            as_of = date.fromisoformat(dates[i])
+        except ValueError:
+            continue
+        est = sheet_portfolio_daily_income_usd(config, as_of)
+        if est > 0:
+            out[i]["dailyFeeIncomeUsd"] = round(est, 6)
 
 
 def load_daily_metrics_fees_by_day(conn: sqlite3.Connection) -> dict[str, float]:
@@ -2579,7 +2601,12 @@ def main() -> None:
     for i, s in enumerate(snapshots):
         d = str(s.get("timestamp", ""))[:10]
         if i < len(daily_yield_series) and daily_yield_series[i] > 0.01:
-            chart_yield_by_day[d] = float(daily_yield_series[i])
+            apr_v = float(daily_yield_series[i])
+            if apr_v < MAX_CHART_DAILY_APR_PCT - 0.5:
+                chart_yield_by_day[d] = apr_v
+    for d, apr_v in list(chart_yield_by_day.items()):
+        if float(apr_v or 0) >= MAX_CHART_DAILY_APR_PCT - 0.5:
+            del chart_yield_by_day[d]
     ref_path = Path("data/chart-yield-reference.json")
     if chart_yield_by_day:
         ref_path.write_text(

@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import sys
+import time
 from io import StringIO
 from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
@@ -520,8 +521,7 @@ def build_market_equity_snapshots_calendar(
             liq_by_day = _liquidity_usd_market_path(tail_days, eth_by_day, lp_live)
             for d in tail_days:
                 coll = btc_units * _btc_price_on(btc_by_day, d) + eth_units * _eth_price_on(eth_by_day, d)
-                # После эталона — единый live-долг (иначе скачок 8026→7100 на последний день).
-                debt = debt_live if debt_live > 0 else _debt_usd_on_day(d, ref_by_day, debt_live)
+                debt = _debt_usd_on_day(d, ref_by_day, debt_live)
                 liq = liq_by_day.get(d, lp_live)
                 raw = coll - debt + liq
                 market_by_day[d] = (coll, debt, liq, raw)
@@ -538,18 +538,16 @@ def build_market_equity_snapshots_calendar(
             liq = float(r.get("liquidityUsd") or 0)
             base = (coll - debt + liq) * ref_scale
             equity = base + adj
-        elif d > ref_through and d in metrics_by_day:
-            m = metrics_by_day[d]
-            coll = float(m.get("collateralUsd") or 0)
-            debt = float(m.get("debtUsd") or 0)
-            liq = float(m.get("liquidityUsd") or 0)
-            if coll > 0 or liq > 0:
-                equity = coll - debt + liq + adj
-            else:
-                continue
-        elif d in market_by_day and d > ref_through:
+        elif d > ref_through and d in market_by_day:
             coll, debt, liq, raw = market_by_day[d]
-            equity = raw + adj
+            equity = raw * ref_scale + adj
+        elif d > ref_through and ref_through in ref_by_day and d < today:
+            # CoinGecko недоступен — держим последний эталон (без битых daily_metrics).
+            r = ref_by_day[ref_through]
+            coll = float(r.get("collateralUsd") or 0) * ref_scale
+            debt = float(r.get("debtUsd") or 0)
+            liq = float(r.get("liquidityUsd") or 0) * ref_scale
+            equity = coll - debt + liq + adj
         else:
             continue
         out.append(
@@ -1472,12 +1470,24 @@ def rebase_equity_start_only(snapshots: list[dict], initial_capital: float, curr
     return snapshots
 
 
-def build_daily_yield_series(snapshots: list[dict], fallback_apr: float, month_apr: dict[str, float]) -> list[float]:
+def build_daily_yield_series(
+    snapshots: list[dict],
+    fallback_apr: float,
+    month_apr: dict[str, float],
+    *,
+    eth_by_day: dict[str, float] | None = None,
+) -> list[float]:
     if not snapshots:
         return []
     dates = [s["timestamp"][:10] for s in snapshots]
     start, end = dates[0], dates[-1]
-    eth = fetch_eth_history(start, end)
+    eth = eth_by_day or {}
+    if not eth:
+        try:
+            eth = fetch_eth_history(start, end)
+        except Exception as exc:
+            print(f"[WARN] build_daily_yield_series eth prices: {exc}")
+            eth = {}
 
     target_mean: dict[str, float] = {}
     for d in dates:
@@ -1759,17 +1769,13 @@ def build_chart_daily_yield_series(
     Правый график: дневной прирост дохода (fees+incentives) → APR годовых.
     История без fee — chart-yield-reference, но не плато 80% (игнор ref > max_chart_apr).
     """
-    del realized_by_day, rollup_by_day, config, synthetic
+    del realized_by_day, rollup_by_day, config, synthetic, fee_based
     if not snapshots:
         return []
     reference = load_yield_reference_by_day()
     out: list[float] = []
     for i, s in enumerate(snapshots):
         d = str(s.get("timestamp", ""))[:10]
-        fee_apr = float(fee_based[i] if i < len(fee_based) else 0.0)
-        if fee_apr > 0.01:
-            out.append(max(0.0, min(fee_apr, max_chart_apr)))
-            continue
         ref_apr = float(reference.get(d, 0.0))
         if 0.5 < ref_apr < max_chart_apr - 0.5:
             out.append(ref_apr)
@@ -2945,6 +2951,7 @@ def main() -> None:
     price_eth: dict[str, float] = {}
     try:
         price_btc = fetch_btc_history(EQUITY_CHART_START_DAY, today)
+        time.sleep(2)
         price_eth = fetch_eth_history(EQUITY_CHART_START_DAY, today)
     except Exception as exc:
         print(f"[WARN] coingecko prices (yield/equity share one fetch): {exc}")
@@ -2997,7 +3004,9 @@ def main() -> None:
     liquidity_positions_pre = load_liquidity_positions_from_sheet(config)
     fallback_apr = mean_apr_from_revert_sheet(config)
     month_apr = month_apr_map_from_revert_sheet(config)
-    synthetic_daily_yield = build_daily_yield_series(snapshots, fallback_apr, month_apr)
+    synthetic_daily_yield = build_daily_yield_series(
+        snapshots, fallback_apr, month_apr, eth_by_day=price_eth
+    )
     realized_by_day = load_realized_apr_by_day(conn)
     rollup_by_day = load_apr_rollup_by_day(conn)
     snapshots, income_by_day = assign_daily_fee_income_to_snapshots(
@@ -3141,21 +3150,6 @@ def main() -> None:
     conn.close()
 
     chart_yield_by_day = load_yield_reference_by_day()
-    for i, s in enumerate(snapshots):
-        d = str(s.get("timestamp", ""))[:10]
-        if i < len(daily_yield_series) and daily_yield_series[i] > 0.01:
-            apr_v = float(daily_yield_series[i])
-            if apr_v < MAX_CHART_DAILY_APR_PCT - 0.5:
-                chart_yield_by_day[d] = apr_v
-    for d, apr_v in list(chart_yield_by_day.items()):
-        if float(apr_v or 0) >= MAX_CHART_DAILY_APR_PCT - 0.5:
-            del chart_yield_by_day[d]
-    ref_path = Path("data/chart-yield-reference.json")
-    if chart_yield_by_day:
-        ref_path.write_text(
-            json.dumps({"byDay": chart_yield_by_day}, ensure_ascii=False),
-            encoding="utf-8",
-        )
 
     gaps = 0
     if len(snapshots) >= 2:

@@ -2501,7 +2501,7 @@ def main() -> None:
     if anchor_day:
         snapshots = forward_fill_components_after_ref_anchor(snapshots, anchor_day, equity_ref)
     snapshots = patch_recent_snapshots_from_sources(
-        snapshots, lending_positions, sheet_lp_usd, config=config, days=3
+        snapshots, lending_positions, sheet_lp_usd, config=config, days=1
     )
     snapshots = sync_equity_usd_from_components(snapshots)
     if sheet_lp_usd < 3000:

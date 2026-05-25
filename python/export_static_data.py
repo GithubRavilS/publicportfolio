@@ -309,6 +309,37 @@ def sync_equity_usd_from_components(snapshots: list[dict]) -> list[dict]:
     return out
 
 
+def apply_live_lending_to_calendar_tail(
+    snapshots: list[dict],
+    anchor_day: str,
+    lending_positions: list[dict],
+    *,
+    sheet_lp_usd: float = 0.0,
+) -> list[dict]:
+    """
+    После последнего дня equity-эталона нет дневных DeBank-снимков.
+    Хвост держим на актуальных coll/debt (один снимок lending), иначе на 24→25
+    получается ложный скачок ~$900 (долг в эталоне ~8026 vs live ~7100).
+    """
+    if not snapshots or not anchor_day:
+        return snapshots
+    coll, debt, _ = aggregate_lending_totals(lending_positions)
+    if coll <= 0 and debt <= 0:
+        return snapshots
+    last_day = str(snapshots[-1].get("timestamp", ""))[:10]
+    out: list[dict] = []
+    for s in snapshots:
+        row = dict(s)
+        d = str(row.get("timestamp", ""))[:10]
+        if d > anchor_day:
+            row["collateralUsd"] = coll
+            row["debtUsd"] = debt
+            if d == last_day and sheet_lp_usd > 0:
+                row["liquidityUsd"] = float(sheet_lp_usd)
+        out.append(row)
+    return out
+
+
 def forward_fill_components_after_ref_anchor(
     snapshots: list[dict],
     anchor_day: str,
@@ -2500,8 +2531,11 @@ def main() -> None:
     snapshots = fill_calendar_gaps_in_snapshots(snapshots, max_gap_days=45)
     if anchor_day:
         snapshots = forward_fill_components_after_ref_anchor(snapshots, anchor_day, equity_ref)
-    snapshots = patch_recent_snapshots_from_sources(
-        snapshots, lending_positions, sheet_lp_usd, config=config, days=1
+    snapshots = apply_live_lending_to_calendar_tail(
+        snapshots,
+        anchor_day,
+        lending_positions,
+        sheet_lp_usd=sheet_lp_usd,
     )
     snapshots = sync_equity_usd_from_components(snapshots)
     if sheet_lp_usd < 3000:
@@ -2509,18 +2543,14 @@ def main() -> None:
             f"[WARN] sheet_lp_usd={sheet_lp_usd:.2f} — похоже на битый парсинг таблицы "
             "(NBSP). Обнови python/etl_revert.py на PA и перезапусти etl."
         )
-    if snapshots and sheet_lp_usd > 0:
-        last = dict(snapshots[-1])
-        coll, debt, _ = aggregate_lending_totals(lending_positions)
-        if coll > 0:
-            last["collateralUsd"] = coll
-        if debt > 0:
-            last["debtUsd"] = debt
-        last["liquidityUsd"] = float(sheet_lp_usd)
-        last["equityUsd"] = float(last["collateralUsd"]) - float(last["debtUsd"]) + float(
-            last["liquidityUsd"]
+    if anchor_day and snapshots:
+        tail_start = (
+            datetime.strptime(anchor_day, "%Y-%m-%d").date() + timedelta(days=1)
+        ).isoformat()
+        print(
+            f"[OK] Хвост equity с {tail_start}: live lending coll/debt "
+            f"(эталон до {anchor_day}, без дневных DeBank)"
         )
-        snapshots[-1] = last
 
     if not snapshots_already_rebased(snapshots, initial_capital):
         snapshots = rebase_equity_start_only(snapshots, initial_capital, current_adjustment)

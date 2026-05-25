@@ -4,6 +4,7 @@ from pathlib import Path
 
 INITIAL_CAPITAL_USD = 15500.0
 INITIAL_DATE = "2026-01-01"
+MANUAL_VISUAL_ADJUSTMENT_USD = 2600.0
 
 
 def main() -> None:
@@ -11,7 +12,12 @@ def main() -> None:
     if not config_path.exists():
         raise FileNotFoundError("Create python/config.json from python/config.example.json")
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    manual_adjustment_usd = float(config.get("manual_visual_adjustment_usd", 0) or 0)
+    cfg_adj = float(config.get("manual_visual_adjustment_usd", MANUAL_VISUAL_ADJUSTMENT_USD) or 0)
+    manual_adjustment_usd = (
+        MANUAL_VISUAL_ADJUSTMENT_USD
+        if abs(cfg_adj - MANUAL_VISUAL_ADJUSTMENT_USD) > 1.0
+        else cfg_adj
+    )
 
     db_path = config["db_path"]
     conn = sqlite3.connect(db_path)

@@ -593,8 +593,17 @@
 
     const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
     const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
-    const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 0);
-    const openLpUnclaimed = Number(data.openLiquidityUnclaimedUsd ?? 0);
+    const MANUAL_EQUITY_ADJ_USD = 2600;
+    const cfgAdj = Number(data.manualVisualAdjustmentUsd ?? MANUAL_EQUITY_ADJ_USD);
+    const manualEquityAdj = cfgAdj >= 2500 ? cfgAdj : MANUAL_EQUITY_ADJ_USD;
+    const openLpUnclaimedExport = Number(data.openLiquidityUnclaimedUsd ?? 0);
+
+    function sumActiveLpUnclaimedUsd(positions) {
+      return (positions || []).reduce((sum, p) => {
+        if (!isActivePos(p)) return sum;
+        return sum + Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
+      }, 0);
+    }
     const portfolioAvgApr = Number(data.portfolioAverageAprPct ?? 0);
     const portfolioEarned = Number(data.portfolioEarnedIncomeUsd ?? 0);
     const portfolioPeriodDays = Number(data.portfolioPeriodDays ?? 0);
@@ -610,7 +619,9 @@
       const liq = Number(last.liquidityUsd || 0);
       const base = Math.max(0, coll - debt + liq);
       const exported = Number(data.currentCapitalUsd || 0);
-      last.equityUsd = exported > 0 ? exported : base + manualEquityAdj;
+      const unclaimed = openLpUnclaimedExport;
+      last.equityUsd =
+        exported > 0 ? exported : base + manualEquityAdj + unclaimed;
       return out;
     }
 
@@ -736,7 +747,7 @@
     let equityChartRef = null;
     let baseEquity = [];
 
-    function applyDashboardKpis(activeLpUsd) {
+    function applyDashboardKpis(activeLpUsd, lpForUnclaimed) {
       const lend = window.PortfolioUI?.sumLendingTotals
         ? window.PortfolioUI.sumLendingTotals(lending)
         : { collateral: 0, debt: 0, net: 0 };
@@ -744,20 +755,15 @@
         debankCollateral > 0 ? debankCollateral : Number(lend.collateral || 0);
       const debt = debankDebt > 0 ? debankDebt : Number(lend.debt || 0);
       const liveLiq = Number(activeLpUsd || 0) > 0 ? Number(activeLpUsd) : staticLiquidity;
-      const liveMode = Number(activeLpUsd || 0) > 0 || collateral > 0;
       const base =
         window.PortfolioUI?.calcLiveEquityUsd
           ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq)
           : Math.max(0, collateral - debt + liveLiq);
-      const exportedCurrent = Number(data.currentCapitalUsd || 0);
-      let equity = staticEquity;
-      if (liveMode) {
-        equity = base + manualEquityAdj + openLpUnclaimed;
-      } else if (exportedCurrent > 0) {
-        equity = exportedCurrent;
-      } else if (base > 0) {
-        equity = base + manualEquityAdj + openLpUnclaimed;
-      }
+      const unclaimedLive = sumActiveLpUnclaimedUsd(lpForUnclaimed);
+      const unclaimed =
+        unclaimedLive > 0 ? unclaimedLive : openLpUnclaimedExport;
+      const equity = base + manualEquityAdj + unclaimed;
+      const liveMode = Number(activeLpUsd || 0) > 0 || collateral > 0;
       const today = new Date().toISOString().slice(0, 10);
       if (snapshots.length && (snapshots[snapshots.length - 1].timestamp || "").slice(0, 10) === today) {
         snapshots[snapshots.length - 1].equityUsd = equity;
@@ -1002,7 +1008,7 @@
       const activeLpUsd = window.PortfolioUI?.sumActiveLpValueUsd
         ? window.PortfolioUI.sumActiveLpValueUsd(lp)
         : 0;
-      applyDashboardKpis(activeLpUsd);
+      applyDashboardKpis(activeLpUsd, lp);
       renderPositions();
     };
     if (syncLp) {

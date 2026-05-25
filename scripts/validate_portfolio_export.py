@@ -16,6 +16,8 @@ FLAT_APR_TOLERANCE = 0.02
 TAIL_DAYS = 7
 MAX_EQUITY_DROP_PCT = 18.0
 FORBIDDEN_FLAT_APR = {8.27, 8.270, 2.6, 0.33}
+MANUAL_VISUAL_ADJUSTMENT_USD = 2600.0
+MIN_CURRENT_CAPITAL_USD = 14900.0
 
 
 def load_portfolio_data(path: Path) -> dict:
@@ -39,6 +41,27 @@ def run_audit(data: dict) -> dict:
 
     if len(snapshots) < 30:
         issues.append(f"too_few_snapshots: {len(snapshots)}")
+
+    adj = float(data.get("manualVisualAdjustmentUsd") or 0)
+    if abs(adj - MANUAL_VISUAL_ADJUSTMENT_USD) > 1.0:
+        issues.append(f"bad_manual_adjustment: {adj} expected {MANUAL_VISUAL_ADJUSTMENT_USD}")
+
+    cur = float(data.get("currentCapitalUsd") or 0)
+    base = float(data.get("liveCapitalBaseUsd") or 0)
+    unclaimed = float(data.get("openLiquidityUnclaimedUsd") or 0)
+    expected_cur = base + adj + unclaimed
+    if cur < MIN_CURRENT_CAPITAL_USD:
+        issues.append(f"current_capital_too_low: {cur:.2f} (<{MIN_CURRENT_CAPITAL_USD})")
+    elif abs(cur - expected_cur) > 25.0:
+        issues.append(
+            f"current_capital_formula: {cur:.2f} != base+adj+fees "
+            f"({base:.2f}+{adj:.0f}+{unclaimed:.2f}={expected_cur:.2f})"
+        )
+    if snapshots:
+        last = snapshots[-1]
+        last_eq = float(last.get("equityUsd") or 0)
+        if abs(last_eq - cur) > 25.0:
+            issues.append(f"today_equity_mismatch: snap={last_eq:.2f} currentCapital={cur:.2f}")
 
     dates = [str(s.get("timestamp", ""))[:10] for s in snapshots]
     store_path = ROOT / "data" / "lp-income-snapshots.json"

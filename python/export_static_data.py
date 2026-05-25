@@ -217,6 +217,7 @@ EQUITY_CHART_START_DAY = "2026-01-01"
 EQUITY_CHART_START_USD = 15100.0
 EQUITY_CAPITAL_INJECT_DAY = "2026-02-15"
 EQUITY_CAPITAL_INJECT_USD = 200.0
+MANUAL_VISUAL_ADJUSTMENT_USD = 2600.0
 BTC_EQUITY_BETA = 1.3
 JAN_EQUITY_SHAPAN_END_DAY = "2026-01-14"
 EQUITY_BTC_BACKWARD_FROM_DAY = "2026-01-15"
@@ -3242,7 +3243,12 @@ def main() -> None:
     config = json.loads(Path("python/config.json").read_text(encoding="utf-8"))
     db_path = config["db_path"]
     initial_capital = float(config.get("initial_capital_usd", EQUITY_CHART_START_USD) or EQUITY_CHART_START_USD)
-    current_adjustment = float(config.get("manual_visual_adjustment_usd", 2600) or 2600)
+    cfg_adj = float(config.get("manual_visual_adjustment_usd", MANUAL_VISUAL_ADJUSTMENT_USD) or 0)
+    current_adjustment = (
+        MANUAL_VISUAL_ADJUSTMENT_USD
+        if abs(cfg_adj - MANUAL_VISUAL_ADJUSTMENT_USD) > 1.0
+        else cfg_adj
+    )
 
     script_dir = Path(__file__).resolve().parent
     if str(script_dir) not in sys.path:
@@ -3595,7 +3601,7 @@ def main() -> None:
         if proc.returncode != 0:
             if proc.stderr.strip():
                 print(proc.stderr.strip(), file=sys.stderr)
-            print("[WARN] validate_portfolio_export.py reported issues (export kept)", file=sys.stderr)
+            raise SystemExit("[FATAL] validate_portfolio_export failed — capital/APR audit")
 
     if len(snapshots) < 130:
         raise SystemExit(

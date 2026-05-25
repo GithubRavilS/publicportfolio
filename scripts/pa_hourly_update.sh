@@ -79,7 +79,7 @@ if ! grep -q "liquidity_usd=[5-9]" /tmp/etl_last.log && ! grep -q "liquidity_usd
 fi
 
 python python/export_static_data.py
-python scripts/validate_portfolio_export.py data/portfolio-data.js || echo "[WARN] export audit warnings (non-fatal)"
+python scripts/validate_portfolio_export.py data/portfolio-data.js
 
 echo "=== PUSH TO GITHUB (v3) ==="
 set +e

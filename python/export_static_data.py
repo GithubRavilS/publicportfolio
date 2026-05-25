@@ -499,6 +499,14 @@ def assign_daily_fee_income_to_snapshots(
     dates = [str(s.get("timestamp", ""))[:10] for s in out]
     income_by_day = distribute_rollup_income_to_snapshots(out, dates, rollup_by_day)
 
+    db_path = str(config.get("db_path", "data/portfolio.db"))
+    if Path(db_path).exists():
+        _conn = sqlite3.connect(db_path)
+        try:
+            apply_daily_metrics_fees(out, dates, load_daily_metrics_fees_by_day(_conn))
+        finally:
+            _conn.close()
+
     snap_income, income_from_store = fill_daily_income_on_snapshots(
         snapshots, positions, as_of_day=as_of or None
     )
@@ -560,7 +568,130 @@ def assign_daily_fee_income_to_snapshots(
             out[-1]["dailyFeeIncomeUsd"] = est
             income_by_day[dates[-1]] = est
 
+    interpolate_daily_fee_income_gaps(out, dates, anchor_day="2026-05-15")
+    refine_flat_fee_plateaus(out, dates, anchor_day="2026-05-19")
+    for i, d in enumerate(dates):
+        fee = float(out[i].get("dailyFeeIncomeUsd") or 0.0)
+        if fee > 0:
+            income_by_day[d] = fee
+
     return out, income_by_day
+
+
+def load_daily_metrics_fees_by_day(conn: sqlite3.Connection) -> dict[str, float]:
+    by_day: dict[str, float] = {}
+    try:
+        rows = conn.execute(
+            """
+            SELECT as_of_date, daily_fee_income_usd
+            FROM daily_metrics
+            WHERE daily_fee_income_usd > 0
+            ORDER BY as_of_date ASC
+            """
+        ).fetchall()
+        for row in rows:
+            d = str(row[0] or "")[:10]
+            fee = float(row[1] or 0.0)
+            if d and fee > 0:
+                by_day[d] = fee
+    except sqlite3.OperationalError:
+        pass
+    return by_day
+
+
+def apply_daily_metrics_fees(
+    out: list[dict],
+    dates: list[str],
+    fees_by_day: dict[str, float],
+) -> None:
+    for i, d in enumerate(dates):
+        fee = float(fees_by_day.get(d) or 0.0)
+        if fee > 0 and float(out[i].get("dailyFeeIncomeUsd") or 0) <= 0:
+            out[i]["dailyFeeIncomeUsd"] = fee
+
+
+def interpolate_daily_fee_income_gaps(
+    out: list[dict],
+    dates: list[str],
+    *,
+    anchor_day: str = "2026-05-15",
+) -> None:
+    """Дни с fee=0 между двумя днями с известным доходом — линейная интерполяция."""
+    for i, d in enumerate(dates):
+        if d < anchor_day:
+            continue
+        if float(out[i].get("dailyFeeIncomeUsd") or 0) > 0:
+            continue
+        prev_i = next(
+            (j for j in range(i - 1, -1, -1) if float(out[j].get("dailyFeeIncomeUsd") or 0) > 0),
+            None,
+        )
+        next_i = next(
+            (j for j in range(i + 1, len(out)) if float(out[j].get("dailyFeeIncomeUsd") or 0) > 0),
+            None,
+        )
+        if prev_i is None or next_i is None:
+            continue
+        span = next_i - prev_i
+        if span <= 0:
+            continue
+        prev_fee = float(out[prev_i]["dailyFeeIncomeUsd"])
+        next_fee = float(out[next_i]["dailyFeeIncomeUsd"])
+        t = (i - prev_i) / span
+        fee = prev_fee + (next_fee - prev_fee) * t
+        if fee > 0:
+            out[i]["dailyFeeIncomeUsd"] = round(fee, 6)
+
+
+def refine_flat_fee_plateaus(
+    out: list[dict],
+    dates: list[str],
+    *,
+    anchor_day: str = "2026-05-19",
+) -> None:
+    """Убирает одинаковый dailyFee на несколько дней подряд (артефакт gap-fill)."""
+    i = 0
+    while i < len(dates):
+        if dates[i] < anchor_day:
+            i += 1
+            continue
+        fee = float(out[i].get("dailyFeeIncomeUsd") or 0.0)
+        if fee <= 0:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(dates):
+            nfee = float(out[j + 1].get("dailyFeeIncomeUsd") or 0.0)
+            if dates[j + 1] < anchor_day or abs(nfee - fee) > 1e-6:
+                break
+            j += 1
+        if j > i:
+            prev_i = next(
+                (
+                    x
+                    for x in range(i - 1, -1, -1)
+                    if float(out[x].get("dailyFeeIncomeUsd") or 0) > 0
+                    and abs(float(out[x].get("dailyFeeIncomeUsd") or 0) - fee) > 1e-6
+                ),
+                None,
+            )
+            next_i = next(
+                (
+                    x
+                    for x in range(j + 1, len(out))
+                    if float(out[x].get("dailyFeeIncomeUsd") or 0) > 0
+                    and abs(float(out[x].get("dailyFeeIncomeUsd") or 0) - fee) > 1e-6
+                ),
+                None,
+            )
+            if prev_i is not None and next_i is not None:
+                span = next_i - prev_i
+                prev_fee = float(out[prev_i]["dailyFeeIncomeUsd"])
+                next_fee = float(out[next_i]["dailyFeeIncomeUsd"])
+                for k in range(i, j + 1):
+                    t = (k - prev_i) / span
+                    out[k]["dailyFeeIncomeUsd"] = round(prev_fee + (next_fee - prev_fee) * t, 6)
+        i = j + 1
 
 
 def sheet_portfolio_chart_apr(
@@ -2351,8 +2482,14 @@ def main() -> None:
     chart_yield_by_day = load_yield_reference_by_day()
     for i, s in enumerate(snapshots):
         d = str(s.get("timestamp", ""))[:10]
-        if i < len(daily_yield_series) and daily_yield_series[i] > 0.5:
+        if i < len(daily_yield_series) and daily_yield_series[i] > 0.01:
             chart_yield_by_day[d] = float(daily_yield_series[i])
+    ref_path = Path("data/chart-yield-reference.json")
+    if chart_yield_by_day:
+        ref_path.write_text(
+            json.dumps({"byDay": chart_yield_by_day}, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     gaps = 0
     if len(snapshots) >= 2:

@@ -478,9 +478,9 @@
 
     function feeBasedAprFromSnapshots(snaps) {
       return (snaps || []).map((s) => {
-        const base = portfolioBaseUsd(s);
+        const liq = Number(s.liquidityUsd || 0);
         const fee = Number(s.dailyFeeIncomeUsd || 0);
-        if (base > 0 && fee > 0) return (fee / base) * 365 * 100;
+        if (liq > 0 && fee > 0) return (fee / liq) * 365 * 100;
         return 0;
       });
     }

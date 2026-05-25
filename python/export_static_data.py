@@ -188,6 +188,8 @@ EQUITY_CHART_START_DAY = "2026-01-01"
 EQUITY_CHART_START_USD = 15100.0
 EQUITY_CAPITAL_INJECT_DAY = "2026-02-15"
 EQUITY_CAPITAL_INJECT_USD = 200.0
+BTC_EQUITY_BLEND_DAYS = 14
+BTC_PRICES_CACHE_PATH = Path("data/btc-daily-prices.json")
 
 
 def load_equity_reference_by_day() -> dict[str, dict]:
@@ -353,6 +355,7 @@ def load_frozen_equity_chart_by_day(conn: sqlite3.Connection) -> dict[str, dict]
             "collateralUsd": float(r[1] or 0),
             "debtUsd": float(r[2] or 0),
             "liquidityUsd": float(r[3] or 0),
+            "equityUsd": float(r[1] or 0) - float(r[2] or 0) + float(r[3] or 0),
         }
         for r in rows
     }
@@ -424,6 +427,31 @@ def _debt_usd_on_day(
     return known[0][1]
 
 
+def load_or_fetch_btc_by_day(start_day: str, end_day: str) -> dict[str, float]:
+    """BTC USD по дням: кэш в data/btc-daily-prices.json + CoinGecko."""
+    cached: dict[str, float] = {}
+    if BTC_PRICES_CACHE_PATH.exists():
+        try:
+            payload = json.loads(BTC_PRICES_CACHE_PATH.read_text(encoding="utf-8"))
+            cached = {str(k)[:10]: float(v) for k, v in (payload.get("byDay") or {}).items()}
+        except Exception:
+            cached = {}
+    need_fetch = not cached or start_day not in cached or end_day not in cached
+    if need_fetch:
+        try:
+            fresh = fetch_btc_history(start_day, end_day)
+            if fresh:
+                cached.update(fresh)
+                BTC_PRICES_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                BTC_PRICES_CACHE_PATH.write_text(
+                    json.dumps({"byDay": cached}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+        except Exception as exc:
+            print(f"[WARN] fetch BTC for equity chart: {exc}")
+    return cached
+
+
 def _liquidity_usd_market_path(
     days: list[str],
     eth_by_day: dict[str, float],
@@ -452,6 +480,12 @@ def _liquidity_usd_market_path(
     return liq_by_day
 
 
+def _frozen_snapshot_valid(fr: dict) -> bool:
+    coll = float(fr.get("collateralUsd") or 0)
+    eq = float(fr.get("equityUsd") or 0)
+    return coll > 500 and eq > 8000
+
+
 def build_market_equity_snapshots_calendar(
     *,
     today: str,
@@ -462,23 +496,26 @@ def build_market_equity_snapshots_calendar(
     metrics_by_day: dict[str, dict] | None = None,
     btc_by_day: dict[str, float] | None = None,
     eth_by_day: dict[str, float] | None = None,
+    frozen_by_day: dict[str, dict] | None = None,
     start_day: str = EQUITY_CHART_START_DAY,
     start_equity_usd: float = EQUITY_CHART_START_USD,
     adjustment_usd: float = 2600.0,
+    blend_days: int = BTC_EQUITY_BLEND_DAYS,
+    use_frozen_history: bool = True,
 ) -> list[dict]:
     """
-    Календарь капитала:
-    - Дни из equity-history-reference: coll/debt/liq (уже от BTC/ETH), equity = base + adjustment.
-    - Сдвиг только чтобы 01.01 = start_equity_usd (15100), форму дневных изменений не ломает.
-    - После эталона — рыночная модель (BTC 1:1, LP×ETH gamma, долг по дням), стык с эталоном на последнем дне.
-    - Сегодня — live DeBank + LP.
+    Левый график: форма как у BTC от start_equity_usd (15100) до live (coll−debt+liq+adj).
+    Последние blend_days — плавный переход к текущей рыночной стоимости.
+    Прошлые дни из equity_chart_daily (заморозка), сегодня всегда live.
     """
-    ref_by_day = ref_by_day or {}
+    del ref_by_day, metrics_by_day, eth_by_day
+    frozen_by_day = frozen_by_day or {}
     coll_live, debt_live, _ = aggregate_lending_totals(lending_positions)
     lp_live = float(sheet_lp_usd or 0.0)
     if coll_live <= 0 and debt_live <= 0 and lp_live <= 0:
         return []
     adj = float(adjustment_usd or 0.0)
+    target_today = coll_live - debt_live + lp_live + adj
     d_cur = datetime.strptime(start_day, "%Y-%m-%d").date()
     d_end = datetime.strptime(today, "%Y-%m-%d").date()
     days: list[str] = []
@@ -486,71 +523,57 @@ def build_market_equity_snapshots_calendar(
         days.append(d_cur.isoformat())
         d_cur += timedelta(days=1)
     fee_by_day = fee_by_day or {}
-    ref_through = max(ref_by_day.keys()) if ref_by_day else ""
 
-    ref_scale = 1.0
-    if start_day in ref_by_day:
-        r0 = ref_by_day[start_day]
-        base0 = (
-            float(r0.get("collateralUsd") or 0)
-            - float(r0.get("debtUsd") or 0)
-            + float(r0.get("liquidityUsd") or 0)
-        )
-        target_base0 = float(start_equity_usd) - adj
-        if base0 > 0 and target_base0 > 0:
-            ref_scale = target_base0 / base0
+    if not btc_by_day:
+        btc_by_day = load_or_fetch_btc_by_day(start_day, today)
+    btc_start = _btc_price_on(btc_by_day or {}, start_day)
+    btc_today = _btc_price_on(btc_by_day or {}, today)
+    blend_start = (
+        datetime.strptime(today, "%Y-%m-%d").date() - timedelta(days=max(1, blend_days))
+    ).isoformat()
+    base_live = max(coll_live - debt_live + lp_live, 1.0)
 
-    metrics_by_day = metrics_by_day or {}
-    market_by_day: dict[str, tuple[float, float, float, float]] = {}
-    if ref_through and ref_through < today:
-        if not btc_by_day or not eth_by_day:
-            try:
-                btc_by_day = fetch_btc_history(start_day, today)
-                eth_by_day = fetch_eth_history(start_day, today)
-            except Exception as exc:
-                print(f"[WARN] market tail prices: {exc}")
-                btc_by_day = btc_by_day or {}
-                eth_by_day = eth_by_day or {}
-        btc_today = _btc_price_on(btc_by_day or {}, today) if btc_by_day else 0.0
-        eth_today = _eth_price_on(eth_by_day or {}, today) if eth_by_day else 0.0
-        if btc_today > 0 and eth_today > 0:
-            btc_coll_usd, eth_coll_usd = lending_collateral_btc_eth_usd(lending_positions)
-            btc_units = btc_coll_usd / btc_today
-            eth_units = eth_coll_usd / eth_today
-            tail_days = [d for d in days if d >= ref_through]
-            liq_by_day = _liquidity_usd_market_path(tail_days, eth_by_day, lp_live)
-            for d in tail_days:
-                coll = btc_units * _btc_price_on(btc_by_day, d) + eth_units * _eth_price_on(eth_by_day, d)
-                debt = _debt_usd_on_day(d, ref_by_day, debt_live)
-                liq = liq_by_day.get(d, lp_live)
-                raw = coll - debt + liq
-                market_by_day[d] = (coll, debt, liq, raw)
-
-    yesterday = (datetime.strptime(today, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
     out: list[dict] = []
     for d in days:
-        if d in (today, yesterday):
+        if (
+            use_frozen_history
+            and d < today
+            and d in frozen_by_day
+            and _frozen_snapshot_valid(frozen_by_day[d])
+        ):
+            fr = frozen_by_day[d]
+            coll = float(fr.get("collateralUsd") or 0)
+            debt = float(fr.get("debtUsd") or 0)
+            liq = float(fr.get("liquidityUsd") or 0)
+            equity = float(fr.get("equityUsd") or (coll - debt + liq + adj))
+        elif d == today:
             coll, debt, liq = coll_live, debt_live, lp_live
-            equity = coll - debt + liq + adj
-        elif d in ref_by_day and d <= ref_through:
-            r = ref_by_day[d]
-            coll = float(r.get("collateralUsd") or 0)
-            debt = float(r.get("debtUsd") or 0)
-            liq = float(r.get("liquidityUsd") or 0)
-            base = (coll - debt + liq) * ref_scale
-            equity = base + adj
-        elif d > ref_through and d in market_by_day:
-            coll, debt, liq, raw = market_by_day[d]
-            equity = raw * ref_scale + adj
-        elif d > ref_through and ref_through in ref_by_day and d < today:
-            # CoinGecko недоступен — держим последний эталон (без битых daily_metrics).
-            r = ref_by_day[ref_through]
-            coll = float(r.get("collateralUsd") or 0) * ref_scale
-            debt = float(r.get("debtUsd") or 0)
-            liq = float(r.get("liquidityUsd") or 0) * ref_scale
-            equity = coll - debt + liq + adj
+            equity = target_today
         else:
-            continue
+            bp = _btc_price_on(btc_by_day or {}, d)
+            ratio = (bp / btc_start) if btc_start > 0 else 1.0
+            equity_btc = float(start_equity_usd) * ratio
+            if d >= blend_start:
+                blend_span = max(
+                    (
+                        datetime.strptime(today, "%Y-%m-%d").date()
+                        - datetime.strptime(blend_start, "%Y-%m-%d").date()
+                    ).days,
+                    1,
+                )
+                t = (
+                    datetime.strptime(d, "%Y-%m-%d").date()
+                    - datetime.strptime(blend_start, "%Y-%m-%d").date()
+                ).days / blend_span
+                t = max(0.0, min(1.0, t))
+                equity = equity_btc * (1.0 - t) + target_today * t
+            else:
+                equity = equity_btc
+            share = max(0.0, min(2.0, (equity - adj) / base_live))
+            coll = coll_live * share
+            debt = debt_live * share
+            liq = lp_live * share
+
         out.append(
             {
                 "timestamp": f"{d}T00:00:00.000Z",
@@ -563,9 +586,9 @@ def build_market_equity_snapshots_calendar(
         )
     if out:
         print(
-            f"[OK] market equity calendar {start_day}..{today}: "
+            f"[OK] BTC-shaped equity {start_day}..{today}: "
             f"start={out[0]['equityUsd']:.2f} today={out[-1]['equityUsd']:.2f} "
-            f"ref_scale={ref_scale:.4f} market_tail={len(market_by_day)} ref_through={ref_through or '—'}"
+            f"btc {btc_start:.0f}->{btc_today:.0f} blend={blend_days}d"
         )
     return out
 
@@ -647,7 +670,7 @@ def revalue_recent_snapshots_with_market_prices(
 def persist_equity_chart_snapshots(
     conn: sqlite3.Connection, snapshots: list[dict], *, today: str
 ) -> int:
-    """Сохраняем снимок: прошлые дни INSERT OR IGNORE, сегодня всегда UPDATE."""
+    """Прошлые дни — заморозка (REPLACE); сегодня — UPDATE. История больше не пересчитывается."""
     cur = conn.cursor()
     cur.execute(
         """
@@ -670,19 +693,21 @@ def persist_equity_chart_snapshots(
         liq = float(s.get("liquidityUsd") or 0)
         if coll <= 0 and debt <= 0 and liq <= 0:
             continue
-        tail_start = (
-            datetime.strptime(today, "%Y-%m-%d").date() - timedelta(days=MARKET_EQUITY_TAIL_DAYS)
-        ).isoformat()
-        if d < tail_start:
+        if d < today:
             cur.execute(
                 """
-                INSERT OR IGNORE INTO equity_chart_daily(
+                INSERT INTO equity_chart_daily(
                     as_of_date, collateral_usd, debt_usd, liquidity_usd, frozen_at
                 ) VALUES (?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(as_of_date) DO UPDATE SET
+                    collateral_usd=excluded.collateral_usd,
+                    debt_usd=excluded.debt_usd,
+                    liquidity_usd=excluded.liquidity_usd,
+                    frozen_at=datetime('now')
                 """,
                 (d, coll, debt, liq),
             )
-        else:
+        elif d == today:
             cur.execute(
                 """
                 INSERT INTO equity_chart_daily(
@@ -1770,13 +1795,17 @@ def build_chart_daily_yield_series(
     Правый график: дневной прирост дохода (fees+incentives) → APR годовых.
     История без fee — chart-yield-reference, но не плато 80% (игнор ref > max_chart_apr).
     """
-    del realized_by_day, rollup_by_day, config, synthetic, fee_based
+    del realized_by_day, rollup_by_day, config, synthetic
     if not snapshots:
         return []
     reference = load_yield_reference_by_day()
     out: list[float] = []
     for i, s in enumerate(snapshots):
         d = str(s.get("timestamp", ""))[:10]
+        fee_apr = float(fee_based[i] if i < len(fee_based) else 0.0)
+        if fee_apr > 0.01 and fee_apr < max_chart_apr - 0.5:
+            out.append(max(0.0, min(fee_apr, max_chart_apr)))
+            continue
         ref_apr = float(reference.get(d, 0.0))
         if 0.5 < ref_apr < max_chart_apr - 0.5:
             out.append(ref_apr)
@@ -2963,19 +2992,30 @@ def main() -> None:
         for p in load_liquidity_positions_from_sheet(config)
         if p.get("isActive", True)
     )
-    equity_ref = load_equity_reference_by_day()
+    frozen_by_day = load_frozen_equity_chart_by_day(conn)
+    fr0 = frozen_by_day.get(EQUITY_CHART_START_DAY) or {}
+    # Заморозка только если 01.01 ≈ 15100 и в январе есть амплитуда (форма BTC уже сохранена).
+    jan_vals = [
+        float(frozen_by_day[d].get("equityUsd") or 0)
+        for d in frozen_by_day
+        if d.startswith("2026-01")
+    ]
+    jan_spread = (max(jan_vals) - min(jan_vals)) if jan_vals else 0.0
+    use_frozen = (
+        abs(float(fr0.get("equityUsd") or 0) - EQUITY_CHART_START_USD) < 250
+        and jan_spread > 80
+    )
     snapshots = build_market_equity_snapshots_calendar(
         today=today,
         lending_positions=lending_positions,
         sheet_lp_usd=sheet_lp_usd,
-        ref_by_day=equity_ref,
         fee_by_day=fee_by_day,
-        metrics_by_day=metrics_by_day,
         btc_by_day=price_btc,
-        eth_by_day=price_eth,
+        frozen_by_day=frozen_by_day,
         start_day=EQUITY_CHART_START_DAY,
         start_equity_usd=EQUITY_CHART_START_USD,
         adjustment_usd=current_adjustment,
+        use_frozen_history=use_frozen,
     )
     if not snapshots:
         snapshots = []
@@ -2993,7 +3033,6 @@ def main() -> None:
                     "dailyFeeIncomeUsd": float(row["daily_fee_income_usd"] or 0),
                 }
             )
-    frozen_by_day = load_frozen_equity_chart_by_day(conn)
     frozen_n = persist_equity_chart_snapshots(conn, snapshots, today=today)
     if frozen_n:
         print(f"[OK] equity_chart_daily: {len(frozen_by_day)} frozen, saved {frozen_n} rows")
@@ -3019,6 +3058,13 @@ def main() -> None:
         fee_based_yield,
         synthetic_daily_yield,
         realized_by_day,
+        rollup_by_day,
+        config,
+        max_chart_apr=MAX_CHART_DAILY_APR_PCT,
+    )
+    daily_yield_series = fill_trailing_yield_gap(
+        snapshots,
+        daily_yield_series,
         rollup_by_day,
         config,
         max_chart_apr=MAX_CHART_DAILY_APR_PCT,
@@ -3166,10 +3212,11 @@ def main() -> None:
         )
     if len(chart_yield_by_day) < 100:
         print("[WARN] chartYieldByDay пустой — залей data/chart-yield-reference.json на PA.")
-    if len(equity_ref) < 100:
-        print("[WARN] equity_ref пустой — залей data/equity-history-reference.json на PA.")
-    else:
-        print(f"[OK] chartYieldByDay={len(chart_yield_by_day)} equityHistoryByDay={len(equity_ref)} snapshots={len(snapshots)}")
+    equity_hist = equity_history_payload_from_snapshots(snapshots)
+    print(
+        f"[OK] chartYieldByDay={len(chart_yield_by_day)} "
+        f"equityHistoryByDay={len(equity_hist)} snapshots={len(snapshots)}"
+    )
 
     exported_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {

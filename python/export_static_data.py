@@ -304,16 +304,18 @@ def sync_snapshot_today_live_capital(
     lending_positions: list[dict],
     sheet_lp_usd: float,
     adjustment_usd: float,
-) -> tuple[list[dict], float, float]:
-    """Сегодня: equity = залог − долг + ликвидность + поправка (как на карточках)."""
+    open_lp_unclaimed_usd: float = 0.0,
+) -> tuple[list[dict], float, float, float]:
+    """Сегодня: equity = залог − долг + ликвидность + поправка + невыведённые fees активных LP."""
     if not snapshots:
-        return snapshots, 0.0, 0.0
+        return snapshots, 0.0, 0.0, 0.0
     coll, debt, _ = aggregate_lending_totals(lending_positions)
     lp = float(sheet_lp_usd or 0.0)
     if coll <= 0 and debt <= 0 and lp <= 0:
-        return snapshots, 0.0, 0.0
+        return snapshots, 0.0, 0.0, 0.0
+    unclaimed = max(0.0, float(open_lp_unclaimed_usd or 0.0))
     base = coll - debt + lp
-    live = base + float(adjustment_usd or 0.0)
+    live = base + float(adjustment_usd or 0.0) + unclaimed
     out = [dict(s) for s in snapshots]
     for i, s in enumerate(out):
         if str(s.get("timestamp", ""))[:10] != today:
@@ -338,7 +340,7 @@ def sync_snapshot_today_live_capital(
             }
         )
         out.sort(key=lambda x: str(x.get("timestamp", "")))
-    return out, base, live
+    return out, base, live, unclaimed
 
 
 def equity_history_payload_from_snapshots(snapshots: list[dict]) -> dict[str, dict]:
@@ -1251,6 +1253,79 @@ def sheet_portfolio_cumulative_income_usd(config: dict) -> float:
             continue
         total += float(p.get("feesUsd") or 0.0) + float(p.get("incentivesUsd") or 0.0)
     return total
+
+
+def position_days_in_period(
+    p: dict,
+    period_start: date,
+    as_of: date,
+) -> int:
+    """Календарные дни позиции внутри [period_start, as_of] (для средневзвешенного капитала)."""
+    opened = parse_date(str(p.get("openedAt") or ""))
+    closed = (
+        parse_date(str(p.get("closedAt") or ""))
+        if not p.get("isActive", True)
+        else None
+    )
+    eff_start = max((opened.date() if opened else period_start), period_start)
+    eff_end = min((closed.date() if closed else as_of), as_of)
+    if eff_end < eff_start:
+        return 0
+    return max((eff_end - eff_start).days, 1)
+
+
+def position_capital_usd_for_weight(p: dict, as_of: date) -> float:
+    """Средства в позиции: valueUsd или оценка из дохода/APR для закрытых с нулём value."""
+    value = float(p.get("valueUsd") or 0.0)
+    if value > 0:
+        return value
+    income = float(p.get("feesUsd") or 0.0) + float(p.get("incentivesUsd") or 0.0)
+    if income <= 0:
+        return 0.0
+    days = days_held_since_open(str(p.get("openedAt") or ""), as_of)
+    apr = position_apr_from_item(p, as_of)
+    if apr > 0 and days > 0:
+        daily = (apr / 100.0) / 365.0
+        return income / (daily * days)
+    return income * 8.0
+
+
+def compute_portfolio_weighted_average_apr(
+    config: dict,
+    *,
+    period_start: str = EQUITY_CHART_START_DAY,
+    as_of: date | None = None,
+) -> dict[str, float]:
+    """
+    Среднегодовая доходность портфеля LP с 01.01:
+    APR% = (Σ доход USD) / (Σ капитал×дни) × 365 × 100.
+    Доход = feesUsd + incentivesUsd по всем позициям (открытым и закрытым).
+    """
+    as_of = as_of or datetime.now(timezone.utc).date()
+    start = date.fromisoformat(period_start)
+    period_days = max((as_of - start).days, 1)
+    total_income = 0.0
+    capital_days = 0.0
+    for p in load_liquidity_positions_from_sheet(config):
+        days = position_days_in_period(p, start, as_of)
+        if days <= 0:
+            continue
+        income = float(p.get("feesUsd") or 0.0) + float(p.get("incentivesUsd") or 0.0)
+        capital = position_capital_usd_for_weight(p, as_of)
+        if income <= 0 and capital <= 0:
+            continue
+        total_income += income
+        if capital > 0:
+            capital_days += capital * float(days)
+    avg_apr = (total_income / capital_days * 365.0 * 100.0) if capital_days > 0 else 0.0
+    avg_deployed = capital_days / float(period_days) if period_days > 0 else 0.0
+    return {
+        "portfolioEarnedIncomeUsd": round(total_income, 2),
+        "portfolioWeightedCapitalDays": round(capital_days, 2),
+        "portfolioAverageDeployedUsd": round(avg_deployed, 2),
+        "portfolioAverageAprPct": round(min(avg_apr, 500.0), 2),
+        "portfolioPeriodDays": int(period_days),
+    }
 
 
 def sheet_portfolio_daily_income_usd(config: dict, as_of: date | None = None) -> float:
@@ -3245,17 +3320,26 @@ def main() -> None:
                     "dailyFeeIncomeUsd": float(row["daily_fee_income_usd"] or 0),
                 }
             )
-    snapshots, live_capital_base, current_capital_usd = sync_snapshot_today_live_capital(
+    open_lp_unclaimed = sheet_portfolio_cumulative_income_usd(config)
+    portfolio_apr_stats = compute_portfolio_weighted_average_apr(config, as_of=date.fromisoformat(today))
+    snapshots, live_capital_base, current_capital_usd, _unclaimed = sync_snapshot_today_live_capital(
         snapshots,
         today=today,
         lending_positions=lending_positions,
         sheet_lp_usd=sheet_lp_usd,
         adjustment_usd=current_adjustment,
+        open_lp_unclaimed_usd=open_lp_unclaimed,
     )
     if current_capital_usd > 0:
         print(
             f"[OK] currentCapitalUsd={current_capital_usd:.2f} "
-            f"(base={live_capital_base:.2f} + adj {current_adjustment:.0f})"
+            f"(base={live_capital_base:.2f} + adj {current_adjustment:.0f} "
+            f"+ open fees {open_lp_unclaimed:.2f})"
+        )
+        print(
+            f"[OK] portfolio avg APR {portfolio_apr_stats['portfolioAverageAprPct']:.2f}% "
+            f"earned=${portfolio_apr_stats['portfolioEarnedIncomeUsd']:.0f} "
+            f"days={portfolio_apr_stats['portfolioPeriodDays']}"
         )
     frozen_n = persist_equity_chart_snapshots(
         conn, snapshots, today=today, freeze_past=not rebuild_freeze
@@ -3451,7 +3535,12 @@ def main() -> None:
         "chartStartEquityUsd": EQUITY_CHART_START_USD,
         "manualVisualAdjustmentUsd": current_adjustment,
         "liveCapitalBaseUsd": round(live_capital_base, 2),
+        "openLiquidityUnclaimedUsd": round(open_lp_unclaimed, 2),
         "currentCapitalUsd": round(current_capital_usd, 2),
+        "portfolioEarnedIncomeUsd": portfolio_apr_stats.get("portfolioEarnedIncomeUsd", 0.0),
+        "portfolioAverageDeployedUsd": portfolio_apr_stats.get("portfolioAverageDeployedUsd", 0.0),
+        "portfolioAverageAprPct": portfolio_apr_stats.get("portfolioAverageAprPct", 0.0),
+        "portfolioPeriodDays": portfolio_apr_stats.get("portfolioPeriodDays", 0),
         "prices": {"BTC": 95000, "ETH": 1800},
         "snapshots": snapshots,
         "dailyYieldSeries": daily_yield_series,

@@ -37,6 +37,7 @@
     .kpi { flex: 1; min-width: 190px; }
     .kpi h3 { margin: 0 0 8px; color: var(--muted); font-size: 13px; font-weight: 500; }
     .kpi p { margin: 0; font-size: clamp(25px, 7vw, 34px); line-height: 1.05; }
+    .kpi .kpi-sub { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.3; }
     .charts { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
     .chart-box { height: clamp(240px, 46vh, 360px); }
     .toolbar { display: flex; gap: 8px; }
@@ -94,7 +95,7 @@
       .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
       .tabs::-webkit-scrollbar { display: none; }
       .btn { flex: 0 0 auto; }
-      .kpi { min-width: 100%; }
+      .kpi { min-width: calc(50% - 6px); flex: 1 1 calc(50% - 6px); }
       .chart-box { height: 250px; }
       .pos-meta { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       .title { max-width: 24ch; }
@@ -103,6 +104,7 @@
     }
     @media (max-width: 430px) {
       body { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+      .kpi-row .kpi { min-width: 100%; flex: 1 1 100%; }
       .card { border-radius: 14px; }
       .btn { font-size: 12px; padding: 8px 10px; min-height: 38px; }
       .chart-box { height: 225px; }
@@ -279,10 +281,15 @@
     </div>
 
     <section id="dashboard" class="section active">
-    <div class="row">
+    <div class="row kpi-row">
       <div class="card kpi"><h3 id="initialLabel">Стартовый капитал</h3><p id="initialUsd">$0</p></div>
       <div class="card kpi"><h3 id="currentLabel">Текущий капитал</h3><p id="currentUsd">$0</p></div>
       <div class="card kpi"><h3 id="returnLabel">Доходность с 01.01.2026</h3><p id="returnPct">0%</p></div>
+      <div class="card kpi">
+        <h3 id="avgAprLabel">Средняя доходность (год.)</h3>
+        <p id="avgAprPct">0%</p>
+        <p class="kpi-sub" id="avgAprSub"></p>
+      </div>
     </div>
 
     <div class="charts">
@@ -587,6 +594,10 @@
     const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
     const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
     const manualEquityAdj = Number(data.manualVisualAdjustmentUsd ?? 0);
+    const openLpUnclaimed = Number(data.openLiquidityUnclaimedUsd ?? 0);
+    const portfolioAvgApr = Number(data.portfolioAverageAprPct ?? 0);
+    const portfolioEarned = Number(data.portfolioEarnedIncomeUsd ?? 0);
+    const portfolioPeriodDays = Number(data.portfolioPeriodDays ?? 0);
     function patchTodayLiveCapital(snaps) {
       const out = (snaps || []).map((s) => ({ ...s }));
       if (!out.length) return out;
@@ -648,6 +659,8 @@
         initial: "Стартовый капитал",
         current: "Текущий капитал",
         totalReturn: "Доходность с 01.01.2026",
+        avgApr: "Средняя доходность (год.)",
+        avgAprSub: "комиссии + CAKE, с 01.01",
         equity: "Динамика портфеля",
         dailyApr: "Ежедневная доходность (годовых, %)",
         updated: "Обновление",
@@ -683,6 +696,8 @@
         initial: "Initial capital",
         current: "Current capital",
         totalReturn: "Return since 2026-01-01",
+        avgApr: "Average yield (APR)",
+        avgAprSub: "fees + incentives since Jan 1",
         equity: "Portfolio equity",
         dailyApr: "Daily yield (APR, %)",
         updated: "Updated",
@@ -737,11 +752,11 @@
       const exportedCurrent = Number(data.currentCapitalUsd || 0);
       let equity = staticEquity;
       if (liveMode) {
-        equity = base + manualEquityAdj;
+        equity = base + manualEquityAdj + openLpUnclaimed;
       } else if (exportedCurrent > 0) {
         equity = exportedCurrent;
       } else if (base > 0) {
-        equity = base + manualEquityAdj;
+        equity = base + manualEquityAdj + openLpUnclaimed;
       }
       const today = new Date().toISOString().slice(0, 10);
       if (snapshots.length && (snapshots[snapshots.length - 1].timestamp || "").slice(0, 10) === today) {
@@ -777,6 +792,16 @@
     }
 
     document.getElementById("initialUsd").textContent = fmtUsd(initial);
+    document.getElementById("avgAprPct").textContent = fmtPct(portfolioAvgApr);
+    const avgSub = document.getElementById("avgAprSub");
+    if (portfolioEarned > 0 && portfolioPeriodDays > 0) {
+      avgSub.textContent =
+        lang === "ru"
+          ? `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })} · ${portfolioPeriodDays} дн.`
+          : `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })} · ${portfolioPeriodDays}d`;
+    } else {
+      avgSub.textContent = t("avgAprSub");
+    }
 
     const txBody = document.getElementById("txBody");
     txBody.innerHTML = txs.slice(0, 200).map(tx => `
@@ -1357,6 +1382,7 @@
       document.getElementById("initialLabel").textContent = t("initial");
       document.getElementById("currentLabel").textContent = t("current");
       document.getElementById("returnLabel").textContent = t("totalReturn");
+      document.getElementById("avgAprLabel").textContent = t("avgApr");
       document.getElementById("equityTitle").textContent = t("equity");
       document.getElementById("aprTitle").textContent = t("dailyApr");
       document.getElementById("collateralLabel").textContent = t("collateral");

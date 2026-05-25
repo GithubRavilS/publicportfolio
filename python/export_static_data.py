@@ -1071,6 +1071,20 @@ def invested_usd_from_row(r: dict[str, str]) -> float:
     return 0.0
 
 
+def invested_usd_public_row(row: dict[str, str]) -> float:
+    """Сумма инвестированных средств в пул (Revert / Crystal): «Инвестировано», «Внесено»."""
+    for key in (
+        "Инвестировано ВСЕГО (сейчас)",
+        "Инвестировано ВСЕГО",
+        "Внесено, USD",
+        "invested_usd",
+    ):
+        v = parse_float(row_get(row, key))
+        if v > 0:
+            return v
+    return invested_usd_from_row(row)
+
+
 def normalize_closed_cell(raw: str) -> str:
     """Пустая строка = позиция не закрыта (по колонке даты/статуса)."""
     s = (raw or "").strip().replace("\xa0", " ")
@@ -1118,10 +1132,21 @@ def build_revert_link_from_row(row: dict[str, str]) -> str:
 def closed_display_from_row(row: dict[str, str], is_active: bool) -> str:
     if is_active:
         return ""
-    raw = row_get(row, "Дата закрытия норм", "closed_at", "X").strip()
-    if not raw:
-        return ""
-    return raw if normalize_closed_cell(raw) else ""
+    for key in ("Дата закрытия", "closed_at", "Дата закрытия норм", "X"):
+        raw = row_get(row, key).strip()
+        if not raw or not normalize_closed_cell(raw):
+            continue
+        if parse_date(raw):
+            return raw
+    return ""
+
+
+def opened_at_from_row(row: dict[str, str]) -> str:
+    for key in ("Дата открытия", "Дата открытия норм", "W", "first_mint_ts", "opened_at"):
+        raw = row_get(row, key).strip()
+        if raw and parse_date(raw):
+            return raw
+    return row_get(row, "Дата открытия", "Дата открытия норм", "W", "first_mint_ts")
 
 
 def apr_percent_from_cell(raw: str) -> float:
@@ -1275,20 +1300,31 @@ def position_days_in_period(
     return max((eff_end - eff_start).days, 1)
 
 
-def position_capital_usd_for_weight(p: dict, as_of: date) -> float:
-    """Средства в позиции: valueUsd или оценка из дохода/APR для закрытых с нулём value."""
-    value = float(p.get("valueUsd") or 0.0)
-    if value > 0:
-        return value
-    income = float(p.get("feesUsd") or 0.0) + float(p.get("incentivesUsd") or 0.0)
-    if income <= 0:
-        return 0.0
-    days = days_held_since_open(str(p.get("openedAt") or ""), as_of)
-    apr = position_apr_from_item(p, as_of)
-    if apr > 0 and days > 0:
-        daily = (apr / 100.0) / 365.0
-        return income / (daily * days)
-    return income * 8.0
+def position_invested_usd(p: dict) -> float:
+    """Инвестировано в пул (не рыночная стоимость): из листа или valueUsd для открытых."""
+    inv = float(p.get("investedUsd") or 0.0)
+    if inv > 0:
+        return inv
+    if p.get("isActive", True):
+        return float(p.get("valueUsd") or 0.0)
+    return 0.0
+
+
+def position_open_on_date(
+    p: dict,
+    day: date,
+    period_start: date,
+    as_of: date,
+) -> bool:
+    opened = parse_date(str(p.get("openedAt") or ""))
+    closed = (
+        parse_date(str(p.get("closedAt") or ""))
+        if not p.get("isActive", True)
+        else None
+    )
+    eff_start = max((opened.date() if opened else period_start), period_start)
+    eff_end = min((closed.date() if closed else as_of), as_of)
+    return eff_start <= day <= eff_end
 
 
 def compute_portfolio_weighted_average_apr(
@@ -1298,32 +1334,47 @@ def compute_portfolio_weighted_average_apr(
     as_of: date | None = None,
 ) -> dict[str, float]:
     """
-    Среднегодовая доходность портфеля LP с 01.01:
-    APR% = (Σ доход USD) / (Σ капитал×дни) × 365 × 100.
-    Доход = feesUsd + incentivesUsd по всем позициям (открытым и закрытым).
+    Доходность DeFi с 01.01:
+    - доход = Σ (feesUsd + incentivesUsd) по всем LP (открытым и закрытым);
+    - каждый день: сумма investedUsd по пулам, открытым в этот день;
+    - среднее вложено = среднее арифметическое дневных сумм за период;
+    - APR% = (доход / среднее вложено) × (365 / дни периода) × 100.
     """
     as_of = as_of or datetime.now(timezone.utc).date()
     start = date.fromisoformat(period_start)
     period_days = max((as_of - start).days, 1)
+    positions = load_liquidity_positions_from_sheet(config)
     total_income = 0.0
-    capital_days = 0.0
-    for p in load_liquidity_positions_from_sheet(config):
-        days = position_days_in_period(p, start, as_of)
-        if days <= 0:
-            continue
+    for p in positions:
         income = float(p.get("feesUsd") or 0.0) + float(p.get("incentivesUsd") or 0.0)
-        capital = position_capital_usd_for_weight(p, as_of)
-        if income <= 0 and capital <= 0:
-            continue
-        total_income += income
-        if capital > 0:
-            capital_days += capital * float(days)
-    avg_apr = (total_income / capital_days * 365.0 * 100.0) if capital_days > 0 else 0.0
-    avg_deployed = capital_days / float(period_days) if period_days > 0 else 0.0
+        if income > 0:
+            total_income += income
+
+    daily_deployed: list[float] = []
+    for i in range(period_days):
+        day = start + timedelta(days=i)
+        day_sum = 0.0
+        for p in positions:
+            if not position_open_on_date(p, day, start, as_of):
+                continue
+            cap = position_invested_usd(p)
+            if cap > 0:
+                day_sum += cap
+        daily_deployed.append(day_sum)
+
+    avg_deployed = (
+        sum(daily_deployed) / float(len(daily_deployed)) if daily_deployed else 0.0
+    )
+    max_deployed = max(daily_deployed) if daily_deployed else 0.0
+    avg_apr = (
+        (total_income / avg_deployed) * (365.0 / float(period_days)) * 100.0
+        if avg_deployed > 0
+        else 0.0
+    )
     return {
         "portfolioEarnedIncomeUsd": round(total_income, 2),
-        "portfolioWeightedCapitalDays": round(capital_days, 2),
         "portfolioAverageDeployedUsd": round(avg_deployed, 2),
+        "portfolioMaxDeployedUsd": round(max_deployed, 2),
         "portfolioAverageAprPct": round(min(avg_apr, 500.0), 2),
         "portfolioPeriodDays": int(period_days),
     }
@@ -2812,6 +2863,7 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
         dex = dex_from_revert_link(link) if link else (platform_raw or "DEX")
         pos_id = revert_position_id(link) or re.sub(r"\D", "", row_get(r, "NFT tokenId", "I", "BT") or "")
         val_usd = live_value_usd_public_row(r)
+        inv_usd = invested_usd_public_row(r)
         inc_usd, inc_token = incentives_usd_public_row(r)
         item = {
             "platform": dex,
@@ -2822,13 +2874,14 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
             "incentivesUsd": round(inc_usd, 4) if inc_usd > 0 else 0.0,
             "incentiveToken": inc_token,
             "apr": 0.0,
-            "openedAt": row_get(r, "Дата открытия", "Дата открытия норм", "W", "first_mint_ts"),
+            "openedAt": opened_at_from_row(r),
             "closedAt": closed_at,
             "isActive": is_active,
             "feeTier": fee_tier,
             "link": link,
             "positionId": pos_id,
             "valueUsd": round(val_usd, 2),
+            "investedUsd": round(inv_usd, 2) if inv_usd > 0 else 0.0,
         }
         item.update(parse_position_range(r))
         calc_apr = position_apr_from_item(item)
@@ -2889,7 +2942,7 @@ def strategy_lp_positions(config: dict) -> list[dict]:
             "incentivesUsd": round(inc_usd, 4) if inc_usd > 0 else 0.0,
             "incentiveToken": inc_token,
             "apr": apr,
-            "openedAt": row_get(r, "Дата открытия", "Дата открытия норм", "W", "first_mint_ts"),
+            "openedAt": opened_at_from_row(r),
             "closedAt": closed_at,
             "isActive": is_active,
             "feeTier": fee_tier,
@@ -3343,8 +3396,10 @@ def main() -> None:
             f"+ open fees {open_lp_unclaimed:.2f})"
         )
         print(
-            f"[OK] portfolio avg APR {portfolio_apr_stats['portfolioAverageAprPct']:.2f}% "
+            f"[OK] DeFi APR {portfolio_apr_stats['portfolioAverageAprPct']:.2f}% "
             f"earned=${portfolio_apr_stats['portfolioEarnedIncomeUsd']:.0f} "
+            f"avg_inv=${portfolio_apr_stats['portfolioAverageDeployedUsd']:.0f} "
+            f"max_inv=${portfolio_apr_stats.get('portfolioMaxDeployedUsd', 0):.0f} "
             f"days={portfolio_apr_stats['portfolioPeriodDays']}"
         )
     frozen_n = persist_equity_chart_snapshots(

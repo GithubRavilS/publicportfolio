@@ -286,7 +286,7 @@
       <div class="card kpi"><h3 id="currentLabel">Текущий капитал</h3><p id="currentUsd">$0</p></div>
       <div class="card kpi"><h3 id="returnLabel">Доходность с 01.01.2026</h3><p id="returnPct">0%</p></div>
       <div class="card kpi">
-        <h3 id="avgAprLabel">Средняя доходность (год.)</h3>
+        <h3 id="avgAprLabel">Доходность DeFi</h3>
         <p id="avgAprPct">0%</p>
         <p class="kpi-sub" id="avgAprSub"></p>
       </div>
@@ -606,6 +606,7 @@
     }
     const portfolioAvgApr = Number(data.portfolioAverageAprPct ?? 0);
     const portfolioEarned = Number(data.portfolioEarnedIncomeUsd ?? 0);
+    const portfolioAvgDeployed = Number(data.portfolioAverageDeployedUsd ?? 0);
     const portfolioPeriodDays = Number(data.portfolioPeriodDays ?? 0);
     function patchTodayLiveCapital(snaps) {
       const out = (snaps || []).map((s) => ({ ...s }));
@@ -670,8 +671,8 @@
         initial: "Стартовый капитал",
         current: "Текущий капитал",
         totalReturn: "Доходность с 01.01.2026",
-        avgApr: "Средняя доходность (год.)",
-        avgAprSub: "комиссии + CAKE, с 01.01",
+        avgApr: "Доходность DeFi",
+        avgAprSub: "комиссии + инсентивы, ср. вложено",
         equity: "Динамика портфеля",
         dailyApr: "Ежедневная доходность (годовых, %)",
         updated: "Обновление",
@@ -707,8 +708,8 @@
         initial: "Initial capital",
         current: "Current capital",
         totalReturn: "Return since 2026-01-01",
-        avgApr: "Average yield (APR)",
-        avgAprSub: "fees + incentives since Jan 1",
+        avgApr: "DeFi yield",
+        avgAprSub: "fees + incentives, avg deployed",
         equity: "Portfolio equity",
         dailyApr: "Daily yield (APR, %)",
         updated: "Updated",
@@ -801,10 +802,14 @@
     document.getElementById("avgAprPct").textContent = fmtPct(portfolioAvgApr);
     const avgSub = document.getElementById("avgAprSub");
     if (portfolioEarned > 0 && portfolioPeriodDays > 0) {
+      const dep =
+        portfolioAvgDeployed > 0
+          ? ` · ср. $${portfolioAvgDeployed.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+          : "";
       avgSub.textContent =
         lang === "ru"
-          ? `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })} · ${portfolioPeriodDays} дн.`
-          : `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })} · ${portfolioPeriodDays}d`;
+          ? `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })}${dep} · ${portfolioPeriodDays} дн.`
+          : `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })}${dep} · ${portfolioPeriodDays}d`;
     } else {
       avgSub.textContent = t("avgAprSub");
     }

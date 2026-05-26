@@ -59,15 +59,15 @@
           "openedAt": "19.05.2026"
         },
         "5328982": {
-          "feesUsd": 25.784262,
+          "feesUsd": 25.784502,
           "incentivesUsd": 0.0,
-          "cumulativeUsd": 25.784262,
-          "valueUsd": 443.12,
+          "cumulativeUsd": 25.784502,
+          "valueUsd": 442.95,
           "openedAt": "24.02.2026"
         }
       },
-      "totalCumulativeUsd": 40.5218,
-      "savedAt": "2026-05-26T16:01:48Z"
+      "totalCumulativeUsd": 40.5221,
+      "savedAt": "2026-05-26T16:59:24Z"
     }
   }
 }

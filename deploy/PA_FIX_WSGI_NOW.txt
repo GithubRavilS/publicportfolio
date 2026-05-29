@@ -1,0 +1,29 @@
+СРОЧНО: на сервере СТАРЫЙ wsgi.py (строка 140 без _serve_static).
+Логи с send_from_directory — значит файл не обновлён.
+
+=== В PythonAnywhere: Files → /home/Maden008/Portfolio-tracker/wsgi.py ===
+
+ШАГ 1. Найди строку (около 140):
+    return send_from_directory(ROOT, "index.html")(environ, start_response)
+
+ШАГ 2. ВЫШЕ неё (после _json_response) вставь функцию:
+
+def _serve_static(environ, start_response, rel_path: str):
+    root = str(ROOT)
+    try:
+        return send_from_directory(ROOT, rel_path)(environ, start_response)
+    except TypeError:
+        resp = send_from_directory(root, rel_path, environ)
+        return resp(environ, start_response)
+
+ШАГ 3. Замени ДВЕ строки send_from_directory на:
+    return _serve_static(environ, start_response, "index.html")
+    return _serve_static(environ, start_response, rel)
+
+ШАГ 4. Save → Web → Reload
+
+ШАГ 5. Проверь в браузере:
+https://cry-maden008.pythonanywhere.com/portfolio/api/diag
+Должно быть: "wsgi": "portfolio_v2", "node_ok": true
+
+Или залей целиком wsgi.py с Mac (последняя версия из проекта).

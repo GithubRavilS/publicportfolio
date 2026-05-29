@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#03040a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <title>Portfolio Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./css/styles.css?v=62" />
+  </head>
+  <body>
+    <div class="bg" aria-hidden></div>
+    <div class="wrap">
+      <header class="topbar">
+        <span class="logo" id="logo">Portfolio Tracker</span>
+        <div class="topbar-actions">
+          <button type="button" class="btn-refresh" id="refreshBtn" hidden>↻</button>
+          <div class="lang-switch">
+            <button type="button" data-lang="ru">RU</button>
+            <button type="button" data-lang="en">EN</button>
+          </div>
+        </div>
+      </header>
+
+      <section id="home" class="hero">
+        <h1 id="heroTitle">Portfolio Tracker</h1>
+        <p class="tag" id="heroTag"></p>
+        <div class="glass">
+          <form id="scanForm" class="glass-inner">
+            <input id="walletInput" type="text" autocomplete="off" spellcheck="false" autofocus />
+            <button type="submit" class="btn-go" id="goBtn">Go</button>
+          </form>
+        </div>
+        <p class="hint" id="lastWalletHint" hidden></p>
+        <div id="error" class="err" hidden></div>
+      </section>
+
+      <section id="results" hidden>
+        <button type="button" class="back" id="backBtn"></button>
+
+        <div class="wallet-bar">
+          <span class="lbl" id="walletLbl">Wallet</span>
+          <code id="walletAddr" class="wallet-addr"></code>
+        </div>
+
+        <div id="loadProgressDock" class="load-progress-dock" hidden aria-live="polite">
+          <div class="load-progress-head">
+            <span class="load-progress-pct" id="loadProgressPct">0%</span>
+            <span class="load-progress-label" id="loadProgressLabel"></span>
+          </div>
+          <div class="load-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+            <div class="load-progress-fill" id="loadProgressFill" style="width: 0%"></div>
+          </div>
+          <p class="load-progress-trust" id="loadProgressTrust"></p>
+          <ul class="load-progress-steps" id="loadProgressSteps"></ul>
+        </div>
+
+        <div id="chainBreakdown" class="chain-breakdown"></div>
+
+        <section class="history-chart-wrap" id="historyChartWrap" hidden>
+          <h3 class="section-title" id="historyTitle">История портфеля</h3>
+          <p class="history-status" id="historyStatus"></p>
+          <canvas id="historyCanvas" class="history-canvas" height="220"></canvas>
+        </section>
+
+        <button type="button" class="balance-hero" id="balanceHero">
+          <div class="lbl" id="kpiTotalLbl">Total</div>
+          <div class="val" id="totalUsd">$0</div>
+          <div class="meta-row"><span id="updatedAt"></span></div>
+        </button>
+
+        <div class="kpis kpis-3">
+          <button type="button" class="kpi wallet" id="kpiWallet">
+            <h3 id="kpiWalletLbl"></h3>
+            <p id="walletSum">$0</p>
+          </button>
+          <button type="button" class="kpi liq" id="kpiLiq">
+            <h3 id="kpiLiqLbl"></h3>
+            <p id="liqSum">$0</p>
+          </button>
+          <button type="button" class="kpi lend" id="kpiLend">
+            <h3 id="kpiLendLbl"></h3>
+            <p id="lendSum">$0</p>
+          </button>
+        </div>
+
+        <p class="partial-banner" id="partialBanner" hidden></p>
+
+        <div id="analytics" class="analytics-wrap"></div>
+        <div id="positions"></div>
+      </section>
+    </div>
+
+    <div id="loading" hidden>
+      <div class="load-box load-box--wide">
+        <div class="spin"></div>
+        <div id="loadingMsg"></div>
+        <div id="loadPreview" class="load-preview" hidden></div>
+        <ol class="load-steps" id="loadSteps">
+          <li data-phase="connect"><span data-i18n="stepConnect">Подключение</span></li>
+          <li data-phase="chains"><span data-i18n="stepChains">Сети</span></li>
+          <li data-phase="merge"><span data-i18n="stepMerge">Позиции</span></li>
+        </ol>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var h = location.hostname;
+        var p = location.pathname || "/";
+        if (/\.pythonanywhere\.com$/i.test(h) && !/^\/portfolio(\/|$)/i.test(p)) {
+          location.replace("/portfolio/" + location.search + location.hash);
+          return;
+        }
+        if (
+          location.protocol.startsWith("http") &&
+          (h === "127.0.0.1" || h === "localhost") &&
+          location.port !== "5500"
+        ) {
+          location.replace(
+            "http://127.0.0.1:5500/index.html" + (location.search || "") + (location.hash || ""),
+          );
+        }
+      })();
+    </script>
+    <script defer src="./js/app.bundle.js?v=62"></script>
+  </body>
+</html>

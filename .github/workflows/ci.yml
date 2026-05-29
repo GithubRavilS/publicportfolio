@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install JS dev deps
+        run: npm ci || npm install
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Verify (lint, bundle, ruff)
+        run: npm run verify
+        env:
+          PT_SKIP_NETWORK: "1"

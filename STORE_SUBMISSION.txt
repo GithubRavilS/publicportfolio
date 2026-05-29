@@ -1,0 +1,35 @@
+SY Portfolio Tracker — чеклист публикации (iOS + Android)
+============================================================
+
+1) Агрегатор (обязательно для реальных данных)
+   - Папка: server/
+   - Скопируйте server/.env.example → server/.env
+   - Заполните: DEBANK_ACCESS_KEY (cloud.debank.com), KRYSTAL_CLOUD_API_KEY (cloud.krystal.app), JUPITER_API_KEY (portal.jup.ag)
+   - Запуск: cd server && npm install && npm start
+   - Задеплойте агрегатор на HTTPS-хостинг (Railway, Fly.io, VPS). В приложении: Настройки → URL агрегатора.
+
+2) Revert.finance
+   - Публичного REST API нет; в ответе агрегатора есть предупреждение. Дальнейшая интеграция — только через официальное партнёрство или собственные subgraph/RPC.
+
+3) Юридическое (Apple / Google)
+   - Подготовьте Privacy Policy URL (описание: какие данные, DeBank/Krystal/Jupiter как процессоры, локальное SQLite на устройстве).
+   - Укажите контакт поддержки и DMCA/юрлицо в консолях.
+
+4) Сборка iOS (Mac + Apple Developer)
+   - cd mobile && npm install
+   - npm install -g eas-cli && eas login
+   - eas build:configure
+   - eas build -p ios --profile production
+   - eas submit -p ios
+
+5) Сборка Android (Play Console)
+   - eas build -p android --profile production
+   - Загрузите .aab в Play Console (внутреннее тестирование → продакшен).
+
+6) Локальная проверка
+   - Симулятор iOS: server на localhost:8787 — ок.
+   - Android Emulator к хосту: http://10.0.2.2:8787 в настройках приложения.
+   - Физическое устройство: IP компьютера в одной Wi‑Fi сети, порт 8787 открыт в файрволе.
+
+7) Брендинг
+   - Замените иконки в mobile/assets/images/ на финальные (1024 для App Store).

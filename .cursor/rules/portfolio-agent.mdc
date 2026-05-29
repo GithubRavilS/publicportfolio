@@ -1,0 +1,20 @@
+---
+description: Portfolio Tracker — проверки после правок JS/Python/deploy
+globs:
+  - js/**
+  - css/**
+  - server.py
+  - wsgi.py
+  - scripts/**
+  - index.html
+  - deploy/**
+alwaysApply: false
+---
+
+После изменений в портфеле или UI:
+
+1. `npm run verify` — lint, bundle, ruff (обязательно перед «готово»).
+2. Если менялся `js/app.js` — `npm run bundle` и поднять `?v=` в index.html.
+3. Сверка с DeBank: `PT_BASE=https://cry-maden008.pythonanywhere.com/portfolio npm run verify:debank` (или локальный API).
+4. Deploy: только `deploy/pa-upload-v*.zip`, не коммитить `config.json`.
+5. Cursor stop-hooks уже гоняют nano-staged + verify — не отключать без причины.

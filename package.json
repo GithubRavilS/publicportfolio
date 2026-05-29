@@ -1,0 +1,20 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "nano-staged --unstaged --quiet --bail",
+    "bundle": "npx --yes esbuild@0.25.5 js/app.js --bundle --format=esm --outfile=js/app.bundle.js",
+    "verify": "PT_SKIP_NETWORK=1 node scripts/verify.mjs",
+    "verify:debank": "node scripts/compare-debank-10.mjs",
+    "deploy:pa": "node scripts/build-pa-upload.mjs",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "nano-staged": "^1.0.2",
+    "oxfmt": "^0.52.0",
+    "oxlint": "^1.67.0",
+    "stylelint": "^17.12.0",
+    "stylelint-config-standard": "^40.0.0"
+  }
+}

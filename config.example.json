@@ -1,0 +1,16 @@
+{
+  "debank_scraperapi_key": "",
+  "rpc_urls": {
+    "eth": "https://eth.drpc.org",
+    "base": "https://base-rpc.publicnode.com",
+    "arb": "https://arbitrum-one-rpc.publicnode.com",
+    "op": "https://optimism-rpc.publicnode.com",
+    "matic": "https://polygon-bor-rpc.publicnode.com"
+  },
+  "etherscan_keys": {
+    "eth": "",
+    "base": "",
+    "arb": "",
+    "op": ""
+  }
+}

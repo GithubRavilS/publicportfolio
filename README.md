@@ -4,6 +4,8 @@ DeFi portfolio viewer (DeBank + on-chain RPC): wallet balances, LP positions, le
 
 **Production:** [cry-maden008.pythonanywhere.com/portfolio](https://cry-maden008.pythonanywhere.com/portfolio/)
 
+**GitHub:** [github.com/GithubRavilS/publicportfolio](https://github.com/GithubRavilS/publicportfolio) — branch `portfolio-tracker`
+
 ## Stack
 
 - **Frontend:** vanilla JS (`js/app.js` → `js/app.bundle.js`), `css/styles.css`
@@ -29,16 +31,16 @@ On PA (Bash), once:
 
 ```bash
 cd ~/Portfolio-tracker
-git clone https://github.com/GithubRavilS/portfolio-tracker.git .
+git clone -b portfolio-tracker https://github.com/GithubRavilS/publicportfolio.git .
 # keep existing config.json; do not overwrite
 pip install -r requirements.txt
 ```
 
-Updates after each push to `main`:
+Updates after each push to `portfolio-tracker`:
 
 ```bash
 cd ~/Portfolio-tracker
-git pull origin main
+git pull origin portfolio-tracker
 npm run bundle   # if you changed js/app.js
 # Web → Reload
 ```
@@ -55,7 +57,7 @@ See [deploy/PYTHONANYWHERE.md](deploy/PYTHONANYWHERE.md) and [deploy/MADYAN008_S
 
 ## CI
 
-GitHub Actions runs `npm run verify` on push/PR to `main`.
+GitHub Actions workflow is in [docs/ci-workflow.yml](docs/ci-workflow.yml) (copy to `.github/workflows/ci.yml` when PAT has `workflow` scope).
 
 ## Agent hooks
 

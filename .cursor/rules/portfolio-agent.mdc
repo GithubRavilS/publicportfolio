@@ -16,5 +16,5 @@ alwaysApply: false
 1. `npm run verify` — lint, bundle, ruff (обязательно перед «готово»).
 2. Если менялся `js/app.js` — `npm run bundle` и поднять `?v=` в index.html.
 3. Сверка с DeBank: `PT_BASE=https://cry-maden008.pythonanywhere.com/portfolio npm run verify:debank` (или локальный API).
-4. **Deploy на PA:** после push в `portfolio-tracker` — `npm run deploy:remote` (если есть `.env.pa`). Или `npm run deploy:setup` один раз для hourly git pull на PA. Не коммитить `config.json` / `.env.pa`.
+4. **Deploy на PA:** после push — автоматически `npm run deploy:remote` (`.env.pa` настроен). Пользователь не заливает zip вручную. Не коммитить `config.json` / `.env.pa`.
 5. Cursor stop-hooks уже гоняют nano-staged + verify — не отключать без причины.

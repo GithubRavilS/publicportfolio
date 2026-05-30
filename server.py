@@ -89,6 +89,16 @@ def load_scraper_key() -> str:
         return ""
 
 
+def load_krystal_key() -> str:
+    if not CONFIG_PATH.exists():
+        return ""
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        return str(data.get("krystal_cloud_api_key") or data.get("krystal_api_key") or "").strip()
+    except (json.JSONDecodeError, OSError):
+        return ""
+
+
 def normalize_profile_text(raw: str) -> str:
     """Jina отдаёт markdown — приводим к плотному тексту как в plain scrape."""
     raw = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", raw)
@@ -736,7 +746,6 @@ def merge_portfolio_revert(wallet: str, portfolio: dict, *, refresh: bool = Fals
 
 
 def enrich_portfolio_lp_ranges(wallet: str, portfolio: dict) -> dict:
-    """RPC: tickLower/Upper для всех LP из DeBank merge."""
     _guard_node_modules()
     runner = ROOT / "scripts" / "enrich-portfolio-ranges.mjs"
     payload = json.dumps(portfolio, ensure_ascii=False).encode("utf-8")
@@ -752,6 +761,45 @@ def enrich_portfolio_lp_ranges(wallet: str, portfolio: dict) -> dict:
         err = proc.stderr.decode("utf-8", errors="replace")[:500]
         raise ValueError(f"LP_RANGE_ENRICH_FAILED:{err}")
     return json.loads(proc.stdout.decode("utf-8"))
+
+
+def enrich_portfolio_krystal(wallet: str, portfolio: dict) -> tuple[dict, list]:
+    """Krystal LP: Aerodrome, PancakeSwap и др."""
+    key = load_krystal_key()
+    if not key:
+        return portfolio, []
+    _guard_node_modules()
+    runner = ROOT / "scripts" / "merge-krystal-portfolio.mjs"
+    payload = json.dumps(portfolio, ensure_ascii=False).encode("utf-8")
+    env = os.environ.copy()
+    env["KRYSTAL_CLOUD_API_KEY"] = key
+    proc = subprocess.run(
+        [NODE_BIN, str(runner), wallet.lower()],
+        input=payload,
+        capture_output=True,
+        cwd=str(ROOT),
+        timeout=120,
+        env=env,
+    )
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace")[:500]
+        raise ValueError(f"KRYSTAL_MERGE_FAILED:{err}")
+    merged = json.loads(proc.stdout.decode("utf-8"))
+    pos_runner = ROOT / "scripts" / "run-krystal-positions.mjs"
+    proc2 = subprocess.run(
+        [NODE_BIN, str(pos_runner), wallet.lower()],
+        capture_output=True,
+        cwd=str(ROOT),
+        timeout=90,
+        env=env,
+    )
+    positions = []
+    if proc2.returncode == 0:
+        try:
+            positions = json.loads(proc2.stdout.decode("utf-8") or "[]")
+        except json.JSONDecodeError:
+            positions = []
+    return merged, positions
 
 
 def save_onchain_portfolio_cache(wallet: str, portfolio: dict) -> None:
@@ -927,6 +975,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/enrich-ranges":
             self.handle_enrich_ranges(parsed)
             return
+        if parsed.path == "/api/enrich-krystal":
+            self.handle_enrich_krystal(parsed)
+            return
         super().do_GET()
 
     def handle_profile(self, parsed):
@@ -964,7 +1015,7 @@ class Handler(SimpleHTTPRequestHandler):
         show_small = (qs.get("dust") or ["0"])[0].lower() in ("1", "true", "yes")
         quick = (qs.get("quick") or ["0"])[0].lower() in ("1", "true", "yes")
         refresh = (qs.get("refresh") or ["0"])[0].lower() in ("1", "true", "yes")
-        source = (qs.get("source") or ["hybrid"])[0].lower()
+        source = (qs.get("source") or ["debank"])[0].lower()
         use_hybrid = source in ("hybrid", "onchain", "rpc", "chain", "")
         use_onchain_only = source in ("onchain", "rpc", "chain")
         try:
@@ -1181,6 +1232,51 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             body = json.dumps(
                 {"ok": False, "error": "LP_RANGE_ENRICH_FAILED"}, ensure_ascii=False
+            ).encode("utf-8")
+            self.send_response(502)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+
+    def handle_enrich_krystal(self, parsed):
+        qs = urllib.parse.parse_qs(parsed.query)
+        wallet = (qs.get("wallet") or [""])[0].strip()
+        if not re.fullmatch(r"0x[a-fA-F0-9]{40}", wallet):
+            body = json.dumps({"ok": False, "error": "INVALID_WALLET"}, ensure_ascii=False).encode(
+                "utf-8"
+            )
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        try:
+            portfolio = load_portfolio_cache(wallet, allow_stale=True)
+            if not portfolio:
+                main_text = fetch_main_profile_quick(wallet)
+                if not main_text:
+                    raise ValueError("FETCH_FAILED")
+                portfolio = parse_full_portfolio(main_text, {}, False)
+            merged, positions = enrich_portfolio_krystal(wallet, portfolio)
+            body = json.dumps(
+                {"ok": True, "portfolio": merged, "positions": positions, "count": len(positions)},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except ValueError as e:
+            code = str(e).split(":")[0]
+            body = json.dumps({"ok": False, "error": code}, ensure_ascii=False).encode("utf-8")
+            self.send_response(502)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception:
+            body = json.dumps(
+                {"ok": False, "error": "KRYSTAL_ENRICH_FAILED"}, ensure_ascii=False
             ).encode("utf-8")
             self.send_response(502)
             self.send_header("Content-Type", "application/json; charset=utf-8")

@@ -1808,40 +1808,6 @@ function mergeRevertLiquidity(portfolio, revertPositions) {
   return portfolio;
 }
 
-// js/lending-metrics.js
-function parseAmount(amount) {
-  const n = parseFloat(String(amount || "0").replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-function primaryCollateralMarketPrice(supplied) {
-  const rows = (supplied || []).map((x) => ({
-    usd: Number(x.usd || 0),
-    amt: parseAmount(x.amount)
-  })).filter((x) => x.usd > 0 && x.amt > 0).sort((a, b) => b.usd - a.usd);
-  if (!rows.length) return 0;
-  return rows[0].usd / rows[0].amt;
-}
-function liquidationPriceFromHealth(pos) {
-  const hf = Number(pos?.healthFactor);
-  if (!hf || hf <= 0 || hf > 10) return 0;
-  const market = Number(pos?.marketPrice) > 0 ? Number(pos.marketPrice) : primaryCollateralMarketPrice(pos?.supplied);
-  if (!market || market <= 0) return 0;
-  return market / hf;
-}
-function applyLendingMetrics(pos) {
-  if (!pos) return pos;
-  const marketPrice = primaryCollateralMarketPrice(pos.supplied);
-  const liquidationPrice = liquidationPriceFromHealth({
-    ...pos,
-    marketPrice: marketPrice || pos.marketPrice
-  });
-  return {
-    ...pos,
-    marketPrice: marketPrice || pos.marketPrice || 0,
-    liquidationPrice: liquidationPrice || 0
-  };
-}
-
 // js/portfolio-sanity.js
 function saneUsd(n, cap = 5e6) {
   const v = Number(n) || 0;
@@ -2062,6 +2028,40 @@ function fillCoverageCatchUp(portfolio) {
   });
   if (!g.kinds.includes("Deposit")) g.kinds.push("Deposit");
   return portfolio;
+}
+
+// js/lending-metrics.js
+function parseAmount(amount) {
+  const n = parseFloat(String(amount || "0").replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function primaryCollateralMarketPrice(supplied) {
+  const rows = (supplied || []).map((x) => ({
+    usd: Number(x.usd || 0),
+    amt: parseAmount(x.amount)
+  })).filter((x) => x.usd > 0 && x.amt > 0).sort((a, b) => b.usd - a.usd);
+  if (!rows.length) return 0;
+  return rows[0].usd / rows[0].amt;
+}
+function liquidationPriceFromHealth(pos) {
+  const hf = Number(pos?.healthFactor);
+  if (!hf || hf <= 0 || hf > 10) return 0;
+  const market = Number(pos?.marketPrice) > 0 ? Number(pos.marketPrice) : primaryCollateralMarketPrice(pos?.supplied);
+  if (!market || market <= 0) return 0;
+  return market / hf;
+}
+function applyLendingMetrics(pos) {
+  if (!pos) return pos;
+  const marketPrice = primaryCollateralMarketPrice(pos.supplied);
+  const liquidationPrice = liquidationPriceFromHealth({
+    ...pos,
+    marketPrice: marketPrice || pos.marketPrice
+  });
+  return {
+    ...pos,
+    marketPrice: marketPrice || pos.marketPrice || 0,
+    liquidationPrice: liquidationPrice || 0
+  };
 }
 
 // js/portfolio-normalize.js
@@ -2482,29 +2482,185 @@ function normalizePortfolioChains(portfolio) {
   return syncDisplayTotals(p);
 }
 
+// js/krystal-portfolio-merge.js
+var CHAIN_ID = {
+  1: "eth",
+  10: "op",
+  56: "bsc",
+  137: "matic",
+  8453: "base",
+  42161: "arb",
+  324: "era",
+  59144: "linea",
+  534352: "scroll",
+  81457: "blast"
+};
+var KRYSTAL_DEX = /aerodrome|pancake|velodrome|sushi|curve|balancer|quickswap|trader.?joe/i;
+function chainFromKrystal(p) {
+  const id = p?.chainId ?? p?.chain_id;
+  if (id != null && CHAIN_ID[id]) return CHAIN_ID[id];
+  const name = String(p?.chain || p?.chainName || "").toLowerCase();
+  return chainSlug(name || "unknown");
+}
+function protocolFromKrystal(p) {
+  const raw = String(p?.protocol || p?.dexId || p?.dex || "Krystal");
+  if (/aerodrome/i.test(raw)) return "Aerodrome V3";
+  if (/pancake/i.test(raw)) return "PancakeSwap V3";
+  if (/uniswap.*v4/i.test(raw)) return "Uniswap V4";
+  if (/uniswap/i.test(raw)) return "Uniswap V3";
+  return raw;
+}
+function pairFromKrystal(p) {
+  const pool = p?.pool || {};
+  const t0 = pool?.token0?.symbol || "?";
+  const t1 = pool?.token1?.symbol || "?";
+  return `${t0}/${t1}`;
+}
+function num(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : 0;
+}
+function apyFromKrystal(p) {
+  let apy = num(p?.apr) || num(p?.farmApr) || num(p?.apy);
+  if (apy > 0 && apy < 1) apy *= 100;
+  return apy || null;
+}
+function poolKey(protocol, chain, pair) {
+  return `${protocol}|${chainSlug(chain)}|${normPair(pair)}`;
+}
+function findGroup2(portfolio, protocol, chain) {
+  const ch = chainSlug(chain);
+  return (portfolio.protocolGroups || []).find(
+    (g) => g.protocol === protocol && chainSlug(g.chain) === ch
+  );
+}
+function ensureGroup2(portfolio, protocol, chain) {
+  let g = findGroup2(portfolio, protocol, chain);
+  if (g) return g;
+  if (!portfolio.protocolGroups) portfolio.protocolGroups = [];
+  g = {
+    protocol,
+    chain: chainSlug(chain),
+    protocolUsd: 0,
+    liquidity: [],
+    lending: [],
+    walletTokens: [],
+    kinds: []
+  };
+  g.id = `${g.protocol}|${g.chain}`;
+  portfolio.protocolGroups.push(g);
+  return g;
+}
+function krystalToPool(p, protocol, chain) {
+  const pair = pairFromKrystal(p);
+  const current = num(p?.currentUSD) || num(p?.liquidityUSD);
+  const invested = num(p?.initialUSD) || num(p?.depositedUSD);
+  const apy = apyFromKrystal(p);
+  const id = p?.id || p?.positionId || "";
+  return {
+    protocol,
+    chain: chainSlug(chain),
+    poolId: id ? `${pair} #${id}` : pair,
+    pair,
+    inPool: [],
+    positionUsd: current,
+    netUsd: current,
+    investedUsd: invested || null,
+    apyPercent: apy,
+    fromKrystal: true,
+    krystal: p,
+    kind: "Liquidity Pool"
+  };
+}
+function enrichPoolRow(row, kPool) {
+  const apy = apyFromKrystal(kPool.krystal || kPool);
+  if (apy != null && !row.apyPercent) row.apyPercent = apy;
+  if (kPool.investedUsd && !row.investedUsd) row.investedUsd = kPool.investedUsd;
+  const kr = kPool.krystal || kPool;
+  const min = num(kr?.minPrice) || num(kr?.priceRangeMin);
+  const max = num(kr?.maxPrice) || num(kr?.priceRangeMax);
+  if (min && max && row.rangeMin == null) {
+    row.rangeMin = min;
+    row.rangeMax = max;
+  }
+  row.fromKrystal = true;
+  return row;
+}
+function mergeKrystalLiquidity(portfolio, krystalPositions) {
+  if (!portfolio || !krystalPositions?.length) return portfolio;
+  const p = portfolio;
+  const index = /* @__PURE__ */ new Map();
+  for (const g of p.protocolGroups || []) {
+    for (const row of g.liquidity || []) {
+      if (row.debankFill) continue;
+      index.set(poolKey(g.protocol, row.chain, row.pair || row.poolId), { g, row });
+      index.set(
+        `${chainSlug(row.chain)}|${normPair(row.pair || row.poolId)}`,
+        { g, row }
+      );
+    }
+  }
+  for (const kr of krystalPositions) {
+    const protocol = protocolFromKrystal(kr);
+    const chain = chainFromKrystal(kr);
+    const pair = pairFromKrystal(kr);
+    const isUni = !!isRevertDexDebankProtocol(protocol);
+    if (isUni) continue;
+    if (!KRYSTAL_DEX.test(protocol) && !KRYSTAL_DEX.test(String(kr?.dexId || ""))) continue;
+    const key = poolKey(protocol, chain, pair);
+    const alt = `${chainSlug(chain)}|${normPair(pair)}`;
+    const hit = index.get(key) || index.get(alt);
+    if (hit) {
+      enrichPoolRow(hit.row, krystalToPool(kr, protocol, chain));
+      continue;
+    }
+    const usd = num(kr?.currentUSD) || num(kr?.liquidityUSD);
+    if (usd < 2) continue;
+    const g = ensureGroup2(p, protocol, chain);
+    const pool = krystalToPool(kr, protocol, chain);
+    g.liquidity.push(pool);
+    index.set(key, { g, row: pool });
+    index.set(alt, { g, row: pool });
+  }
+  return p;
+}
+
 // js/portfolio-pipeline.js
-function finalizeDebankPortfolio(raw) {
+function finalizeDebankPortfolioClone(raw) {
   if (!raw) return raw;
-  const p = { ...raw, schemaVersion: PORTFOLIO_SCHEMA };
-  fillCoverageFromProtocolTabs(p);
-  fillCoverageFromChainGaps(p);
-  fillCoverageResidual(p);
+  const p = { ...raw, schemaVersion: PORTFOLIO_SCHEMA, source: "debank" };
+  dedupePortfolioPositions(p);
   return syncDisplayTotals(normalizePortfolioChains(p));
 }
-function enrichPortfolio(portfolio, { revertPositions = null } = {}) {
+function applyLendingEnrichment(portfolio) {
+  if (!portfolio?.protocolGroups) return portfolio;
+  for (const g of portfolio.protocolGroups) {
+    g.lending = (g.lending || []).map((row) => applyLendingMetrics(row));
+  }
+  if (portfolio.lending?.length) {
+    portfolio.lending = portfolio.lending.map((row) => applyLendingMetrics(row));
+  }
+  return portfolio;
+}
+function enrichPortfolio(portfolio, { revertPositions = null, krystalPositions = null } = {}) {
   if (!portfolio) return portfolio;
-  let p = portfolio;
+  let p = { ...portfolio };
   if (revertPositions?.length) {
     p = mergeRevertLiquidity(p, revertPositions);
   }
+  if (krystalPositions?.length) {
+    p = mergeKrystalLiquidity(p, krystalPositions);
+  }
+  p = applyLendingEnrichment(p);
   return syncDisplayTotals(p);
 }
 function applyPortfolioPipeline(portfolio, enrich = {}) {
-  return enrichPortfolio(finalizeDebankPortfolio(portfolio), enrich);
+  let p = finalizeDebankPortfolioClone(portfolio);
+  return enrichPortfolio(p, enrich);
 }
 
 // js/app.js
-var APP_VER = "62";
+var APP_VER = "63";
 var FETCH_TIMEOUT_MS = 15e4;
 var CACHE_MS = 15 * 60 * 1e3;
 function getAppBase() {
@@ -2548,7 +2704,7 @@ async function fetchWithTimeout(url, ms = FETCH_TIMEOUT_MS) {
     clearTimeout(timer);
   }
 }
-async function fetchPortfolio(wallet, { quick = false, refresh = false, source = "hybrid", refreshOnchain = false } = {}) {
+async function fetchPortfolio(wallet, { quick = false, refresh = false, source = "debank", refreshOnchain = false } = {}) {
   const q = new URLSearchParams({ wallet, _: String(Date.now()) });
   if (quick) q.set("quick", "1");
   if (refresh) q.set("refresh", "1");
@@ -2600,6 +2756,8 @@ var state = {
   revertPositionsCount: 0,
   revertWallet: null,
   revertApiError: null,
+  krystalPositions: [],
+  krystalError: null,
   rangesEnriched: 0,
   rangesError: null,
   enriching: false,
@@ -3525,10 +3683,13 @@ function renderLending(list) {
   }).join("")}</div>`;
 }
 function reattachRevert() {
-  if (!state.data?.protocolGroups?.length || !state.revertPositions?.length) return;
+  if (!state.data?.protocolGroups?.length) return;
   const w = state.data.wallet?.toLowerCase();
   if (state.revertWallet && w && state.revertWallet !== w) return;
-  mergeRevertLiquidity(state.data, state.revertPositions);
+  applyPortfolioPipeline(state.data, {
+    revertPositions: state.revertPositions,
+    krystalPositions: state.krystalPositions
+  });
   syncDisplayTotals(state.data);
 }
 function mergeRangeFields(fromPortfolio) {
@@ -3569,7 +3730,10 @@ async function fetchLpRanges(wallet) {
   return j.portfolio;
 }
 function applyPortfolio(p, wallet) {
-  applyPortfolioPipeline(p);
+  applyPortfolioPipeline(p, {
+    revertPositions: state.revertPositions,
+    krystalPositions: state.krystalPositions
+  });
   const walletUsd = p.walletUsd;
   const liqUsd = p.liqUsd;
   const lendUsd = p.lendUsd;
@@ -3907,14 +4071,41 @@ async function fetchRevert(wallet, { force = false, keepStale = false } = {}) {
     renderLoadProgress();
   }
 }
-async function backgroundEnrich(wallet, { refresh = false } = {}) {
+async function fetchKrystalEnrich(wallet) {
+  state.krystalError = null;
+  setLoadStep("merge", "active");
+  try {
+    const q = new URLSearchParams({ wallet, _: String(Date.now()) });
+    const r = await fetchWithTimeout(apiUrl(`/api/enrich-krystal?${q}`), 12e4);
+    const j = await r.json();
+    if (!r.ok || !j.ok) throw new Error(j.error || "KRYSTAL_FAILED");
+    state.krystalPositions = j.positions || [];
+    if (j.portfolio && state.data) {
+      applyPortfolio(j.portfolio, wallet);
+    } else if (state.data) {
+      applyPortfolio(state.data, wallet);
+    }
+    render();
+    return true;
+  } catch (e) {
+    console.warn("krystal", e);
+    state.krystalError = e.message || "KRYSTAL_FAILED";
+    return false;
+  } finally {
+    setLoadStep("merge", "done");
+    renderLoadProgress();
+  }
+}
+async function runEnrichmentPipeline(wallet, { refresh = false } = {}) {
   if (state.enriching) return;
   state.enriching = true;
+  state.krystalPositions = [];
+  state.krystalError = null;
   render();
-  const historyP = fetchHistory(wallet);
-  const revertP = fetchRevert(wallet, { force: refresh, keepStale: false });
-  setLoadStep("ranges", "active");
-  const rangesP = (async () => {
+  try {
+    await fetchRevert(wallet, { force: refresh, keepStale: true });
+    await fetchKrystalEnrich(wallet);
+    setLoadStep("ranges", "active");
     state.rangesError = null;
     state.rangesEnriched = 0;
     try {
@@ -3935,26 +4126,12 @@ async function backgroundEnrich(wallet, { refresh = false } = {}) {
       setLoadStep("ranges", "done");
       renderLoadProgress();
     }
-  })();
-  try {
-    if (state.data?.partial) {
-      setLoadStep("debank", "active");
-      try {
-        const p = await fetchPortfolio(wallet, { quick: true, refresh: false });
-        applyPortfolio(p, wallet);
-        setLoadStep("debank", "done");
-        setLoadStep("positions", "done");
-        render();
-      } catch (e) {
-        console.warn("chain enrich", e);
-      }
-    }
-    await Promise.allSettled([revertP, historyP, rangesP]);
+    await fetchHistory(wallet);
   } finally {
     state.enriching = false;
-    setLoading(false);
     if (state.data) {
-      applyPortfolioPipeline(state.data);
+      state.data.partial = false;
+      applyPortfolio(state.data, wallet);
       saveCache(wallet, state.data);
       finishLoadProgress();
       state.dataReadyFlash = true;
@@ -3965,7 +4142,11 @@ async function backgroundEnrich(wallet, { refresh = false } = {}) {
         render();
       }, 2800);
     }
+    setLoading(false);
   }
+}
+async function backgroundEnrich(wallet, opts) {
+  return runEnrichmentPipeline(wallet, opts);
 }
 function resetDeferredSections() {
   state.historySeries = null;
@@ -3977,8 +4158,10 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
   state.fetching = true;
   state.enriching = false;
   state.revertApiError = null;
+  state.krystalError = null;
   if (!silent) {
     state.revertPositions = [];
+    state.krystalPositions = [];
     state.revertPositionsCount = 0;
     state.revertWallet = null;
   }
@@ -3999,37 +4182,57 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
       setLoadStep("connect", "done");
       setLoadStep("debank", "active");
     }
-    const cached = !refresh && loadCache(wallet);
-    if (cached && !silent) {
-      applyPortfolio(cached, wallet);
+    const cached = !refresh && !silent && loadCache(wallet);
+    if (cached && !cached.partial) {
+      applyPortfolio({ ...cached, partial: false }, wallet);
       setLoadStep("debank", "done");
       setLoadStep("positions", "done");
       state.loadPct = 42;
       renderLoadProgress();
       setLoading(false);
       render();
-      void backgroundEnrich(wallet, { refresh: false });
+      void runEnrichmentPipeline(wallet, { refresh: false });
     } else {
-      if (!silent) setLoading(true, t(lang, "loadingQuick"), "chains");
-      const p = await fetchPortfolio(wallet, {
-        quick: !refresh && !silent,
-        refresh,
-        refreshOnchain: refresh && !silent
-      });
-      if (!silent) {
-        setLoadStep("debank", "done");
-        setLoadStep("positions", "done");
+      if (!refresh && !silent) {
+        try {
+          const preview = await fetchPortfolio(wallet, {
+            source: "debank",
+            quick: true,
+            refresh: false
+          });
+          applyPortfolio({ ...preview, partial: true }, wallet);
+          render();
+        } catch (e) {
+          console.warn("debank preview", e);
+        }
       }
-      applyPortfolio(p, wallet);
-      if (!p.partial) saveCache(wallet, state.data);
-      updateLoadPreview(p);
+      if (!silent) setLoading(true, t(lang, "loadingQuick"), "debank");
+      try {
+        const p = await fetchPortfolio(wallet, {
+          source: "debank",
+          quick: false,
+          refresh
+        });
+        p.partial = false;
+        if (!silent) {
+          setLoadStep("debank", "done");
+          setLoadStep("positions", "done");
+        }
+        applyPortfolio(p, wallet);
+        saveCache(wallet, state.data);
+        updateLoadPreview(p);
+      } catch (e) {
+        console.warn("full debank", e);
+        if (!state.data) throw e;
+        state.data.partial = true;
+      }
       if (!silent) {
         setLoading(false);
         state.loadPct = Math.max(state.loadPct, 55);
         renderLoadProgress();
       }
       render();
-      void backgroundEnrich(wallet, { refresh });
+      void runEnrichmentPipeline(wallet, { refresh });
     }
     try {
       localStorage.setItem("pt-last-wallet", wallet);

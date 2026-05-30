@@ -2,7 +2,7 @@ import { chainBadgeHtml, chainColor, chainLabel, chainSlug } from "./chains.js";
 import { LANG_KEY, t, translateKind } from "./i18n.js";
 import { protocolLogoHtml, protocolMeta, compareLiquidityProtocols } from "./protocols.js";
 import { setupHistoryChart } from "./history.js";
-import { mergeRevertLiquidity, recalcLiquidityTotals } from "./revert-portfolio-merge.js";
+import { recalcLiquidityTotals } from "./revert-portfolio-merge.js";
 import {
   aprToApy,
   fmtRangeDisplay,
@@ -11,10 +11,10 @@ import {
   pairMeta,
   feeAprForDisplay,
 } from "./revert-parse.js";
-import { applyPortfolioPipeline, PORTFOLIO_SCHEMA } from "./portfolio-pipeline.js";
 import { syncDisplayTotals } from "./portfolio-normalize.js";
+import { applyPortfolioPipeline, PORTFOLIO_SCHEMA } from "./portfolio-pipeline.js";
 
-const APP_VER = "62";
+const APP_VER = "63";
 const FETCH_TIMEOUT_MS = 150000;
 const CACHE_MS = 15 * 60 * 1000;
 
@@ -72,7 +72,7 @@ async function fetchWithTimeout(url, ms = FETCH_TIMEOUT_MS) {
 
 async function fetchPortfolio(
   wallet,
-  { quick = false, refresh = false, source = "hybrid", refreshOnchain = false } = {},
+  { quick = false, refresh = false, source = "debank", refreshOnchain = false } = {},
 ) {
   const q = new URLSearchParams({ wallet, _: String(Date.now()) });
   if (quick) q.set("quick", "1");
@@ -129,6 +129,8 @@ let state = {
   revertPositionsCount: 0,
   revertWallet: null,
   revertApiError: null,
+  krystalPositions: [],
+  krystalError: null,
   rangesEnriched: 0,
   rangesError: null,
   enriching: false,
@@ -1254,10 +1256,13 @@ function renderLending(list) {
 }
 
 function reattachRevert() {
-  if (!state.data?.protocolGroups?.length || !state.revertPositions?.length) return;
+  if (!state.data?.protocolGroups?.length) return;
   const w = state.data.wallet?.toLowerCase();
   if (state.revertWallet && w && state.revertWallet !== w) return;
-  mergeRevertLiquidity(state.data, state.revertPositions);
+  applyPortfolioPipeline(state.data, {
+    revertPositions: state.revertPositions,
+    krystalPositions: state.krystalPositions,
+  });
   syncDisplayTotals(state.data);
 }
 
@@ -1305,7 +1310,10 @@ async function fetchLpRanges(wallet) {
 }
 
 function applyPortfolio(p, wallet) {
-  applyPortfolioPipeline(p);
+  applyPortfolioPipeline(p, {
+    revertPositions: state.revertPositions,
+    krystalPositions: state.krystalPositions,
+  });
   const walletUsd = p.walletUsd;
   const liqUsd = p.liqUsd;
   const lendUsd = p.lendUsd;
@@ -1709,14 +1717,48 @@ async function fetchRevert(wallet, { force = false, keepStale = false } = {}) {
   }
 }
 
-async function backgroundEnrich(wallet, { refresh = false } = {}) {
+async function fetchKrystalEnrich(wallet) {
+  state.krystalError = null;
+  setLoadStep("merge", "active");
+  try {
+    const q = new URLSearchParams({ wallet, _: String(Date.now()) });
+    const r = await fetchWithTimeout(apiUrl(`/api/enrich-krystal?${q}`), 120000);
+    const j = await r.json();
+    if (!r.ok || !j.ok) throw new Error(j.error || "KRYSTAL_FAILED");
+    state.krystalPositions = j.positions || [];
+    if (j.portfolio && state.data) {
+      applyPortfolio(j.portfolio, wallet);
+    } else if (state.data) {
+      applyPortfolio(state.data, wallet);
+    }
+    render();
+    return true;
+  } catch (e) {
+    console.warn("krystal", e);
+    state.krystalError = e.message || "KRYSTAL_FAILED";
+    return false;
+  } finally {
+    setLoadStep("merge", "done");
+    renderLoadProgress();
+  }
+}
+
+async function runEnrichmentPipeline(wallet, { refresh = false } = {}) {
   if (state.enriching) return;
   state.enriching = true;
+  state.krystalPositions = [];
+  state.krystalError = null;
   render();
-  const historyP = fetchHistory(wallet);
-  const revertP = fetchRevert(wallet, { force: refresh, keepStale: false });
-  setLoadStep("ranges", "active");
-  const rangesP = (async () => {
+
+  try {
+    // 1) Revert — Uni V3/V4, Aerodrome, Pancake (ranges, APY)
+    await fetchRevert(wallet, { force: refresh, keepStale: true });
+
+    // 2) Krystal — прочие DEX LP
+    await fetchKrystalEnrich(wallet);
+
+    // 3) On-chain LP ranges (RPC fallback)
+    setLoadStep("ranges", "active");
     state.rangesError = null;
     state.rangesEnriched = 0;
     try {
@@ -1738,26 +1780,14 @@ async function backgroundEnrich(wallet, { refresh = false } = {}) {
       setLoadStep("ranges", "done");
       renderLoadProgress();
     }
-  })();
-  try {
-    if (state.data?.partial) {
-      setLoadStep("debank", "active");
-      try {
-        const p = await fetchPortfolio(wallet, { quick: true, refresh: false });
-        applyPortfolio(p, wallet);
-        setLoadStep("debank", "done");
-        setLoadStep("positions", "done");
-        render();
-      } catch (e) {
-        console.warn("chain enrich", e);
-      }
-    }
-    await Promise.allSettled([revertP, historyP, rangesP]);
+
+    // 4) History chart (parallel-safe, lightweight)
+    await fetchHistory(wallet);
   } finally {
     state.enriching = false;
-    setLoading(false);
     if (state.data) {
-      applyPortfolioPipeline(state.data);
+      state.data.partial = false;
+      applyPortfolio(state.data, wallet);
       saveCache(wallet, state.data);
       finishLoadProgress();
       state.dataReadyFlash = true;
@@ -1768,7 +1798,12 @@ async function backgroundEnrich(wallet, { refresh = false } = {}) {
         render();
       }, 2800);
     }
+    setLoading(false);
   }
+}
+
+async function backgroundEnrich(wallet, opts) {
+  return runEnrichmentPipeline(wallet, opts);
 }
 
 function resetDeferredSections() {
@@ -1782,8 +1817,10 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
   state.fetching = true;
   state.enriching = false;
   state.revertApiError = null;
+  state.krystalError = null;
   if (!silent) {
     state.revertPositions = [];
+    state.krystalPositions = [];
     state.revertPositionsCount = 0;
     state.revertWallet = null;
   }
@@ -1808,37 +1845,58 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
       setLoadStep("debank", "active");
     }
 
-    const cached = !refresh && loadCache(wallet);
-    if (cached && !silent) {
-      applyPortfolio(cached, wallet);
+    const cached = !refresh && !silent && loadCache(wallet);
+    if (cached && !cached.partial) {
+      applyPortfolio({ ...cached, partial: false }, wallet);
       setLoadStep("debank", "done");
       setLoadStep("positions", "done");
       state.loadPct = 42;
       renderLoadProgress();
       setLoading(false);
       render();
-      void backgroundEnrich(wallet, { refresh: false });
+      void runEnrichmentPipeline(wallet, { refresh: false });
     } else {
-      if (!silent) setLoading(true, t(lang, "loadingQuick"), "chains");
-      const p = await fetchPortfolio(wallet, {
-        quick: !refresh && !silent,
-        refresh,
-        refreshOnchain: refresh && !silent,
-      });
-      if (!silent) {
-        setLoadStep("debank", "done");
-        setLoadStep("positions", "done");
+      if (!refresh && !silent) {
+        try {
+          const preview = await fetchPortfolio(wallet, {
+            source: "debank",
+            quick: true,
+            refresh: false,
+          });
+          applyPortfolio({ ...preview, partial: true }, wallet);
+          render();
+        } catch (e) {
+          console.warn("debank preview", e);
+        }
       }
-      applyPortfolio(p, wallet);
-      if (!p.partial) saveCache(wallet, state.data);
-      updateLoadPreview(p);
+
+      if (!silent) setLoading(true, t(lang, "loadingQuick"), "debank");
+      try {
+        const p = await fetchPortfolio(wallet, {
+          source: "debank",
+          quick: false,
+          refresh,
+        });
+        p.partial = false;
+        if (!silent) {
+          setLoadStep("debank", "done");
+          setLoadStep("positions", "done");
+        }
+        applyPortfolio(p, wallet);
+        saveCache(wallet, state.data);
+        updateLoadPreview(p);
+      } catch (e) {
+        console.warn("full debank", e);
+        if (!state.data) throw e;
+        state.data.partial = true;
+      }
       if (!silent) {
         setLoading(false);
         state.loadPct = Math.max(state.loadPct, 55);
         renderLoadProgress();
       }
       render();
-      void backgroundEnrich(wallet, { refresh });
+      void runEnrichmentPipeline(wallet, { refresh });
     }
 
     try {

@@ -1,5 +1,6 @@
 {
   "debank_scraperapi_key": "",
+  "krystal_cloud_api_key": "",
   "rpc_urls": {
     "eth": "https://eth.drpc.org",
     "base": "https://base-rpc.publicnode.com",

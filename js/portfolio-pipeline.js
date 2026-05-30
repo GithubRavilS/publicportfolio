@@ -1,6 +1,7 @@
 /**
- * Единая цепочка портфеля (web + mobile):
- * DeBank parse → dedupe → normalize totals → optional enrich hooks.
+ * Единая цепочка портфеля:
+ * 1) DeBank clone (без синтетических fill-строк)
+ * 2) Обогащение: Revert → Krystal → lending metrics
  */
 import { parseDebankProfileText } from "./debank-parse.js";
 import { dedupePortfolioPositions } from "./portfolio-dedupe.js";
@@ -9,44 +10,54 @@ import {
   syncDisplayTotals,
   PORTFOLIO_SCHEMA,
 } from "./portfolio-normalize.js";
-import {
-  fillCoverageFromProtocolTabs,
-  fillCoverageFromChainGaps,
-  fillCoverageResidual,
-} from "./portfolio-debank-fill.js";
 import { mergeRevertLiquidity } from "./revert-portfolio-merge.js";
+import { mergeKrystalLiquidity } from "./krystal-portfolio-merge.js";
+import { applyLendingMetrics } from "./lending-metrics.js";
 
 export { PORTFOLIO_SCHEMA };
 
-/** @param {object} raw — результат parseDebankProfileText */
-export function finalizeDebankPortfolio(raw) {
+/** DeBank-клон: только нормализация, без phantom fillCoverage. */
+export function finalizeDebankPortfolioClone(raw) {
   if (!raw) return raw;
-  const p = { ...raw, schemaVersion: PORTFOLIO_SCHEMA };
-  fillCoverageFromProtocolTabs(p);
-  fillCoverageFromChainGaps(p);
-  fillCoverageResidual(p);
+  const p = { ...raw, schemaVersion: PORTFOLIO_SCHEMA, source: "debank" };
+  dedupePortfolioPositions(p);
   return syncDisplayTotals(normalizePortfolioChains(p));
 }
 
-/**
- * @param {string} mainText
- * @param {object} opts — chainTexts, chainProtocolIndex, showSmallBalances
- */
-export function buildPortfolioFromDebank(mainText, opts = {}) {
-  const parsed = parseDebankProfileText(mainText, opts);
-  return finalizeDebankPortfolio(parsed);
+export function finalizeDebankPortfolio(raw) {
+  return finalizeDebankPortfolioClone(raw);
 }
 
-/** После загрузки Revert / on-chain. */
-export function enrichPortfolio(portfolio, { revertPositions = null } = {}) {
+export function buildPortfolioFromDebank(mainText, opts = {}) {
+  const parsed = parseDebankProfileText(mainText, opts);
+  return finalizeDebankPortfolioClone(parsed);
+}
+
+export function applyLendingEnrichment(portfolio) {
+  if (!portfolio?.protocolGroups) return portfolio;
+  for (const g of portfolio.protocolGroups) {
+    g.lending = (g.lending || []).map((row) => applyLendingMetrics(row));
+  }
+  if (portfolio.lending?.length) {
+    portfolio.lending = portfolio.lending.map((row) => applyLendingMetrics(row));
+  }
+  return portfolio;
+}
+
+export function enrichPortfolio(portfolio, { revertPositions = null, krystalPositions = null } = {}) {
   if (!portfolio) return portfolio;
-  let p = portfolio;
+  let p = { ...portfolio };
   if (revertPositions?.length) {
     p = mergeRevertLiquidity(p, revertPositions);
   }
+  if (krystalPositions?.length) {
+    p = mergeKrystalLiquidity(p, krystalPositions);
+  }
+  p = applyLendingEnrichment(p);
   return syncDisplayTotals(p);
 }
 
 export function applyPortfolioPipeline(portfolio, enrich = {}) {
-  return enrichPortfolio(finalizeDebankPortfolio(portfolio), enrich);
+  let p = finalizeDebankPortfolioClone(portfolio);
+  return enrichPortfolio(p, enrich);
 }

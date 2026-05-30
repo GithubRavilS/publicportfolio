@@ -27,7 +27,8 @@ const WALLETS = (
   .filter((w) => /^0x[a-fA-F0-9]{40}$/i.test(w));
 
 const BASE = process.env.PT_BASE || "http://127.0.0.1:5500";
-const TIMEOUT_MS = Number(process.env.PT_TIMEOUT_MS || 120000);
+const QUICK = process.env.PT_QUICK === "1";
+const TIMEOUT_MS = Number(process.env.PT_TIMEOUT_MS || (QUICK ? 120000 : 240000));
 
 function auditPortfolio(p) {
   const normalized = normalizePortfolioChains(JSON.parse(JSON.stringify(p)));
@@ -73,7 +74,7 @@ async function fetchPortfolio(wallet) {
   const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
     const r = await fetch(
-      `${BASE}/api/portfolio?wallet=${encodeURIComponent(wallet)}&quick=1&refresh=1&_=${Date.now()}`,
+      `${BASE}/api/portfolio?wallet=${encodeURIComponent(wallet)}&source=debank&quick=${QUICK ? "1" : "0"}&refresh=1&_=${Date.now()}`,
       { cache: "no-store", signal: ctrl.signal },
     );
     const j = await r.json();

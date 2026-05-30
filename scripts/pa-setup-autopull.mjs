@@ -33,9 +33,9 @@ async function main() {
     body: new URLSearchParams({
       command,
       enabled: "true",
-      interval: "hourly",
-      hour: "*",
-      minute: "5",
+      interval: "daily",
+      hour: "3",
+      minute: "15",
       description: "Portfolio Tracker auto-sync from GitHub",
     }),
   });

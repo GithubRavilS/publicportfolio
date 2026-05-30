@@ -51,8 +51,18 @@ async function main() {
   for (const { rel, abs } of files) {
     n += 1;
     process.stdout.write(`  [${n}/${files.length}] ${rel}\n`);
-    await uploadFile(cfg, rel, abs);
-    if (n % 20 === 0) await sleep(1500);
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        await uploadFile(cfg, rel, abs);
+        break;
+      } catch (err) {
+        if (attempt === 5 || !String(err.message).includes("429")) throw err;
+        const wait = 5000 * attempt;
+        process.stdout.write(`    throttled, wait ${wait / 1000}s…\n`);
+        await sleep(wait);
+      }
+    }
+    await sleep(1600);
   }
 
   console.log("== reload webapp ==");

@@ -89,6 +89,20 @@ def load_scraper_key() -> str:
         return ""
 
 
+def load_debank_access_key() -> str:
+    for env_name in ("DEBANK_ACCESS_KEY", "DEBANK_OPENAPI_KEY"):
+        v = os.environ.get(env_name, "").strip()
+        if v:
+            return v
+    if not CONFIG_PATH.exists():
+        return ""
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        return str(data.get("debank_access_key") or data.get("debank_openapi_key") or "").strip()
+    except (json.JSONDecodeError, OSError):
+        return ""
+
+
 def load_krystal_key() -> str:
     if not CONFIG_PATH.exists():
         return ""
@@ -112,6 +126,9 @@ def normalize_profile_text(raw: str) -> str:
         if not started and s.startswith(("Title:", "URL Source:", "Published Time:")):
             continue
         if not s or s.startswith("!["):
+            continue
+        s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s).strip()
+        if not s:
             continue
         hm = re.match(r"^Health Rate\s*>?\s*([\d.]+)", s, re.I)
         if hm:
@@ -172,9 +189,9 @@ def _fetch_profile_once(wallet: str, chain: str | None) -> str:
     req = urllib.request.Request(
         jina_url,
         headers={
-            "User-Agent": "Mozilla/5.0 PortfolioTracker/1.0",
-            "Accept": "text/plain",
-            "X-Return-Format": "text",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Accept": "text/markdown, text/plain, */*",
+            "X-Return-Format": "markdown",
         },
     )
     ctx = ssl.create_default_context()
@@ -441,6 +458,28 @@ def enrich_wallet_rpc(wallet: str, portfolio: dict) -> dict:
     return json.loads(proc.stdout.decode("utf-8"))
 
 
+def parse_portfolio_text(
+    text: str, show_small: bool = False, chain_texts: dict[str, str] | None = None
+) -> dict:
+    _guard_node_modules()
+    runner = ROOT / "scripts" / "run-debank-parse.mjs"
+    env = {**os.environ, "PT_SHOW_SMALL": "1" if show_small else "0"}
+    if chain_texts:
+        env["PT_CHAIN_TEXTS"] = json.dumps(chain_texts, ensure_ascii=False)
+    proc = subprocess.run(
+        [NODE_BIN, str(runner)],
+        input=text.encode("utf-8"),
+        capture_output=True,
+        cwd=str(ROOT),
+        timeout=120,
+        env=env,
+    )
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace")[:500]
+        raise ValueError(f"PARSE_FAILED:{err}")
+    return json.loads(proc.stdout.decode("utf-8"))
+
+
 def enrich_quick_chain_pages(
     wallet: str, main_text: str, portfolio: dict, show_small: bool
 ) -> dict:
@@ -466,25 +505,28 @@ def enrich_quick_chain_pages(
         return portfolio
 
 
-def parse_portfolio_text(
-    text: str, show_small: bool = False, chain_texts: dict[str, str] | None = None
-) -> dict:
+def fetch_debank_portfolio_api(wallet: str, show_small: bool) -> dict:
+    """DeBank Pro OpenAPI — тот же источник, что debank.com (~2–5 с)."""
     _guard_node_modules()
-    runner = ROOT / "scripts" / "run-debank-parse.mjs"
-    env = {**os.environ, "PT_SHOW_SMALL": "1" if show_small else "0"}
-    if chain_texts:
-        env["PT_CHAIN_TEXTS"] = json.dumps(chain_texts, ensure_ascii=False)
+    key = load_debank_access_key()
+    if not key:
+        raise ValueError("NO_DEBANK_KEY")
+    runner = ROOT / "scripts" / "run-debank-api.mjs"
+    env = {
+        **os.environ,
+        "DEBANK_ACCESS_KEY": key,
+        "PT_SHOW_SMALL": "1" if show_small else "0",
+    }
     proc = subprocess.run(
-        [NODE_BIN, str(runner)],
-        input=text.encode("utf-8"),
+        [NODE_BIN, str(runner), wallet.lower()],
         capture_output=True,
         cwd=str(ROOT),
-        timeout=120,
+        timeout=45,
         env=env,
     )
     if proc.returncode != 0:
         err = proc.stderr.decode("utf-8", errors="replace")[:500]
-        raise ValueError(f"PARSE_FAILED:{err}")
+        raise ValueError(f"DEBANK_API_FAILED:{err}")
     return json.loads(proc.stdout.decode("utf-8"))
 
 
@@ -848,7 +890,78 @@ def run_hybrid_merge(onchain: dict | None, debank: dict | None) -> dict:
     return data.get("portfolio") or data
 
 
+def fetch_debank_portfolio_free(wallet: str, *, quick: bool, show_small: bool) -> dict:
+    """Бесплатно: Jina markdown (main + parallel chains), без DeBank OpenAPI."""
+    _guard_node_modules()
+    runner = ROOT / "scripts" / "fetch-debank-free.mjs"
+    env = {
+        **os.environ,
+        "PT_QUICK": "1" if quick else "0",
+        "PT_SHOW_SMALL": "1" if show_small else "0",
+        "PT_JINA_TIMEOUT_MS": "22000",
+        "PT_MAX_CHAINS": "5",
+        "PT_CHAIN_BATCH": "2",
+    }
+    try:
+        proc = subprocess.run(
+            [NODE_BIN, str(runner), wallet.lower()],
+            capture_output=True,
+            cwd=str(ROOT),
+            timeout=40 if quick else 55,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as ex:
+        raise ValueError("FETCH_FAILED") from ex
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace")[:500]
+        _api_log(f"free debank: {err}")
+        raise ValueError(f"FETCH_FAILED:{err}")
+    portfolio = json.loads(proc.stdout.decode("utf-8"))
+    portfolio["fromCache"] = False
+    portfolio["source"] = "debank-free"
+    return portfolio
+
+
 def fetch_debank_portfolio(wallet: str, *, quick: bool, refresh: bool, show_small: bool) -> dict:
+    api_key = load_debank_access_key()
+    if api_key and os.environ.get("PT_USE_DEBANK_API", "").strip() in ("1", "true", "yes"):
+        if not refresh:
+            cached = load_portfolio_cache(wallet)
+            if cached and cached.get("fromDebankApi"):
+                out = dict(cached)
+                out["fromCache"] = True
+                out["partial"] = bool(cached.get("partial"))
+                return out
+        portfolio = fetch_debank_portfolio_api(wallet, show_small)
+        portfolio["fromCache"] = False
+        portfolio["partial"] = bool(
+            portfolio.get("partial")
+            or (portfolio.get("coverageGapUsd") or 0)
+            > max(1, (portfolio.get("debankTotalUsd") or 0) * 0.02)
+        )
+        return portfolio
+
+    if not refresh and not quick:
+        cached = load_portfolio_cache(wallet)
+        if cached:
+            out = dict(cached)
+            out["fromCache"] = True
+            out["partial"] = bool(cached.get("partial"))
+            return out
+
+    try:
+        portfolio = fetch_debank_portfolio_free(wallet, quick=quick, show_small=show_small)
+        if quick:
+            portfolio = enrich_wallet_rpc(wallet, portfolio)
+        portfolio["partial"] = bool(
+            quick
+            or (portfolio.get("coverageGapUsd") or 0)
+            > max(1, (portfolio.get("debankTotalUsd") or 0) * 0.03)
+        )
+        return portfolio
+    except ValueError as ex:
+        _api_log(f"free debank fallback to scrape: {ex!s}")
+
     if not refresh and not quick:
         cached = load_portfolio_cache(wallet)
         if cached:
@@ -1118,64 +1231,35 @@ class Handler(SimpleHTTPRequestHandler):
                     self.wfile.write(body)
                     return
 
-            if source == "debank" and not refresh and not quick:
-                cached = load_portfolio_cache(wallet)
-                if cached:
-                    cached = dict(cached)
-                    cached["fromCache"] = True
-                    cached["partial"] = False
-                    body = json.dumps(
-                        {"ok": True, "portfolio": cached, "cached": True, "source": "debank"},
-                        ensure_ascii=False,
-                    ).encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    self.send_header("Cache-Control", "no-store")
-                    self.end_headers()
-                    self.wfile.write(body)
-                    return
+            if source == "debank":
+                portfolio = fetch_debank_portfolio(
+                    wallet, quick=quick, refresh=refresh, show_small=show_small
+                )
+                if not portfolio.get("fromCache"):
+                    save_portfolio_cache(wallet, portfolio)
+                src = (
+                    "debank-api"
+                    if portfolio.get("fromDebankApi")
+                    else "debank-free"
+                    if portfolio.get("fromFreeFetch") or portfolio.get("source") == "debank-free"
+                    else "debank"
+                )
+                body = json.dumps(
+                    {
+                        "ok": True,
+                        "portfolio": portfolio,
+                        "cached": bool(portfolio.get("fromCache")),
+                        "source": src,
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
 
-            if not refresh and not quick:
-                cached = load_portfolio_cache(wallet)
-                if cached:
-                    cached = dict(cached)
-                    cached["fromCache"] = True
-                    cached["partial"] = False
-                    body = json.dumps(
-                        {"ok": True, "portfolio": cached, "cached": True},
-                        ensure_ascii=False,
-                    ).encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    self.send_header("Cache-Control", "no-store")
-                    self.end_headers()
-                    self.wfile.write(body)
-                    return
-
-            if quick:
-                main_text = fetch_main_profile_quick(wallet)
-                if not main_text:
-                    raise ValueError("FETCH_FAILED")
-                portfolio = parse_full_portfolio(main_text, {}, show_small)
-                portfolio = enrich_quick_chain_pages(wallet, main_text, portfolio, show_small)
-                portfolio = enrich_wallet_rpc(wallet, portfolio)
-                portfolio["partial"] = True
-            else:
-                main_text, chain_texts = fetch_full_portfolio_text(wallet)
-                if not main_text and not chain_texts:
-                    raise ValueError("FETCH_FAILED")
-                portfolio = parse_full_portfolio(main_text, chain_texts, show_small)
-                portfolio = enrich_wallet_rpc(wallet, portfolio)
-                portfolio["fromCache"] = False
-                save_portfolio_cache(wallet, portfolio)
-            body = json.dumps(
-                {"ok": True, "portfolio": portfolio, "cached": False}, ensure_ascii=False
-            ).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
         except ValueError as e:
             code = str(e).split(":")[0]
             status = 400 if code == "INVALID_WALLET" else 502

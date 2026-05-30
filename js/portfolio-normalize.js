@@ -190,6 +190,20 @@ export function syncDisplayTotals(portfolio) {
   normalizeLendingMetrics(portfolio);
   recalcLiquidityTotals(portfolio);
 
+  if (portfolio.fromDebankApi) {
+    const debank = roundUsd(portfolio.debankTotalUsd ?? portfolio.totalUsd ?? 0);
+    portfolio.debankTotalUsd = debank;
+    portfolio.totalUsd = debank || portfolio.totalUsd;
+    portfolio.computedTotalUsd = roundUsd(
+      (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0),
+    );
+    const gap = roundUsd(debank - portfolio.computedTotalUsd);
+    portfolio.coverageGapUsd = Math.max(0, gap);
+    portfolio.overCountUsd = gap < 0 ? roundUsd(-gap) : 0;
+    portfolio.partial = portfolio.coverageGapUsd > Math.max(1, debank * 0.02);
+    return portfolio;
+  }
+
   const chainSum = (portfolio.chains || []).reduce((s, c) => s + (c.usd || 0), 0);
   const parseChains = (portfolio.chains || []).some(
     (c) => c.pct != null && c.name && c.name !== String(c.slug || "").toUpperCase(),

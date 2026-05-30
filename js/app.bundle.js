@@ -1193,6 +1193,7 @@ function attachRevertToPortfolio(portfolio, revertPositions) {
 // js/portfolio-dedupe.js
 function isSyntheticLiquidityRow(p, protocol) {
   if (!p) return true;
+  if (p.debankFill && p.debankSectionUsd) return false;
   const proto = String(protocol || "");
   if (proto.startsWith("DeBank \xB7") || proto === "DeBank") return true;
   const poolId = String(p.poolId || "");
@@ -1823,6 +1824,57 @@ function saneLendingPosition(p, debankTotalUsd = 0) {
   return saneUsd(c, cap) && saneUsd(d, cap) && saneUsd(n, cap);
 }
 
+// js/lending-metrics.js
+function parseAmount(amount) {
+  const n = parseFloat(String(amount || "0").replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function primaryCollateralMarketPrice(supplied) {
+  const rows = (supplied || []).map((x) => ({
+    usd: Number(x.usd || 0),
+    amt: parseAmount(x.amount)
+  })).filter((x) => x.usd > 0 && x.amt > 0).sort((a, b) => b.usd - a.usd);
+  if (!rows.length) return 0;
+  return rows[0].usd / rows[0].amt;
+}
+function liquidationPriceFromHealth(pos) {
+  const hf = Number(pos?.healthFactor);
+  if (!hf || hf <= 0 || hf > 10) return 0;
+  const market = Number(pos?.marketPrice) > 0 ? Number(pos.marketPrice) : primaryCollateralMarketPrice(pos?.supplied);
+  if (!market || market <= 0) return 0;
+  return market / hf;
+}
+function applyLendingMetrics(pos) {
+  if (!pos) return pos;
+  const marketPrice = primaryCollateralMarketPrice(pos.supplied);
+  const liquidationPrice = liquidationPriceFromHealth({
+    ...pos,
+    marketPrice: marketPrice || pos.marketPrice
+  });
+  return {
+    ...pos,
+    marketPrice: marketPrice || pos.marketPrice || 0,
+    liquidationPrice: liquidationPrice || 0
+  };
+}
+
+// js/debank-parse.js
+var KNOWN_PROTOCOL_PREFIXES = /uniswap|pancake|compound|aave|fluid|curve|balancer|gmx|beefy|yearn|aerodrome|velodrome|pendle|morpho|euler|sushi|maker|lido|stakewise|rocket|convex|frax|supernova|hyperliquid/i;
+function cleanProtocolName(name) {
+  return String(name || "").replace(/\[([^\]]*)\]\([^)]*\)/g, (_, label) => label || "").replace(/\[\]\([^)]*\)/g, "").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+}
+function protocolKey(name) {
+  return cleanProtocolName(name).toLowerCase();
+}
+function isValidProtocolTab(name) {
+  const p = cleanProtocolName(name);
+  if (!p || p.length > 36) return false;
+  const compact = p.replace(/\s+/g, "");
+  if (/compound.*pancake|pancake.*compound|uniswap.*compound/i.test(compact)) return false;
+  if ((p.match(/\bv3\b/gi) || []).length > 1) return false;
+  return p === "Wallet" || KNOWN_PROTOCOL_PREFIXES.test(p) || /v\d|swap|lend|fluid|beefy|yearn|gmx/i.test(p);
+}
+
 // js/portfolio-debank-fill.js
 function roundUsd(n) {
   return Math.round((n || 0) * 100) / 100;
@@ -1851,9 +1903,10 @@ function ensureGroup(portfolio, protocol, chain) {
   return g;
 }
 function sumProtocolUsd(portfolio, protocol) {
+  const key = protocolKey(protocol);
   let s = 0;
   for (const g of portfolio.protocolGroups || []) {
-    if (g.protocol !== protocol) continue;
+    if (protocolKey(g.protocol) !== key) continue;
     for (const p of g.liquidity || []) s += p.positionUsd || 0;
     for (const p of g.lending || []) {
       s += Math.max(p.netUsd || 0, p.collateralUsd || 0, 0);
@@ -1862,10 +1915,10 @@ function sumProtocolUsd(portfolio, protocol) {
   return s;
 }
 function inferChainForProtocol(portfolio, protocol) {
-  const tabs = portfolio.protocolTabs || [];
+  const key = protocolKey(protocol);
   const chains = portfolio.chains || [];
   const byProto = (portfolio.protocolGroups || []).filter(
-    (g) => g.protocol === protocol && g.chain && g.chain !== "unknown"
+    (g) => protocolKey(g.protocol) === key && g.chain && g.chain !== "unknown"
   );
   if (byProto.length) return byProto[0].chain;
   if (chains.length) return chains[0].slug;
@@ -1876,8 +1929,9 @@ function fillCoverageFromProtocolTabs(portfolio) {
   const debank = portfolio.debankTotalUsd ?? portfolio.totalUsd ?? 0;
   let computed = portfolio.computedTotalUsd ?? (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0);
   if (debank < 50) return portfolio;
-  for (const tab of portfolio.protocolTabs) {
-    const protocol = tab.protocol;
+  for (const tab of [...portfolio.protocolTabs].sort((a, b) => (b.usd || 0) - (a.usd || 0))) {
+    const protocol = cleanProtocolName(tab.protocol);
+    if (!isValidProtocolTab(protocol)) continue;
     const tabUsd = tab.usd || 0;
     if (tabUsd < 2) continue;
     const haveUsd = sumProtocolUsd(portfolio, protocol);
@@ -2030,40 +2084,6 @@ function fillCoverageCatchUp(portfolio) {
   return portfolio;
 }
 
-// js/lending-metrics.js
-function parseAmount(amount) {
-  const n = parseFloat(String(amount || "0").replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-function primaryCollateralMarketPrice(supplied) {
-  const rows = (supplied || []).map((x) => ({
-    usd: Number(x.usd || 0),
-    amt: parseAmount(x.amount)
-  })).filter((x) => x.usd > 0 && x.amt > 0).sort((a, b) => b.usd - a.usd);
-  if (!rows.length) return 0;
-  return rows[0].usd / rows[0].amt;
-}
-function liquidationPriceFromHealth(pos) {
-  const hf = Number(pos?.healthFactor);
-  if (!hf || hf <= 0 || hf > 10) return 0;
-  const market = Number(pos?.marketPrice) > 0 ? Number(pos.marketPrice) : primaryCollateralMarketPrice(pos?.supplied);
-  if (!market || market <= 0) return 0;
-  return market / hf;
-}
-function applyLendingMetrics(pos) {
-  if (!pos) return pos;
-  const marketPrice = primaryCollateralMarketPrice(pos.supplied);
-  const liquidationPrice = liquidationPriceFromHealth({
-    ...pos,
-    marketPrice: marketPrice || pos.marketPrice
-  });
-  return {
-    ...pos,
-    marketPrice: marketPrice || pos.marketPrice || 0,
-    liquidationPrice: liquidationPrice || 0
-  };
-}
-
 // js/portfolio-normalize.js
 var PORTFOLIO_SCHEMA = 12;
 function inferChainFromProtocolName(protocol) {
@@ -2211,6 +2231,19 @@ function syncDisplayTotals(portfolio) {
   dedupePortfolioPositions(portfolio);
   normalizeLendingMetrics(portfolio);
   recalcLiquidityTotals(portfolio);
+  if (portfolio.fromDebankApi) {
+    const debank2 = roundUsd2(portfolio.debankTotalUsd ?? portfolio.totalUsd ?? 0);
+    portfolio.debankTotalUsd = debank2;
+    portfolio.totalUsd = debank2 || portfolio.totalUsd;
+    portfolio.computedTotalUsd = roundUsd2(
+      (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0)
+    );
+    const gap2 = roundUsd2(debank2 - portfolio.computedTotalUsd);
+    portfolio.coverageGapUsd = Math.max(0, gap2);
+    portfolio.overCountUsd = gap2 < 0 ? roundUsd2(-gap2) : 0;
+    portfolio.partial = portfolio.coverageGapUsd > Math.max(1, debank2 * 0.02);
+    return portfolio;
+  }
   const chainSum = (portfolio.chains || []).reduce((s, c) => s + (c.usd || 0), 0);
   const parseChains = (portfolio.chains || []).some(
     (c) => c.pct != null && c.name && c.name !== String(c.slug || "").toUpperCase()
@@ -2628,7 +2661,8 @@ function mergeKrystalLiquidity(portfolio, krystalPositions) {
 // js/portfolio-pipeline.js
 function finalizeDebankPortfolioClone(raw) {
   if (!raw) return raw;
-  const p = { ...raw, schemaVersion: PORTFOLIO_SCHEMA, source: "debank" };
+  const src = raw.source || (raw.fromDebankApi ? "debank-api" : "debank");
+  const p = { ...raw, schemaVersion: PORTFOLIO_SCHEMA, source: src };
   dedupePortfolioPositions(p);
   return syncDisplayTotals(normalizePortfolioChains(p));
 }
@@ -2660,7 +2694,7 @@ function applyPortfolioPipeline(portfolio, enrich = {}) {
 }
 
 // js/app.js
-var APP_VER = "64";
+var APP_VER = "67";
 var FETCH_TIMEOUT_MS = 15e4;
 var PREVIEW_TIMEOUT_MS = 75e3;
 var CACHE_MS = 15 * 60 * 1e3;
@@ -2811,6 +2845,7 @@ function dismissBlockingLoader(minPct = 15) {
   if (state.data) render();
 }
 async function backgroundFullDebank(wallet, { refresh = false } = {}) {
+  if (state.data?.fromDebankApi) return;
   try {
     setLoadStep("debank", "active");
     const p = await fetchPortfolio(wallet, {
@@ -2874,7 +2909,10 @@ function renderLoadProgress() {
     }).join("");
   }
   const hasData = !!(state.data?.protocolGroups?.length || state.data?.walletTokens?.length);
-  document.body.classList.toggle("portfolio-incomplete", onResults && state.loadPct < 100 && !hasData);
+  document.body.classList.toggle(
+    "portfolio-incomplete",
+    onResults && state.loadPct < 100 && !hasData
+  );
   document.body.classList.toggle(
     "portfolio-ready",
     onResults && state.loadPct >= 100 && state.loadReady
@@ -3770,6 +3808,8 @@ function applyPortfolio(p, wallet) {
     fetchedAt: Date.now(),
     partial: !!p.partial,
     fromCache: !!p._cached || !!p.fromCache,
+    fromDebankApi: !!p.fromDebankApi,
+    source: p.source,
     totalUsd: p.totalUsd,
     computedTotalUsd: p.computedTotalUsd,
     debankTotalUsd: p.debankTotalUsd,
@@ -4218,7 +4258,7 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
       render();
       if (!cached.partial) saveCache(wallet, state.data);
       void runEnrichmentPipeline(wallet, { refresh: false });
-      if (cached.partial) void backgroundFullDebank(wallet, { refresh });
+      if (cached.partial && !cached.fromDebankApi) void backgroundFullDebank(wallet, { refresh });
     } else {
       let gotFullDebank = false;
       if (!refresh && !silent) {
@@ -4228,12 +4268,17 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
             quick: true,
             refresh: false
           });
-          applyPortfolio({ ...preview, partial: true }, wallet);
+          const isApi = !!preview.fromDebankApi;
+          applyPortfolio({ ...preview, partial: isApi ? !!preview.partial : true }, wallet);
           setLoadStep("debank", "done");
           setLoadStep("positions", "done");
-          state.loadPct = 58;
+          state.loadPct = isApi && !preview.partial ? 72 : 58;
           renderLoadProgress();
           render();
+          if (isApi && !preview.partial) {
+            saveCache(wallet, state.data);
+            gotFullDebank = true;
+          }
         } catch (e) {
           console.warn("debank preview", e);
           if (!state.data) throw e;
@@ -4259,7 +4304,8 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
           if (!state.data) throw e;
         }
       }
-      if (!gotFullDebank) void backgroundFullDebank(wallet, { refresh });
+      if (!gotFullDebank && !state.data?.fromDebankApi)
+        void backgroundFullDebank(wallet, { refresh });
       void runEnrichmentPipeline(wallet, { refresh });
     }
     try {
@@ -4491,7 +4537,8 @@ function init() {
         dismissBlockingLoader(cached.partial ? 58 : 72);
         render();
         void runEnrichmentPipeline(w, { refresh: false });
-        if (cached.partial) void backgroundFullDebank(w, { refresh: false });
+        if (cached.partial && !cached.fromDebankApi)
+          void backgroundFullDebank(w, { refresh: false });
         return;
       }
       await scanWallet();

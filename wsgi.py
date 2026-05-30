@@ -266,6 +266,7 @@ def portfolio_application(environ, start_response):  # noqa: N802
                 "node": srv.NODE_BIN,
                 "node_ok": os.path.isfile(srv.NODE_BIN),
                 "config_ok": cfg.is_file(),
+                "debank_api": bool(srv.load_debank_access_key()),
                 "wsgi": "portfolio_v3",
             }
         )(environ, start_response)

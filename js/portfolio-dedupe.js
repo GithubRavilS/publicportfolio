@@ -11,6 +11,7 @@ function roundUsd(n) {
 /** Синтетический добор DeBank (не реальная LP-позиция). */
 export function isSyntheticLiquidityRow(p, protocol) {
   if (!p) return true;
+  if (p.debankFill && p.debankSectionUsd) return false;
   const proto = String(protocol || "");
   if (proto.startsWith("DeBank ·") || proto === "DeBank") return true;
   const poolId = String(p.poolId || "");

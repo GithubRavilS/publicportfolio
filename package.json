@@ -6,6 +6,7 @@
     "bundle": "npx --yes esbuild@0.25.5 js/app.js --bundle --format=esm --outfile=js/app.bundle.js",
     "verify": "PT_SKIP_NETWORK=1 node scripts/verify.mjs",
     "verify:debank": "node scripts/compare-debank-10.mjs",
+    "benchmark:free": "node scripts/benchmark-free-sources.mjs",
     "deploy:pa": "node scripts/build-pa-upload.mjs",
     "deploy:remote": "node scripts/deploy-pa-remote.mjs",
     "deploy:setup": "node scripts/pa-setup-autopull.mjs",

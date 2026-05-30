@@ -2,6 +2,7 @@
  * Добор позиций из protocolTabs DeBank, когда Jina не отдаёт детали секций.
  */
 import { chainSlug } from "./chains.js";
+import { cleanProtocolName, protocolKey, isValidProtocolTab } from "./debank-parse.js";
 
 function roundUsd(n) {
   return Math.round((n || 0) * 100) / 100;
@@ -33,9 +34,10 @@ function ensureGroup(portfolio, protocol, chain) {
 }
 
 function sumProtocolUsd(portfolio, protocol) {
+  const key = protocolKey(protocol);
   let s = 0;
   for (const g of portfolio.protocolGroups || []) {
-    if (g.protocol !== protocol) continue;
+    if (protocolKey(g.protocol) !== key) continue;
     for (const p of g.liquidity || []) s += p.positionUsd || 0;
     for (const p of g.lending || []) {
       s += Math.max(p.netUsd || 0, p.collateralUsd || 0, 0);
@@ -45,10 +47,10 @@ function sumProtocolUsd(portfolio, protocol) {
 }
 
 function inferChainForProtocol(portfolio, protocol) {
-  const tabs = portfolio.protocolTabs || [];
+  const key = protocolKey(protocol);
   const chains = portfolio.chains || [];
   const byProto = (portfolio.protocolGroups || []).filter(
-    (g) => g.protocol === protocol && g.chain && g.chain !== "unknown",
+    (g) => protocolKey(g.protocol) === key && g.chain && g.chain !== "unknown",
   );
   if (byProto.length) return byProto[0].chain;
   if (chains.length) return chains[0].slug;
@@ -66,8 +68,9 @@ export function fillCoverageFromProtocolTabs(portfolio) {
 
   if (debank < 50) return portfolio;
 
-  for (const tab of portfolio.protocolTabs) {
-    const protocol = tab.protocol;
+  for (const tab of [...portfolio.protocolTabs].sort((a, b) => (b.usd || 0) - (a.usd || 0))) {
+    const protocol = cleanProtocolName(tab.protocol);
+    if (!isValidProtocolTab(protocol)) continue;
     const tabUsd = tab.usd || 0;
     if (tabUsd < 2) continue;
 

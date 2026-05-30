@@ -14,12 +14,19 @@ import { mergeRevertLiquidity } from "./revert-portfolio-merge.js";
 import { mergeKrystalLiquidity } from "./krystal-portfolio-merge.js";
 import { applyLendingMetrics } from "./lending-metrics.js";
 
-export { PORTFOLIO_SCHEMA };
+import { portfolioFromDebankBundle, buildPortfolioFromDebankApi } from "./debank-api-portfolio.js";
+
+export { PORTFOLIO_SCHEMA, buildPortfolioFromDebankApi, portfolioFromDebankBundle };
+
+export function buildPortfolioFromDebankApiRaw(raw) {
+  return finalizeDebankPortfolioClone({ ...raw, fromDebankApi: true, source: "debank-api" });
+}
 
 /** DeBank-клон: только нормализация, без phantom fillCoverage. */
 export function finalizeDebankPortfolioClone(raw) {
   if (!raw) return raw;
-  const p = { ...raw, schemaVersion: PORTFOLIO_SCHEMA, source: "debank" };
+  const src = raw.source || (raw.fromDebankApi ? "debank-api" : "debank");
+  const p = { ...raw, schemaVersion: PORTFOLIO_SCHEMA, source: src };
   dedupePortfolioPositions(p);
   return syncDisplayTotals(normalizePortfolioChains(p));
 }
@@ -44,7 +51,10 @@ export function applyLendingEnrichment(portfolio) {
   return portfolio;
 }
 
-export function enrichPortfolio(portfolio, { revertPositions = null, krystalPositions = null } = {}) {
+export function enrichPortfolio(
+  portfolio,
+  { revertPositions = null, krystalPositions = null } = {},
+) {
   if (!portfolio) return portfolio;
   let p = { ...portfolio };
   if (revertPositions?.length) {

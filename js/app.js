@@ -14,8 +14,9 @@ import {
 import { syncDisplayTotals } from "./portfolio-normalize.js";
 import { applyPortfolioPipeline, PORTFOLIO_SCHEMA } from "./portfolio-pipeline.js";
 
-const APP_VER = "63";
+const APP_VER = "64";
 const FETCH_TIMEOUT_MS = 150000;
+const PREVIEW_TIMEOUT_MS = 75000;
 const CACHE_MS = 15 * 60 * 1000;
 
 /** Базовый путь API: только если в URL есть /portfolio/ (combined WSGI). */
@@ -72,7 +73,7 @@ async function fetchWithTimeout(url, ms = FETCH_TIMEOUT_MS) {
 
 async function fetchPortfolio(
   wallet,
-  { quick = false, refresh = false, source = "debank", refreshOnchain = false } = {},
+  { quick = false, refresh = false, source = "debank", refreshOnchain = false, timeoutMs } = {},
 ) {
   const q = new URLSearchParams({ wallet, _: String(Date.now()) });
   if (quick) q.set("quick", "1");
@@ -80,7 +81,8 @@ async function fetchPortfolio(
   if (refreshOnchain) q.set("refreshOnchain", "1");
   if (source) q.set("source", source);
   const url = apiUrl(`/api/portfolio?${q}`);
-  const r = await fetchWithTimeout(url);
+  const ms = timeoutMs ?? (quick ? PREVIEW_TIMEOUT_MS : FETCH_TIMEOUT_MS);
+  const r = await fetchWithTimeout(url, ms);
   let data = {};
   const raw = await r.text();
   try {
@@ -181,6 +183,33 @@ function finishLoadProgress() {
   renderLoadProgress();
 }
 
+function dismissBlockingLoader(minPct = 15) {
+  setLoading(false);
+  state.loadPct = Math.max(state.loadPct, minPct);
+  renderLoadProgress();
+  if (state.data) render();
+}
+
+async function backgroundFullDebank(wallet, { refresh = false } = {}) {
+  try {
+    setLoadStep("debank", "active");
+    const p = await fetchPortfolio(wallet, {
+      source: "debank",
+      quick: false,
+      refresh,
+    });
+    p.partial = false;
+    applyPortfolio(p, wallet);
+    saveCache(wallet, state.data);
+    setLoadStep("debank", "done");
+    setLoadStep("positions", "done");
+    render();
+  } catch (e) {
+    console.warn("full debank", e);
+    if (state.data) state.data.partial = true;
+  }
+}
+
 function hideLoadProgressSoon() {
   setTimeout(() => {
     if (state.loadReady && !state.enriching && !state.revertLoading && !state.fetching) {
@@ -197,7 +226,7 @@ function renderLoadProgress() {
   if (!dock) return;
   const onResults = $("results") && !$("results").hidden;
   const busy = !state.loadReady || state.fetching || state.enriching || state.revertLoading;
-  dock.hidden = !onResults || (!busy && state.loadPct >= 100);
+  dock.hidden = !onResults || (!busy && state.loadPct >= 100 && state.loadReady);
   dock.classList.toggle("is-ready", state.loadPct >= 100 && state.loadReady);
 
   const pctEl = $("loadProgressPct");
@@ -234,7 +263,8 @@ function renderLoadProgress() {
     }).join("");
   }
 
-  document.body.classList.toggle("portfolio-incomplete", onResults && state.loadPct < 100);
+  const hasData = !!(state.data?.protocolGroups?.length || state.data?.walletTokens?.length);
+  document.body.classList.toggle("portfolio-incomplete", onResults && state.loadPct < 100 && !hasData);
   document.body.classList.toggle(
     "portfolio-ready",
     onResults && state.loadPct >= 100 && state.loadReady,
@@ -1843,19 +1873,22 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
     if (!silent) {
       setLoadStep("connect", "done");
       setLoadStep("debank", "active");
+      dismissBlockingLoader(12);
     }
 
     const cached = !refresh && !silent && loadCache(wallet);
-    if (cached && !cached.partial) {
-      applyPortfolio({ ...cached, partial: false }, wallet);
+    if (cached) {
+      applyPortfolio({ ...cached, partial: !!cached.partial }, wallet);
       setLoadStep("debank", "done");
       setLoadStep("positions", "done");
-      state.loadPct = 42;
+      state.loadPct = cached.partial ? 55 : 72;
       renderLoadProgress();
-      setLoading(false);
       render();
+      if (!cached.partial) saveCache(wallet, state.data);
       void runEnrichmentPipeline(wallet, { refresh: false });
+      if (cached.partial) void backgroundFullDebank(wallet, { refresh });
     } else {
+      let gotFullDebank = false;
       if (!refresh && !silent) {
         try {
           const preview = await fetchPortfolio(wallet, {
@@ -1864,38 +1897,38 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
             refresh: false,
           });
           applyPortfolio({ ...preview, partial: true }, wallet);
+          setLoadStep("debank", "done");
+          setLoadStep("positions", "done");
+          state.loadPct = 58;
+          renderLoadProgress();
           render();
         } catch (e) {
           console.warn("debank preview", e);
+          if (!state.data) throw e;
+        }
+      } else if (!silent && refresh) {
+        try {
+          const p = await fetchPortfolio(wallet, {
+            source: "debank",
+            quick: false,
+            refresh,
+          });
+          p.partial = false;
+          applyPortfolio(p, wallet);
+          saveCache(wallet, state.data);
+          setLoadStep("debank", "done");
+          setLoadStep("positions", "done");
+          state.loadPct = 72;
+          renderLoadProgress();
+          render();
+          gotFullDebank = true;
+        } catch (e) {
+          console.warn("full debank", e);
+          if (!state.data) throw e;
         }
       }
 
-      if (!silent) setLoading(true, t(lang, "loadingQuick"), "debank");
-      try {
-        const p = await fetchPortfolio(wallet, {
-          source: "debank",
-          quick: false,
-          refresh,
-        });
-        p.partial = false;
-        if (!silent) {
-          setLoadStep("debank", "done");
-          setLoadStep("positions", "done");
-        }
-        applyPortfolio(p, wallet);
-        saveCache(wallet, state.data);
-        updateLoadPreview(p);
-      } catch (e) {
-        console.warn("full debank", e);
-        if (!state.data) throw e;
-        state.data.partial = true;
-      }
-      if (!silent) {
-        setLoading(false);
-        state.loadPct = Math.max(state.loadPct, 55);
-        renderLoadProgress();
-      }
-      render();
+      if (!gotFullDebank) void backgroundFullDebank(wallet, { refresh });
       void runEnrichmentPipeline(wallet, { refresh });
     }
 
@@ -2166,18 +2199,20 @@ function init() {
   const w = new URLSearchParams(window.location.search).get("wallet");
   if (w) {
     $("walletInput").value = w;
-    checkApiReady().then((ok) => {
-      if (!ok) return;
+    void (async () => {
+      if (!(await checkApiReady()) && !(await waitForApi(15000))) return;
       const cached = loadCache(w);
       if (cached) {
-        applyPortfolio({ ...cached, _cached: true, partial: false }, w);
+        applyPortfolio({ ...cached, _cached: true, partial: !!cached.partial }, w);
         showResults();
+        dismissBlockingLoader(cached.partial ? 58 : 72);
         render();
-        backgroundEnrich(w, { refresh: false });
+        void runEnrichmentPipeline(w, { refresh: false });
+        if (cached.partial) void backgroundFullDebank(w, { refresh: false });
         return;
       }
-      scanWallet();
-    });
+      await scanWallet();
+    })();
   }
 }
 

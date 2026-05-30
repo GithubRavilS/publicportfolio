@@ -7,6 +7,8 @@
     "verify": "PT_SKIP_NETWORK=1 node scripts/verify.mjs",
     "verify:debank": "node scripts/compare-debank-10.mjs",
     "deploy:pa": "node scripts/build-pa-upload.mjs",
+    "deploy:remote": "node scripts/deploy-pa-remote.mjs",
+    "deploy:setup": "node scripts/pa-setup-autopull.mjs",
     "prepare": "husky"
   },
   "devDependencies": {

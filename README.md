@@ -25,35 +25,26 @@ Copy `config.example.json` → `config.json` (never commit `config.json`).
 
 ## Deploy to PythonAnywhere
 
-### Option A — git pull (recommended)
+**Production URL:** [cry-maden008.pythonanywhere.com/portfolio](https://cry-maden008.pythonanywhere.com/portfolio/) — это не GitHub, а отдельный сервер. GitHub хранит код; PA показывает сайт.
 
-On PA (Bash), once:
+### Автодеплой (без ручной заливки zip)
 
-```bash
-cd ~/Portfolio-tracker
-git clone -b portfolio-tracker https://github.com/GithubRavilS/publicportfolio.git .
-# keep existing config.json; do not overwrite
-pip install -r requirements.txt
-```
+**Один раз** — скопируй `.env.pa.example` → `.env.pa` и вставь API token с [pythonanywhere.com → Account → API token](https://www.pythonanywhere.com/account/#api_token).
 
-Updates after each push to `portfolio-tracker`:
+Дальше всё само:
 
-```bash
-cd ~/Portfolio-tracker
-git pull origin portfolio-tracker
-npm run bundle   # if you changed js/app.js
-# Web → Reload
-```
+| Команда | Что делает |
+|---|---|
+| `npm run deploy:remote` | Заливает файлы на PA через API + Reload (агент делает это после правок) |
+| `npm run deploy:setup` | PA сам тянет GitHub каждый час (`git pull`) — zip вообще не нужен |
 
-### Option B — upload zip
+**GitHub Actions** (push → deploy за ~2 мин): скопируй `docs/deploy-pa-workflow.yml` в `.github/workflows/` и добавь secrets `PA_API_TOKEN`, `PA_USERNAME`, `PA_DOMAIN` в репо на GitHub.
+
+### Ручной zip (fallback)
 
 ```bash
-npm run deploy:pa
+npm run deploy:pa   # → deploy/pa-upload.zip
 ```
-
-Upload `deploy/pa-upload.zip` via PA Files, unzip into project folder, **Web → Reload**.
-
-See [deploy/PYTHONANYWHERE.md](deploy/PYTHONANYWHERE.md) and [deploy/MADYAN008_STEPS.md](deploy/MADYAN008_STEPS.md).
 
 ## CI
 

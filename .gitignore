@@ -13,6 +13,7 @@ deploy/pa-upload.zip
 *.zip
 test-results/
 .env.github
+.env.pa
 .pythonanywhere/
 web/dist/
 mobile/.expo/

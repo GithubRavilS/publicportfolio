@@ -1,0 +1,37 @@
+# Copy to .github/workflows/deploy-pa.yml when GitHub PAT has `workflow` scope.
+# Triggers on push to portfolio-tracker: verify → upload to PA → reload.
+name: Deploy PythonAnywhere
+
+on:
+  push:
+    branches: [portfolio-tracker]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: npm ci || npm install
+
+      - name: Verify
+        run: npm run verify
+        env:
+          PT_SKIP_NETWORK: "1"
+
+      - name: Deploy to PythonAnywhere
+        env:
+          PA_API_TOKEN: ${{ secrets.PA_API_TOKEN }}
+          PA_USERNAME: ${{ secrets.PA_USERNAME }}
+          PA_DOMAIN: ${{ secrets.PA_DOMAIN }}
+        run: node scripts/deploy-pa-remote.mjs

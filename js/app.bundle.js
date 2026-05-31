@@ -208,7 +208,8 @@ var dict = {
     net: "\u0427\u0438\u0441\u0442\u0430\u044F",
     positions: "\u043F\u043E\u0437.",
     showMoreTokens: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0435\u0449\u0451 {n} \u043C\u0435\u043B\u043A\u0438\u0445 \u0442\u043E\u043A\u0435\u043D\u043E\u0432",
-    partialBanner: "\u041E\u0441\u043D\u043E\u0432\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u2014 \u0434\u043E\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043E\u0437\u0438\u0446\u0438\u0438 \u043F\u043E \u0441\u0435\u0442\u044F\u043C\u2026",
+    partialBanner: "\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u0430 \u0447\u0430\u0441\u0442\u044C \u043F\u043E\u0440\u0442\u0444\u0435\u043B\u044F \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C\xBB \u0434\u043B\u044F \u043F\u043E\u043B\u043D\u043E\u0439 \u0441\u0432\u0435\u0440\u043A\u0438 \u0441 DeBank",
+    debankReference: "\u041E\u0446\u0435\u043D\u043A\u0430 DeBank: {debank} \xB7 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u043E \u043F\u043E\u0437\u0438\u0446\u0438\u0439: {computed}",
     loadingQuick: "\u041F\u0435\u0440\u0432\u044B\u0439 \u0441\u043D\u0438\u043C\u043E\u043A \u043F\u043E\u0440\u0442\u0444\u0435\u043B\u044F\u2026",
     loadingMerge: "\u0421\u043E\u0431\u0438\u0440\u0430\u0435\u043C DeFi-\u043F\u043E\u0437\u0438\u0446\u0438\u0438\u2026",
     stepConnect: "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435",
@@ -264,10 +265,10 @@ var dict = {
     rangesMissing: "\u0414\u0438\u0430\u043F\u0430\u0437\u043E\u043D\u044B LP \u043D\u0435 \u043F\u043E\u043B\u0443\u0447\u0435\u043D\u044B \u2014 \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435 \u043D\u0443\u0436\u043D\u044B rpc_urls \u0432 config.json (\u0441\u043C. config.example.json)",
     revertNoMatch: "\u041F\u043E\u0437\u0438\u0446\u0438\u0438 Revert \u0435\u0441\u0442\u044C, \u043D\u043E \u043F\u0430\u0440\u044B \u043D\u0435 \u0441\u043E\u0432\u043F\u0430\u043B\u0438 \u2014 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u043F\u0443\u043B \u0432\u0440\u0443\u0447\u043D\u0443\u044E \u043D\u0430 revert.finance",
     partialReady: "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u044B",
-    loadTrustWait: "\u0414\u043E\u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u2014 \u043F\u043E\u043B\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u0438\u043D\u0435 \u043C\u043E\u0436\u043D\u043E \u0434\u043E\u0432\u0435\u0440\u044F\u0442\u044C \u043F\u043E\u0441\u043B\u0435 100%",
+    loadTrustWait: "\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043E\u0437\u0438\u0446\u0438\u0438 \u0438 \u0434\u0435\u0442\u0430\u043B\u0438\u2026",
     loadTrustOk: "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430",
     lpStepConnect: "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435",
-    lpStepDebank: "DeBank \xB7 \u043F\u043E\u0437\u0438\u0446\u0438\u0438 \u0438 \u0441\u0443\u043C\u043C\u044B",
+    lpStepDebank: "Etherscan \xB7 \u043A\u043E\u0448\u0435\u043B\u0451\u043A \u0438 \u0442\u043E\u043A\u0435\u043D\u044B",
     lpStepPositions: "\u0420\u0430\u0437\u0431\u043E\u0440 \u043F\u043E\u0440\u0442\u0444\u0435\u043B\u044F",
     lpStepRanges: "\u0414\u0438\u0430\u043F\u0430\u0437\u043E\u043D\u044B LP",
     lpStepApy: "\u0414\u043E\u0445\u043E\u0434\u043D\u043E\u0441\u0442\u044C \u0438 \u043A\u043E\u043C\u0438\u0441\u0441\u0438\u0438",
@@ -376,7 +377,8 @@ var dict = {
     net: "Net",
     positions: "pos.",
     showMoreTokens: "Show {n} more small tokens",
-    partialBanner: "Core data loaded \u2014 fetching positions across chains\u2026",
+    partialBanner: "Partial portfolio shown \u2014 tap Refresh for full DeBank sync",
+    debankReference: "DeBank estimate: {debank} \xB7 positions loaded: {computed}",
     loadingQuick: "Loading portfolio snapshot\u2026",
     loadingMerge: "Merging DeFi positions\u2026",
     stepConnect: "Connect",
@@ -432,10 +434,10 @@ var dict = {
     rangesMissing: "LP ranges unavailable \u2014 add rpc_urls to config.json on the server (see config.example.json)",
     revertNoMatch: "Revert data loaded but pairs did not match \u2014 check pool on revert.finance",
     partialReady: "Data updated",
-    loadTrustWait: "Still loading \u2014 trust totals fully at 100%",
+    loadTrustWait: "Loading positions and details\u2026",
     loadTrustOk: "Load complete",
     lpStepConnect: "Connecting",
-    lpStepDebank: "DeBank \xB7 positions & totals",
+    lpStepDebank: "Etherscan \xB7 wallet & tokens",
     lpStepPositions: "Building portfolio",
     lpStepRanges: "LP price ranges",
     lpStepApy: "Yield & fees",
@@ -1193,7 +1195,8 @@ function attachRevertToPortfolio(portfolio, revertPositions) {
 // js/portfolio-dedupe.js
 function isSyntheticLiquidityRow(p, protocol) {
   if (!p) return true;
-  if (p.debankFill && p.debankSectionUsd) return false;
+  if (p.overviewFill) return false;
+  if (p.debankFill) return true;
   const proto = String(protocol || "");
   if (proto.startsWith("DeBank \xB7") || proto === "DeBank") return true;
   const poolId = String(p.poolId || "");
@@ -1201,9 +1204,9 @@ function isSyntheticLiquidityRow(p, protocol) {
   const pair = String(p.pair || "").trim();
   if (/unparsed/i.test(pair)) return true;
   const ch = chainSlug(p.chain || "");
-  if (p.kind === "Deposit" && pair && ch && pair.toLowerCase() === ch) return true;
-  if (p.debankFill) return true;
-  if (pair && (pair === protocol || pair.toLowerCase() === ch)) return true;
+  if (p.kind === "Deposit" && pair && ch && pair.toLowerCase() === ch && !p.overviewFill)
+    return true;
+  if (pair && !p.overviewFill && (pair === protocol || pair.toLowerCase() === ch)) return true;
   return false;
 }
 function poolScore(p, g) {
@@ -1263,7 +1266,7 @@ function dedupeLendingPositions(portfolio) {
   const winners = /* @__PURE__ */ new Map();
   for (const g of portfolio.protocolGroups) {
     for (const p of g.lending || []) {
-      if (p.debankFill) continue;
+      if (p.debankFill && !p.overviewFill) continue;
       const sk = lendingSoftKey(g.protocol, p);
       const prev = winners.get(sk);
       if (!prev) {
@@ -1293,8 +1296,11 @@ function stripSyntheticDebankFills(portfolio) {
       g.protocolUsd = 0;
       continue;
     }
-    g.liquidity = (g.liquidity || []).filter((p) => !isSyntheticLiquidityRow(p, g.protocol));
-    g.lending = (g.lending || []).filter((p) => !p.debankFill);
+    g.liquidity = (g.liquidity || []).filter((p) => {
+      if (/^#\d+/.test(String(p.poolId || ""))) return true;
+      return !isSyntheticLiquidityRow(p, g.protocol);
+    });
+    g.lending = (g.lending || []).filter((p) => !p.debankFill || p.overviewFill);
   }
   portfolio.protocolGroups = portfolio.protocolGroups.filter(
     (g) => g.protocol === "Wallet" || (g.liquidity || []).length || (g.lending || []).length || (g.walletTokens || []).length
@@ -1344,6 +1350,9 @@ function fixProtocolGroupChains(portfolio) {
       const freq = /* @__PURE__ */ new Map();
       for (const c of chains) freq.set(c, (freq.get(c) || 0) + 1);
       g.chain = [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    }
+    if ((!g.chain || g.chain === "unknown") && /pancake/i.test(g.protocol || "")) {
+      g.chain = "arb";
     }
     for (const p of g.liquidity || []) {
       if (!p.chain || p.chain === "unknown") {
@@ -1879,6 +1888,10 @@ function isValidProtocolTab(name) {
 function roundUsd(n) {
   return Math.round((n || 0) * 100) / 100;
 }
+var LENDING_PROTO = /aave|compound|fluid|spark|morpho|euler|venus|benqi|radiant|moonwell|kinza|lista|maker/i;
+function isLendingProtocol(name) {
+  return LENDING_PROTO.test(cleanProtocolName(name));
+}
 function findGroup(portfolio, protocol, chain) {
   const ch = chainSlug(chain || "unknown");
   return (portfolio.protocolGroups || []).find(
@@ -1887,19 +1900,20 @@ function findGroup(portfolio, protocol, chain) {
 }
 function ensureGroup(portfolio, protocol, chain) {
   let g = findGroup(portfolio, protocol, chain);
-  if (g) return g;
-  if (!portfolio.protocolGroups) portfolio.protocolGroups = [];
-  g = {
-    protocol,
-    chain: chainSlug(chain || "unknown"),
-    protocolUsd: 0,
-    liquidity: [],
-    lending: [],
-    walletTokens: [],
-    kinds: []
-  };
-  g.id = `${g.protocol}|${g.chain}`;
-  portfolio.protocolGroups.push(g);
+  if (!g) {
+    if (!portfolio.protocolGroups) portfolio.protocolGroups = [];
+    g = {
+      protocol,
+      chain: chainSlug(chain || "unknown"),
+      protocolUsd: 0,
+      liquidity: [],
+      lending: [],
+      walletTokens: [],
+      kinds: []
+    };
+    g.id = `${g.protocol}|${g.chain}`;
+    portfolio.protocolGroups.push(g);
+  }
   return g;
 }
 function sumProtocolUsd(portfolio, protocol) {
@@ -1924,41 +1938,81 @@ function inferChainForProtocol(portfolio, protocol) {
   if (chains.length) return chains[0].slug;
   return "unknown";
 }
-function fillCoverageFromProtocolTabs(portfolio) {
-  if (!portfolio?.protocolTabs?.length) return portfolio;
-  const debank = portfolio.debankTotalUsd ?? portfolio.totalUsd ?? 0;
-  let computed = portfolio.computedTotalUsd ?? (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0);
-  if (debank < 50) return portfolio;
-  for (const tab of [...portfolio.protocolTabs].sort((a, b) => (b.usd || 0) - (a.usd || 0))) {
+function recalcGroupUsd(g) {
+  if (g.protocol === "Wallet") {
+    g.protocolUsd = roundUsd((g.walletTokens || []).reduce((s, t2) => s + (t2.usd || 0), 0));
+    return;
+  }
+  let u = 0;
+  for (const p of g.liquidity || []) u += p.positionUsd || 0;
+  for (const p of g.lending || []) u += Math.max(p.netUsd || 0, 0);
+  g.protocolUsd = roundUsd(u);
+}
+function recalcAllProtocolUsd(portfolio) {
+  for (const g of portfolio.protocolGroups || []) recalcGroupUsd(g);
+  return portfolio;
+}
+function allocateGapToProtocolTabs(portfolio, maxUsd) {
+  if (!portfolio?.protocolTabs?.length || maxUsd < 1) return 0;
+  let remaining = maxUsd;
+  const tabs = [...portfolio.protocolTabs].filter((t2) => t2.protocol && t2.protocol !== "Wallet" && (t2.usd || 0) >= 2).sort((a, b) => (b.usd || 0) - (a.usd || 0));
+  for (const tab of tabs) {
+    if (remaining < 1) break;
     const protocol = cleanProtocolName(tab.protocol);
     if (!isValidProtocolTab(protocol)) continue;
     const tabUsd = tab.usd || 0;
-    if (tabUsd < 2) continue;
     const haveUsd = sumProtocolUsd(portfolio, protocol);
     const need = tabUsd - haveUsd;
     if (need < 2) continue;
     if (haveUsd >= tabUsd * 0.88) continue;
     const chain = inferChainForProtocol(portfolio, protocol);
     const g = ensureGroup(portfolio, protocol, chain);
-    const headroom = Math.max(0, debank - computed);
-    const fillUsd = roundUsd(Math.min(need, headroom));
+    const fillUsd = roundUsd(Math.min(need, remaining));
     if (fillUsd < 1) continue;
-    g.liquidity.push({
-      protocol,
-      chain: g.chain,
-      poolId: `${protocol} \xB7 DeBank`,
-      pair: protocol,
-      kind: "Deposit",
-      positionUsd: fillUsd,
-      debankFill: true,
-      debankSectionUsd: tabUsd,
-      netUsd: fillUsd,
-      inPool: []
-    });
-    if (!g.kinds) g.kinds = [];
-    if (!g.kinds.includes("Deposit")) g.kinds.push("Deposit");
-    computed += fillUsd;
+    if (isLendingProtocol(protocol)) {
+      const exists = (g.lending || []).some((p) => p.overviewFill);
+      if (!exists) {
+        if (!g.kinds.includes("Lending")) g.kinds.push("Lending");
+        g.lending.push({
+          protocol,
+          chain: g.chain,
+          healthFactor: null,
+          supplied: [{ asset: protocol, amount: "\u2014", usd: fillUsd }],
+          borrowed: [],
+          collateralUsd: fillUsd,
+          debtUsd: 0,
+          netUsd: fillUsd,
+          overviewFill: true
+        });
+      }
+    } else {
+      g.liquidity.push({
+        protocol,
+        chain: g.chain,
+        poolId: `#overview-${protocolKey(protocol)}`,
+        pair: protocol,
+        kind: "Liquidity Pool",
+        positionUsd: fillUsd,
+        netUsd: fillUsd,
+        overviewFill: true,
+        inPool: []
+      });
+      if (!g.kinds.includes("Liquidity Pool")) g.kinds.push("Liquidity Pool");
+    }
+    recalcGroupUsd(g);
+    remaining -= fillUsd;
   }
+  return maxUsd - remaining;
+}
+function fillCoverageFromProtocolTabs(portfolio) {
+  if (!portfolio?.protocolTabs?.length) return portfolio;
+  const debank = portfolio.debankTotalUsd ?? portfolio.totalUsd ?? 0;
+  let computed = portfolio.computedTotalUsd ?? (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0);
+  if (debank < 20) return portfolio;
+  const gap = debank - computed;
+  if (gap < 2) return portfolio;
+  allocateGapToProtocolTabs(portfolio, gap);
+  recalcAllProtocolUsd(portfolio);
   return portfolio;
 }
 function fillCoverageFromChainGaps(portfolio) {
@@ -1982,20 +2036,24 @@ function fillCoverageFromChainGaps(portfolio) {
     }
     const need = roundUsd(target - have);
     if (need < 5) continue;
-    const g = ensureGroup(portfolio, `DeBank \xB7 ${c.name || slug}`, slug);
+    const tabMatch = (portfolio.protocolTabs || []).find(
+      (t2) => protocolKey(t2.protocol).includes(slug) && (t2.usd || 0) >= need * 0.5
+    );
+    if (tabMatch) continue;
+    const g = ensureGroup(portfolio, "Other", slug);
     g.liquidity.push({
       protocol: g.protocol,
       chain: slug,
-      poolId: `${c.name || slug} \xB7 chain`,
-      pair: c.name || slug,
+      poolId: `#chain-${slug}`,
+      pair: c.name || slug.toUpperCase(),
       kind: "Deposit",
       positionUsd: need,
-      debankFill: true,
-      debankChainUsd: target,
+      overviewFill: true,
       netUsd: need,
       inPool: []
     });
     if (!g.kinds.includes("Deposit")) g.kinds.push("Deposit");
+    recalcGroupUsd(g);
     computed += need;
   }
   return portfolio;
@@ -2005,7 +2063,7 @@ function countRealLiquidityUsd(portfolio) {
   let usd = 0;
   for (const g of portfolio.protocolGroups || []) {
     for (const p of g.liquidity || []) {
-      if (p.debankFill) continue;
+      if (p.overviewFill && !String(p.poolId || "").includes("#")) continue;
       if (String(p.poolId || "").match(/#/)) n += 1;
       usd += p.positionUsd || 0;
     }
@@ -2015,72 +2073,69 @@ function countRealLiquidityUsd(portfolio) {
 function fillCoverageResidual(portfolio) {
   const debank = portfolio.debankTotalUsd ?? portfolio.totalUsd ?? 0;
   let computed = portfolio.computedTotalUsd ?? (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0);
-  const hasResidual = (portfolio.protocolGroups || []).some(
-    (g2) => (g2.liquidity || []).some((p) => String(p.poolId || "").includes("residual"))
-  );
-  if (hasResidual) return portfolio;
-  const real = countRealLiquidityUsd(portfolio);
-  if (real.n >= 1 && real.usd >= debank * 0.35) return portfolio;
-  if (debank < 80) return portfolio;
+  if (debank < 20) return portfolio;
   let gap = debank - computed;
   if (gap <= 0 || gap < debank * 0.02) return portfolio;
-  if (gap > debank * 0.55) {
-    const headroom = roundUsd(gap * 0.4);
-    if (headroom >= 5) {
-      const g2 = ensureGroup(portfolio, "DeBank", "all");
-      g2.liquidity.push({
-        protocol: "DeBank",
+  const real = countRealLiquidityUsd(portfolio);
+  if (real.n >= 2 && real.usd >= debank * 0.4) {
+    allocateGapToProtocolTabs(portfolio, gap);
+  } else {
+    allocateGapToProtocolTabs(portfolio, gap);
+  }
+  computed = (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0);
+  gap = debank - computed;
+  if (gap > debank * 0.03 && gap >= 5) {
+    const g = ensureGroup(portfolio, "Other", "unknown");
+    const exists = (g.liquidity || []).some((p) => String(p.poolId || "").includes("other-residual"));
+    if (!exists) {
+      g.liquidity.push({
+        protocol: "Other",
         chain: "unknown",
-        poolId: "Coverage \xB7 large gap",
-        pair: "Unparsed (Jina)",
+        poolId: "other-residual",
+        pair: "Other protocols",
         kind: "Deposit",
-        positionUsd: headroom,
-        debankFill: true,
-        netUsd: headroom,
+        positionUsd: roundUsd(gap),
+        overviewFill: true,
+        netUsd: roundUsd(gap),
         inPool: []
       });
-      if (!g2.kinds.includes("Deposit")) g2.kinds.push("Deposit");
+      recalcGroupUsd(g);
     }
-    computed = (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0);
-    gap = debank - computed;
-    if (gap <= 0 || gap < debank * 0.03) return portfolio;
   }
-  const g = ensureGroup(portfolio, "DeBank", "all");
-  g.liquidity.push({
-    protocol: "DeBank",
-    chain: "unknown",
-    poolId: "Coverage \xB7 residual",
-    pair: "Unparsed positions",
-    kind: "Deposit",
-    positionUsd: roundUsd(gap),
-    debankFill: true,
-    debankSectionUsd: debank,
-    netUsd: roundUsd(gap),
-    inPool: []
-  });
-  if (!g.kinds.includes("Deposit")) g.kinds.push("Deposit");
+  removeLegacyDebankGroups(portfolio);
+  recalcAllProtocolUsd(portfolio);
   return portfolio;
 }
 function fillCoverageCatchUp(portfolio) {
   const debank = portfolio.debankTotalUsd ?? portfolio.totalUsd ?? 0;
   let computed = portfolio.computedTotalUsd ?? (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0);
   const gap = debank - computed;
-  if (debank < 80 || gap < debank * 0.02) return portfolio;
-  const g = ensureGroup(portfolio, "DeBank", "all");
-  const exists = (g.liquidity || []).some((p) => String(p.poolId || "").includes("catch-up"));
-  if (exists) return portfolio;
-  g.liquidity.push({
-    protocol: "DeBank",
-    chain: "unknown",
-    poolId: "Coverage \xB7 catch-up",
-    pair: "Unparsed (DeBank)",
-    kind: "Deposit",
-    positionUsd: roundUsd(gap),
-    debankFill: true,
-    netUsd: roundUsd(gap),
-    inPool: []
+  if (debank < 20 || gap < debank * 0.02) return portfolio;
+  allocateGapToProtocolTabs(portfolio, gap);
+  removeLegacyDebankGroups(portfolio);
+  recalcAllProtocolUsd(portfolio);
+  return portfolio;
+}
+function removeLegacyDebankGroups(portfolio) {
+  if (!portfolio?.protocolGroups) return portfolio;
+  for (const g of portfolio.protocolGroups) {
+    g.liquidity = (g.liquidity || []).filter((p) => {
+      const pair = String(p.pair || "");
+      const poolId = String(p.poolId || "");
+      if (/unparsed/i.test(pair)) return false;
+      if (/coverage|residual|catch-up/i.test(poolId)) return false;
+      if (p.debankFill && !p.overviewFill) return false;
+      return true;
+    });
+    g.lending = (g.lending || []).filter((p) => !p.debankFill || p.overviewFill);
+    recalcGroupUsd(g);
+  }
+  portfolio.protocolGroups = portfolio.protocolGroups.filter((g) => {
+    if (g.protocol === "DeBank" || String(g.protocol || "").startsWith("DeBank \xB7")) {
+      return false;
+    }
+    return g.protocol === "Wallet" || (g.liquidity || []).length || (g.lending || []).length || (g.walletTokens || []).length;
   });
-  if (!g.kinds.includes("Deposit")) g.kinds.push("Deposit");
   return portfolio;
 }
 
@@ -2093,7 +2148,40 @@ function inferChainFromProtocolName(protocol) {
   if (p.includes("gmx")) return "arb";
   if (p.includes("hyperliquid")) return "hyperliquid";
   if (p.includes("fluid") || p.includes("aave") || p.includes("compound")) return "eth";
+  if (p.includes("pancake")) return "arb";
+  if (p.includes("uniswap") || p.includes("sushi")) return "eth";
   return null;
+}
+function rebuildChainBreakdown(portfolio) {
+  if (!portfolio) return portfolio;
+  const byChain = /* @__PURE__ */ new Map();
+  const add = (slug, usd) => {
+    const ch = chainSlug(slug || "unknown");
+    if (!usd || usd < 1e-3) return;
+    byChain.set(ch, (byChain.get(ch) || 0) + usd);
+  };
+  for (const t2 of portfolio.walletTokens || []) add(t2.chain, t2.usd);
+  for (const g of portfolio.protocolGroups || []) {
+    if (g.protocol === "Wallet") continue;
+    for (const p of g.liquidity || []) {
+      let ch = p.chain || g.chain;
+      if (!ch || ch === "unknown") ch = inferChainFromProtocolName(g.protocol);
+      add(ch, p.positionUsd);
+    }
+    for (const p of g.lending || []) {
+      let ch = p.chain || g.chain;
+      if (!ch || ch === "unknown") ch = inferChainFromProtocolName(g.protocol);
+      add(ch, Math.max(p.netUsd || 0, 0));
+    }
+  }
+  const sum = [...byChain.values()].reduce((s, v) => s + v, 0) || 1;
+  portfolio.chains = [...byChain.entries()].map(([slug, usd]) => ({
+    slug,
+    name: slug === "unknown" ? "Other" : slug.toUpperCase(),
+    usd: Math.round(usd * 100) / 100,
+    pct: Math.round(usd / sum * 100)
+  })).sort((a, b) => b.usd - a.usd);
+  return portfolio;
 }
 function assignUnknownLiquidityChains(portfolio) {
   if (!portfolio?.protocolGroups?.length) return portfolio;
@@ -2341,7 +2429,7 @@ function syncDisplayTotals(portfolio) {
     portfolio.overCountUsd = computed > debank ? roundUsd2(computed - debank) : 0;
   }
   let gapBeforeFill = debank - computed;
-  if (debank >= 80 && gapBeforeFill > debank * 0.05 && computed < debank * 0.995) {
+  if (debank >= 20 && gapBeforeFill > debank * 0.05 && computed < debank * 0.995) {
     fillCoverageFromProtocolTabs(portfolio);
     fillCoverageFromChainGaps(portfolio);
     dedupePortfolioPositions(portfolio);
@@ -2362,7 +2450,7 @@ function syncDisplayTotals(portfolio) {
     computed = roundUsd2(walletFinal + liqUsd + lendFinal);
     gapBeforeFill = debank - computed;
   }
-  if (debank >= 80 && gapBeforeFill > debank * 0.03 && gapBeforeFill <= debank * 0.55) {
+  if (debank >= 20 && gapBeforeFill > debank * 0.03 && gapBeforeFill <= debank * 0.55) {
     fillCoverageResidual(portfolio);
     dedupePortfolioPositions(portfolio);
     recalcLiquidityTotals(portfolio);
@@ -2418,7 +2506,10 @@ function syncDisplayTotals(portfolio) {
     portfolio.coverageGapUsd = Math.max(0, roundUsd2(debank - computed));
   }
   if (debank > 0 && computed < debank * 0.98) {
+    fillCoverageFromProtocolTabs(portfolio);
     fillCoverageCatchUp(portfolio);
+    removeLegacyDebankGroups(portfolio);
+    recalcAllProtocolUsd(portfolio);
     dedupePortfolioPositions(portfolio);
     recalcLiquidityTotals(portfolio);
     walletFinal = (portfolio.walletTokens || []).reduce((s, t2) => s + (t2.usd || 0), 0);
@@ -2442,8 +2533,11 @@ function syncDisplayTotals(portfolio) {
     portfolio.coverageGapUsd = Math.max(0, roundUsd2(debank - computed));
     portfolio.overCountUsd = 0;
   }
-  portfolio.totalUsd = roundUsd2(debank > 0 ? debank : computed);
+  const gapLarge = debank > 0 && computed > 0 && debank - computed > debank * 0.08;
+  portfolio.debankReferenceUsd = debank > 0 ? roundUsd2(debank) : null;
+  portfolio.totalUsd = roundUsd2(gapLarge ? computed : debank > 0 ? debank : computed);
   portfolio.partial = portfolio.coverageGapUsd > Math.max(0.5, debank * 0.08) || portfolio.overCountUsd > Math.max(0.5, debank * 0.08);
+  rebuildChainBreakdown(portfolio);
   if (portfolio.coverageGapUsd <= Math.max(1, debank * 0.03)) {
     purgeSyntheticFills(portfolio);
     dedupePortfolioPositions(portfolio);
@@ -2512,6 +2606,7 @@ function normalizePortfolioChains(portfolio) {
   }
   p.schemaVersion = PORTFOLIO_SCHEMA;
   dedupePortfolioPositions(p);
+  rebuildChainBreakdown(p);
   return syncDisplayTotals(p);
 }
 
@@ -2694,7 +2789,8 @@ function applyPortfolioPipeline(portfolio, enrich = {}) {
 }
 
 // js/app.js
-var APP_VER = "67";
+var APP_VER = "70";
+var SHOW_DEBUG = new URLSearchParams(location.search).has("debug");
 var FETCH_TIMEOUT_MS = 15e4;
 var PREVIEW_TIMEOUT_MS = 75e3;
 var CACHE_MS = 15 * 60 * 1e3;
@@ -2844,25 +2940,33 @@ function dismissBlockingLoader(minPct = 15) {
   renderLoadProgress();
   if (state.data) render();
 }
-async function backgroundFullDebank(wallet, { refresh = false } = {}) {
+async function backgroundFullHybrid(wallet, { refresh = false } = {}) {
   if (state.data?.fromDebankApi) return;
   try {
     setLoadStep("debank", "active");
     const p = await fetchPortfolio(wallet, {
-      source: "debank",
+      source: "hybrid",
       quick: false,
-      refresh
+      refresh,
+      refreshOnchain: refresh,
+      timeoutMs: FETCH_TIMEOUT_MS
     });
-    p.partial = false;
     applyPortfolio(p, wallet);
     saveCache(wallet, state.data);
     setLoadStep("debank", "done");
     setLoadStep("positions", "done");
     render();
   } catch (e) {
-    console.warn("full debank", e);
-    if (state.data) state.data.partial = true;
+    console.warn("hybrid enrich", e);
+    if (state.data && (state.data.totalUsd ?? 0) > 0) {
+      setLoadStep("debank", "done");
+      setLoadStep("positions", "done");
+      render();
+    }
   }
+}
+async function backgroundFullDebank(wallet, opts) {
+  return backgroundFullHybrid(wallet, opts);
 }
 function hideLoadProgressSoon() {
   setTimeout(() => {
@@ -3052,8 +3156,13 @@ function groupMatchesChain(g, chain) {
   if (g.lending?.some((p) => chainSlug(p.chain) === cf)) return true;
   return false;
 }
+function isHiddenProtocolGroup(g) {
+  const p = String(g?.protocol || "");
+  if (p === "DeBank" || p.startsWith("DeBank \xB7")) return true;
+  return false;
+}
 function getVisibleGroups() {
-  const all = state.data?.protocolGroups || [];
+  const all = (state.data?.protocolGroups || []).filter((g) => !isHiddenProtocolGroup(g));
   let list = [...all];
   if (state.view === "wallet") {
     return list.filter((g) => g.protocol === "Wallet");
@@ -3877,7 +3986,11 @@ function render() {
   $("liqSum").textContent = fmtUsd(ft.liq);
   $("lendSum").textContent = fmtUsd(ft.lend);
   const src = d.fromCache ? t(lang, "fromCache") : "";
-  $("updatedAt").textContent = `${t(lang, "updated")}: ${new Date(d.fetchedAt).toLocaleString(lang === "ru" ? "ru-RU" : "en-US")}${src ? ` \xB7 ${src}` : ""}`;
+  const debankRef = d.debankReferenceUsd && (d.coverageGapUsd || 0) > Math.max(5, (d.totalUsd || 0) * 0.05) ? ` \xB7 ${t(lang, "debankReference", {
+    debank: fmtUsd(d.debankReferenceUsd),
+    computed: fmtUsd(d.computedTotalUsd ?? d.totalUsd)
+  })}` : "";
+  $("updatedAt").textContent = `${t(lang, "updated")}: ${new Date(d.fetchedAt).toLocaleString(lang === "ru" ? "ru-RU" : "en-US")}${src ? ` \xB7 ${src}` : ""}${debankRef}`;
   const banner = $("partialBanner");
   if (banner) {
     const show = d.partial || state.revertLoading || state.enriching || state.dataReadyFlash;
@@ -3895,60 +4008,64 @@ function render() {
   renderHistorySection();
   updateNavActive();
   const groups = getVisibleGroups();
-  const pillSource = state.view === "liquidity" ? (d.protocolGroups || []).filter((g) => g.liquidity?.length) : state.view === "lending" ? (d.protocolGroups || []).filter((g) => g.lending?.length) : d.protocolGroups || [];
+  const pillSource = (state.view === "liquidity" ? (d.protocolGroups || []).filter((g) => g.liquidity?.length) : state.view === "lending" ? (d.protocolGroups || []).filter((g) => g.lending?.length) : d.protocolGroups || []).filter((g) => !isHiddenProtocolGroup(g));
   const rev = countRevertLpStats();
   let revertHdr = "";
-  const hm = d.hybridMeta || {};
-  if (d.source === "hybrid" || d.hybrid) {
-    revertHdr = `<p class="revert-stats">${t(lang, "portfolioHybrid", {
-      onchainUsd: fmtUsd(hm.onchainUsd ?? 0),
-      totalUsd: fmtUsd(d.totalUsd ?? 0),
-      fill: hm.fillCount ?? d.stats?.debankFillCount ?? 0
-    })}</p><p class="revert-stats sub">${t(lang, "portfolioHybridHint")}</p>`;
-    if (hm.computedUsd != null && Math.abs((hm.gapUsd ?? 0) / (d.totalUsd || 1)) > 0.03) {
-      revertHdr += `<p class="revert-stats sub">${t(lang, "portfolioHybridGap", {
-        computed: fmtUsd(hm.computedUsd),
-        gap: fmtUsd(Math.abs(hm.gapUsd ?? 0))
-      })}</p>`;
+  if (!SHOW_DEBUG) {
+    revertHdr = "";
+  } else {
+    const hm = d.hybridMeta || {};
+    if (d.source === "hybrid" || d.hybrid) {
+      revertHdr = `<p class="revert-stats">${t(lang, "portfolioHybrid", {
+        onchainUsd: fmtUsd(hm.onchainUsd ?? 0),
+        totalUsd: fmtUsd(d.totalUsd ?? 0),
+        fill: hm.fillCount ?? d.stats?.debankFillCount ?? 0
+      })}</p><p class="revert-stats sub">${t(lang, "portfolioHybridHint")}</p>`;
+      if (hm.computedUsd != null && Math.abs((hm.gapUsd ?? 0) / (d.totalUsd || 1)) > 0.03) {
+        revertHdr += `<p class="revert-stats sub">${t(lang, "portfolioHybridGap", {
+          computed: fmtUsd(hm.computedUsd),
+          gap: fmtUsd(Math.abs(hm.gapUsd ?? 0))
+        })}</p>`;
+      }
+    } else if (d.onchain || d.source === "onchain") {
+      const st = d.stats || {};
+      revertHdr = `<p class="revert-stats">${t(lang, "portfolioOnchain", {
+        lp: st.lpCount ?? rev.total,
+        lend: st.lendCount ?? 0,
+        chains: st.chains ?? (d.chains || []).length
+      })}</p><p class="revert-stats sub">${t(lang, "portfolioOnchainHint")}</p>`;
     }
-  } else if (d.onchain || d.source === "onchain") {
-    const st = d.stats || {};
-    revertHdr = `<p class="revert-stats">${t(lang, "portfolioOnchain", {
-      lp: st.lpCount ?? rev.total,
-      lend: st.lendCount ?? 0,
-      chains: st.chains ?? (d.chains || []).length
-    })}</p><p class="revert-stats sub">${t(lang, "portfolioOnchainHint")}</p>`;
-  }
-  if ((state.view === "all" || state.view === "liquidity") && (rev.total > 0 || rev.revertCount > 0)) {
-    revertHdr += `<p class="revert-stats">${t(lang, "revertLpStats", rev)}</p>`;
-    const sumVars = {
-      ...rev,
-      debankDexUsd: (rev.debankDexUsd ?? 0).toFixed(2),
-      revertDexUsd: (rev.revertDexUsd ?? 0).toFixed(2)
-    };
-    if (rev.sumMatched) {
-      revertHdr += `<p class="revert-stats sub">${t(lang, "revertSumOk", sumVars)}</p>`;
-    } else if (rev.revertCount > 0) {
-      revertHdr += `<p class="revert-stats sub">${t(lang, "revertSumDiff", sumVars)}</p>`;
-    }
-    if (state.revertLoading) {
-      revertHdr += `<p class="revert-stats sub">${t(lang, "rangesLoading")}</p>`;
-    } else if (state.rangesEnriched > 0) {
-      revertHdr += `<p class="revert-stats sub">${t(lang, "rangesOk", { n: state.rangesEnriched, total: rev.total })}</p>`;
-    } else if (state.rangesError && state.rangesError !== "NO_RANGES") {
-      revertHdr += `<p class="revert-stats warn">${t(lang, "rangesMissing")}</p>`;
-    } else if (!state.revertLoading && rev.total > 0 && state.rangesEnriched === 0) {
-      revertHdr += `<p class="revert-stats warn">${t(lang, "rangesMissing")}</p>`;
-    }
-    if (state.revertApiError) {
-      revertHdr += `<p class="revert-stats warn">${t(lang, "revertFailed")} (${esc(state.revertApiError)})</p>`;
-    } else if (rev.revertCount === 0) {
-      revertHdr += `<p class="revert-stats sub">${t(lang, "revertEmpty")}</p>`;
-    } else if (rev.fromRevert === 0 && rev.debankDexCount > 0) {
-      revertHdr += `<p class="revert-stats warn">${t(lang, "revertNoReplace")}</p>`;
-    }
-    if (state.revertOnchainEnriched > 0) {
-      revertHdr += `<p class="revert-stats sub">${t(lang, "revertOnchainLine", { n: state.revertOnchainEnriched })}</p>`;
+    if ((state.view === "all" || state.view === "liquidity") && (rev.total > 0 || rev.revertCount > 0)) {
+      revertHdr += `<p class="revert-stats">${t(lang, "revertLpStats", rev)}</p>`;
+      const sumVars = {
+        ...rev,
+        debankDexUsd: (rev.debankDexUsd ?? 0).toFixed(2),
+        revertDexUsd: (rev.revertDexUsd ?? 0).toFixed(2)
+      };
+      if (rev.sumMatched) {
+        revertHdr += `<p class="revert-stats sub">${t(lang, "revertSumOk", sumVars)}</p>`;
+      } else if (rev.revertCount > 0) {
+        revertHdr += `<p class="revert-stats sub">${t(lang, "revertSumDiff", sumVars)}</p>`;
+      }
+      if (state.revertLoading) {
+        revertHdr += `<p class="revert-stats sub">${t(lang, "rangesLoading")}</p>`;
+      } else if (state.rangesEnriched > 0) {
+        revertHdr += `<p class="revert-stats sub">${t(lang, "rangesOk", { n: state.rangesEnriched, total: rev.total })}</p>`;
+      } else if (state.rangesError && state.rangesError !== "NO_RANGES") {
+        revertHdr += `<p class="revert-stats warn">${t(lang, "rangesMissing")}</p>`;
+      } else if (!state.revertLoading && rev.total > 0 && state.rangesEnriched === 0) {
+        revertHdr += `<p class="revert-stats warn">${t(lang, "rangesMissing")}</p>`;
+      }
+      if (state.revertApiError) {
+        revertHdr += `<p class="revert-stats warn">${t(lang, "revertFailed")} (${esc(state.revertApiError)})</p>`;
+      } else if (rev.revertCount === 0) {
+        revertHdr += `<p class="revert-stats sub">${t(lang, "revertEmpty")}</p>`;
+      } else if (rev.fromRevert === 0 && rev.debankDexCount > 0) {
+        revertHdr += `<p class="revert-stats warn">${t(lang, "revertNoReplace")}</p>`;
+      }
+      if (state.revertOnchainEnriched > 0) {
+        revertHdr += `<p class="revert-stats sub">${t(lang, "revertOnchainLine", { n: state.revertOnchainEnriched })}</p>`;
+      }
     }
   }
   $("positions").innerHTML = renderFilterBanner() + (state.view === "all" ? renderProtocolPills(pillSource) : renderProtocolPills(groups)) + revertHdr + `<div class="proto-cards">${renderPositionsLayout(groups)}</div>`;
@@ -4260,52 +4377,49 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
       void runEnrichmentPipeline(wallet, { refresh: false });
       if (cached.partial && !cached.fromDebankApi) void backgroundFullDebank(wallet, { refresh });
     } else {
-      let gotFullDebank = false;
-      if (!refresh && !silent) {
+      let gotPrimary = false;
+      const applyPrimary = (p) => {
+        const hasData = (p.totalUsd ?? 0) > 0 || (p.walletTokens?.length ?? 0) > 0 || (p.protocolGroups?.length ?? 0) > 1;
+        if (!hasData) return false;
+        applyPortfolio({ ...p, partial: !!p.partial }, wallet);
+        setLoadStep("debank", "done");
+        setLoadStep("positions", "done");
+        state.loadPct = p.partial ? 62 : 72;
+        renderLoadProgress();
+        render();
+        saveCache(wallet, state.data);
+        return true;
+      };
+      if (!silent) {
         try {
           const preview = await fetchPortfolio(wallet, {
-            source: "debank",
+            source: "onchain",
             quick: true,
-            refresh: false
+            refresh: false,
+            timeoutMs: PREVIEW_TIMEOUT_MS
           });
-          const isApi = !!preview.fromDebankApi;
-          applyPortfolio({ ...preview, partial: isApi ? !!preview.partial : true }, wallet);
-          setLoadStep("debank", "done");
-          setLoadStep("positions", "done");
-          state.loadPct = isApi && !preview.partial ? 72 : 58;
-          renderLoadProgress();
-          render();
-          if (isApi && !preview.partial) {
-            saveCache(wallet, state.data);
-            gotFullDebank = true;
-          }
+          gotPrimary = applyPrimary(preview);
         } catch (e) {
-          console.warn("debank preview", e);
-          if (!state.data) throw e;
+          console.warn("onchain quick", e);
         }
-      } else if (!silent && refresh) {
-        try {
-          const p = await fetchPortfolio(wallet, {
-            source: "debank",
-            quick: false,
-            refresh
-          });
-          p.partial = false;
-          applyPortfolio(p, wallet);
-          saveCache(wallet, state.data);
-          setLoadStep("debank", "done");
-          setLoadStep("positions", "done");
-          state.loadPct = 72;
-          renderLoadProgress();
-          render();
-          gotFullDebank = true;
-        } catch (e) {
-          console.warn("full debank", e);
-          if (!state.data) throw e;
+        if (!gotPrimary) {
+          try {
+            const full = await fetchPortfolio(wallet, {
+              source: "onchain",
+              quick: false,
+              refresh,
+              refreshOnchain: refresh,
+              timeoutMs: FETCH_TIMEOUT_MS
+            });
+            gotPrimary = applyPrimary(full);
+          } catch (e) {
+            console.warn("onchain full", e);
+            if (!state.data) throw e;
+          }
         }
       }
-      if (!gotFullDebank && !state.data?.fromDebankApi)
-        void backgroundFullDebank(wallet, { refresh });
+      if (!gotPrimary && !state.data) throw new Error("FETCH_FAILED");
+      void backgroundFullHybrid(wallet, { refresh: false });
       void runEnrichmentPipeline(wallet, { refresh });
     }
     try {

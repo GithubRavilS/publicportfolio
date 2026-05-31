@@ -14,7 +14,13 @@ const JINA_HEADERS = {
 const PRIORITY_CHAINS = ["arb", "base", "op", "eth", "matic", "bsc", "hyperliquid"];
 const MAX_CHAINS = Number(process.env.PT_MAX_CHAINS) || 8;
 const JINA_TIMEOUT = Number(process.env.PT_JINA_TIMEOUT_MS) || 55000;
-const CHAIN_BATCH = Number(process.env.PT_CHAIN_BATCH) || 3;
+const CHAIN_BATCH = Number(process.env.PT_CHAIN_BATCH) || 2;
+const JINA_PAUSE_MS = Number(process.env.PT_JINA_PAUSE_MS) || 0;
+const JINA_RETRIES = Number(process.env.PT_JINA_RETRIES) || 3;
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 /** @param {string} wallet @param {string|null} chain */
 export function debankPageUrl(wallet, chain = null) {
@@ -24,18 +30,26 @@ export function debankPageUrl(wallet, chain = null) {
 
 /** @param {string} pageUrl @param {number} timeoutMs */
 export async function fetchJinaMarkdown(pageUrl, timeoutMs = JINA_TIMEOUT) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const r = await fetch(`https://r.jina.ai/${pageUrl}`, {
-      headers: JINA_HEADERS,
-      signal: ctrl.signal,
-    });
-    if (!r.ok) throw new Error(`JINA_${r.status}`);
-    return await r.text();
-  } finally {
-    clearTimeout(t);
+  let lastErr;
+  for (let attempt = 1; attempt <= JINA_RETRIES; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(`https://r.jina.ai/${pageUrl}`, {
+        headers: JINA_HEADERS,
+        signal: ctrl.signal,
+      });
+      if (r.status === 429) throw new Error("JINA_429");
+      if (!r.ok) throw new Error(`JINA_${r.status}`);
+      return await r.text();
+    } catch (e) {
+      lastErr = e;
+      if (attempt < JINA_RETRIES) await sleep(2000 * attempt);
+    } finally {
+      clearTimeout(t);
+    }
   }
+  throw lastErr || new Error("JINA_FAIL");
 }
 
 function chainsFromMain(mainText) {
@@ -65,6 +79,9 @@ async function fetchChainsBatched(wallet, chainSlugs) {
     );
     for (const r of results) {
       if (r) chainTexts[r.chain] = r.text;
+    }
+    if (JINA_PAUSE_MS > 0 && i + CHAIN_BATCH < chainSlugs.length) {
+      await sleep(JINA_PAUSE_MS);
     }
   }
   return chainTexts;

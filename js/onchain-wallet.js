@@ -1,103 +1,69 @@
-import { CHAINS, CHAIN_IDS, NATIVE_SYMBOL, SCAN_CHAINS } from "./onchain-registry.js";
-import { rpcForChain, etherscanKey } from "./onchain-rpc.js";
+import { CHAINS, NATIVE_SYMBOL, SCAN_CHAINS } from "./onchain-registry.js";
+import { rpcForChain } from "./onchain-rpc.js";
 import { fetchPricesUsd, usdValue } from "./onchain-prices.js";
 import { fetchExplorerWalletTokens } from "./explorer-scrape.js";
+import {
+  chainSupported,
+  etherscanEnabled,
+  fetchWalletTokensEtherscan,
+  ETHERSCAN_FREE_CHAINS,
+} from "./etherscan-api.js";
 
-const SEL = {
-  balanceOf: "0x70a08231",
-  decimals: "0x313ce567",
-  symbol: "0x95d89b41",
-};
-
-function padAddr(addr) {
-  return addr.slice(2).toLowerCase().padStart(64, "0");
-}
-
-async function etherscanTokenBalances(chain, wallet) {
-  const key = etherscanKey(chain) || etherscanKey("default");
-  const chainId = CHAIN_IDS[chain];
-  if (!key || !chainId) return [];
-
-  const url = new URL("https://api.etherscan.io/v2/api");
-  url.searchParams.set("chainid", String(chainId));
-  url.searchParams.set("module", "account");
-  url.searchParams.set("action", "addresstokenbalance");
-  url.searchParams.set("address", wallet);
-  url.searchParams.set("page", "1");
-  url.searchParams.set("offset", "100");
-  url.searchParams.set("apikey", key);
-
+async function rpcNativeOnly(chain, wallet) {
+  const out = [];
+  if (!CHAINS[chain]?.scan) return out;
+  const rpc = rpcForChain(chain);
+  const nativeSym = NATIVE_SYMBOL[chain] || "ETH";
   try {
-    const r = await fetch(url.toString());
-    const j = await r.json();
-    if (j.status !== "1" || !Array.isArray(j.result)) return [];
-    return j.result
-      .map((row) => ({
-        address: String(row.TokenAddress || "").toLowerCase(),
-        symbol: String(row.TokenSymbol || "").toUpperCase(),
-        amount: Number(row.TokenQuantity || 0) / 10 ** Number(row.TokenDivisor || 18),
-        chain,
-      }))
-      .filter((t) => t.amount > 1e-12);
-  } catch {
-    return [];
-  }
-}
-
-async function readErc20Meta(rpc, address) {
-  const dec = parseInt(await rpc.ethCall(address, SEL.decimals), 16) || 18;
-  let symbol = "???";
-  try {
-    const symHex = await rpc.ethCall(address, SEL.symbol);
-    if (symHex?.length > 130) {
-      const len = parseInt(symHex.slice(66, 130), 16);
-      symbol = Buffer.from(symHex.slice(130, 130 + len * 2), "hex")
-        .toString("utf8")
-        .replace(/\0/g, "")
-        .toUpperCase();
+    const wei = await rpc.nativeBalance(wallet);
+    const amount = Number(wei) / 1e18;
+    if (amount > 1e-9) {
+      out.push({ symbol: nativeSym, amount, chain, address: "native", source: "rpc" });
     }
   } catch {
     /* */
   }
-  return { address, decimals: dec, symbol };
+  return out;
+}
+
+async function scanWalletOnChain(chain, wallet) {
+  const w = wallet.toLowerCase();
+
+  if (etherscanEnabled() && chainSupported(chain)) {
+    try {
+      return await fetchWalletTokensEtherscan(chain, w);
+    } catch (e) {
+      if (String(e.message || e).includes("ETHERSCAN_DAILY_LIMIT")) throw e;
+    }
+  }
+
+  let out = await rpcNativeOnly(chain, w);
+  if (!out.length) {
+    try {
+      out = await fetchExplorerWalletTokens(chain, w);
+    } catch {
+      /* */
+    }
+  }
+  return out;
 }
 
 export async function scanWalletBalances(wallet, chains = SCAN_CHAINS) {
   const w = wallet.toLowerCase();
-  const tokens = [];
   const symbols = new Set();
 
-  for (const chain of chains) {
-    if (!CHAINS[chain]?.scan) continue;
-    const rpc = rpcForChain(chain);
-    const nativeSym = NATIVE_SYMBOL[chain] || "ETH";
-    symbols.add(nativeSym);
+  // Etherscan: последовательно (глобальная очередь 3 rps), остальные сети — параллельно RPC/Jina
+  const esChains = chains.filter((c) => etherscanEnabled() && ETHERSCAN_FREE_CHAINS.has(c));
+  const otherChains = chains.filter((c) => !esChains.includes(c));
 
-    try {
-      const wei = await rpc.nativeBalance(w);
-      const amount = Number(wei) / 1e18;
-      if (amount > 1e-9) {
-        tokens.push({
-          symbol: nativeSym,
-          amount,
-          chain,
-          address: "native",
-        });
-      }
-    } catch {
-      /* */
-    }
-
-    let fromApi = await etherscanTokenBalances(chain, w);
-    if (!fromApi.length) {
-      fromApi = await fetchExplorerWalletTokens(chain, w);
-    }
-    for (const t of fromApi) {
-      if (t.amount > 1e9) continue;
-      symbols.add(t.symbol);
-      tokens.push(t);
-    }
+  const esResults = [];
+  for (const chain of esChains) {
+    esResults.push(await scanWalletOnChain(chain, w));
   }
+  const otherResults = await Promise.all(otherChains.map((chain) => scanWalletOnChain(chain, w)));
+
+  const tokens = [...esResults, ...otherResults].flat();
+  for (const t of tokens) symbols.add(t.symbol);
 
   const prices = await fetchPricesUsd([...symbols]);
   const walletTokens = tokens
@@ -109,9 +75,16 @@ export async function scanWalletBalances(wallet, chains = SCAN_CHAINS) {
         amount: t.amount.toFixed(t.amount < 1 ? 6 : 4),
         usd,
         chain: t.chain,
+        address: t.address,
+        source: t.source || "onchain",
       };
     })
-    .filter((t) => (t.usd || 0) < 500_000);
+    .filter((t) => {
+      const usd = t.usd || 0;
+      if (usd >= 500_000) return false;
+      if (usd > 8_000 && (t.source === "rpc" || t.source === "explorer")) return false;
+      return true;
+    });
 
   const walletByChain = {};
   for (const t of walletTokens) {

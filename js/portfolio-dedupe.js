@@ -11,7 +11,8 @@ function roundUsd(n) {
 /** Синтетический добор DeBank (не реальная LP-позиция). */
 export function isSyntheticLiquidityRow(p, protocol) {
   if (!p) return true;
-  if (p.debankFill && p.debankSectionUsd) return false;
+  if (p.overviewFill) return false;
+  if (p.debankFill) return true;
   const proto = String(protocol || "");
   if (proto.startsWith("DeBank ·") || proto === "DeBank") return true;
   const poolId = String(p.poolId || "");
@@ -19,9 +20,9 @@ export function isSyntheticLiquidityRow(p, protocol) {
   const pair = String(p.pair || "").trim();
   if (/unparsed/i.test(pair)) return true;
   const ch = chainSlug(p.chain || "");
-  if (p.kind === "Deposit" && pair && ch && pair.toLowerCase() === ch) return true;
-  if (p.debankFill) return true;
-  if (pair && (pair === protocol || pair.toLowerCase() === ch)) return true;
+  if (p.kind === "Deposit" && pair && ch && pair.toLowerCase() === ch && !p.overviewFill)
+    return true;
+  if (pair && !p.overviewFill && (pair === protocol || pair.toLowerCase() === ch)) return true;
   return false;
 }
 
@@ -96,7 +97,7 @@ export function dedupeLendingPositions(portfolio) {
   const winners = new Map();
   for (const g of portfolio.protocolGroups) {
     for (const p of g.lending || []) {
-      if (p.debankFill) continue;
+      if (p.debankFill && !p.overviewFill) continue;
       const sk = lendingSoftKey(g.protocol, p);
       const prev = winners.get(sk);
       if (!prev) {
@@ -129,8 +130,11 @@ export function stripSyntheticDebankFills(portfolio) {
       g.protocolUsd = 0;
       continue;
     }
-    g.liquidity = (g.liquidity || []).filter((p) => !isSyntheticLiquidityRow(p, g.protocol));
-    g.lending = (g.lending || []).filter((p) => !p.debankFill);
+    g.liquidity = (g.liquidity || []).filter((p) => {
+      if (/^#\d+/.test(String(p.poolId || ""))) return true;
+      return !isSyntheticLiquidityRow(p, g.protocol);
+    });
+    g.lending = (g.lending || []).filter((p) => !p.debankFill || p.overviewFill);
   }
   portfolio.protocolGroups = portfolio.protocolGroups.filter(
     (g) =>
@@ -193,6 +197,9 @@ export function fixProtocolGroupChains(portfolio) {
       const freq = new Map();
       for (const c of chains) freq.set(c, (freq.get(c) || 0) + 1);
       g.chain = [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    }
+    if ((!g.chain || g.chain === "unknown") && /pancake/i.test(g.protocol || "")) {
+      g.chain = "arb";
     }
     for (const p of g.liquidity || []) {
       if (!p.chain || p.chain === "unknown") {

@@ -707,7 +707,7 @@ def build_hybrid_portfolio(
 ) -> dict:
     """DeBank + on-chain merge. На refresh обновляем on-chain и диапазоны LP."""
     onchain_portfolio: dict = {}
-    refresh_onchain = force_onchain or (not refresh)
+    refresh_onchain = force_onchain or bool(refresh)
 
     if refresh_onchain:
         try:
@@ -731,6 +731,15 @@ def build_hybrid_portfolio(
 
     if not onchain_portfolio and not debank_portfolio:
         raise ValueError("FETCH_FAILED")
+
+    if debank_portfolio and not is_portfolio_rich(debank_portfolio):
+        try:
+            debank_portfolio = fetch_debank_portfolio(
+                wallet, quick=False, refresh=True, show_small=show_small
+            )
+            save_portfolio_cache(wallet, debank_portfolio)
+        except Exception as ex:
+            _api_log(f"debank re-fetch for thin portfolio: {ex!s}")
 
     portfolio = run_hybrid_merge(onchain_portfolio, debank_portfolio)
     if refresh or force_onchain:
@@ -851,15 +860,18 @@ def save_onchain_portfolio_cache(wallet: str, portfolio: dict) -> None:
     )
 
 
-def run_onchain_portfolio(wallet: str) -> dict:
+def run_onchain_portfolio(wallet: str, *, quick: bool = False) -> dict:
     _guard_node_modules()
     runner = ROOT / "scripts" / "run-onchain-portfolio.mjs"
+    env = os.environ.copy()
+    if quick:
+        env["PT_QUICK"] = "1"
     proc = subprocess.run(
         [NODE_BIN, str(runner), wallet.lower()],
         capture_output=True,
         cwd=str(ROOT),
-        timeout=180,
-        env=os.environ.copy(),
+        timeout=90 if quick else 300,
+        env=env,
     )
     if proc.returncode != 0:
         err = proc.stderr.decode("utf-8", errors="replace")[:500]
@@ -898,16 +910,18 @@ def fetch_debank_portfolio_free(wallet: str, *, quick: bool, show_small: bool) -
         **os.environ,
         "PT_QUICK": "1" if quick else "0",
         "PT_SHOW_SMALL": "1" if show_small else "0",
-        "PT_JINA_TIMEOUT_MS": "22000",
-        "PT_MAX_CHAINS": "5",
+        "PT_JINA_TIMEOUT_MS": os.environ.get("PT_JINA_TIMEOUT_MS", "45000"),
+        "PT_MAX_CHAINS": os.environ.get("PT_MAX_CHAINS", "6"),
         "PT_CHAIN_BATCH": "2",
+        "PT_JINA_PAUSE_MS": os.environ.get("PT_JINA_PAUSE_MS", "2500"),
+        "PT_JINA_RETRIES": "4",
     }
     try:
         proc = subprocess.run(
             [NODE_BIN, str(runner), wallet.lower()],
             capture_output=True,
             cwd=str(ROOT),
-            timeout=40 if quick else 55,
+            timeout=50 if quick else 95,
             env=env,
         )
     except subprocess.TimeoutExpired as ex:
@@ -953,12 +967,14 @@ def fetch_debank_portfolio(wallet: str, *, quick: bool, refresh: bool, show_smal
         portfolio = fetch_debank_portfolio_free(wallet, quick=quick, show_small=show_small)
         if quick:
             portfolio = enrich_wallet_rpc(wallet, portfolio)
-        portfolio["partial"] = bool(
-            quick
-            or (portfolio.get("coverageGapUsd") or 0)
-            > max(1, (portfolio.get("debankTotalUsd") or 0) * 0.03)
-        )
-        return portfolio
+        if is_portfolio_rich(portfolio):
+            portfolio["partial"] = bool(
+                quick
+                or (portfolio.get("coverageGapUsd") or 0)
+                > max(1, (portfolio.get("debankTotalUsd") or 0) * 0.03)
+            )
+            return portfolio
+        _api_log(f"free debank thin for {wallet[:10]}, fallback scrape")
     except ValueError as ex:
         _api_log(f"free debank fallback to scrape: {ex!s}")
 
@@ -1182,10 +1198,10 @@ class Handler(SimpleHTTPRequestHandler):
                 self.wfile.write(body)
                 return
 
-            if use_onchain_only and not quick:
-                if not refresh:
+            if use_onchain_only:
+                if not refresh and not quick:
                     cached = load_onchain_portfolio_cache(wallet)
-                    if cached:
+                    if cached and (cached.get("totalUsd") or 0) > 0:
                         body = json.dumps(
                             {
                                 "ok": True,
@@ -1202,8 +1218,9 @@ class Handler(SimpleHTTPRequestHandler):
                         self.wfile.write(body)
                         return
                 try:
-                    portfolio = run_onchain_portfolio(wallet)
-                    save_onchain_portfolio_cache(wallet, portfolio)
+                    portfolio = run_onchain_portfolio(wallet, quick=quick)
+                    if not quick:
+                        save_onchain_portfolio_cache(wallet, portfolio)
                     body = json.dumps(
                         {
                             "ok": True,

@@ -16,10 +16,11 @@ export function loadConfig() {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8"));
     rpcConfig.rpc_urls = raw.rpc_urls || {};
-    rpcConfig.etherscan_keys =
-      raw.etherscan_keys || raw.etherscan_api_keys || raw.etherscan_api_key
-        ? { default: raw.etherscan_api_key, ...(raw.etherscan_keys || {}) }
-        : {};
+    const defaultKey = raw.etherscan_api_key || raw.etherscan_api_keys || "";
+    rpcConfig.etherscan_api_key = defaultKey;
+    rpcConfig.etherscan_keys = defaultKey
+      ? { default: defaultKey, ...(raw.etherscan_keys || {}) }
+      : { ...(raw.etherscan_keys || {}) };
   } catch {
     /* */
   }
@@ -135,5 +136,5 @@ export async function ethCallRotate(chain, to, data) {
 
 export function etherscanKey(chain) {
   const cfg = loadConfig();
-  return cfg.etherscan_keys?.[chain] || cfg.etherscan_keys?.default || "";
+  return cfg.etherscan_api_key || cfg.etherscan_keys?.[chain] || cfg.etherscan_keys?.default || "";
 }

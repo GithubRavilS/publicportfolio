@@ -69,20 +69,14 @@ async function erc20Decimals(rpc, token) {
   return parseInt(raw, 16) || 18;
 }
 
-export async function scanAaveLending(wallet, chains = SCAN_CHAINS) {
-  const w = wallet.toLowerCase();
-  const positions = [];
-  const symbols = new Set();
-
-  for (const chain of chains) {
-    const aave = CHAINS[chain]?.aave;
-    if (!aave?.pool) continue;
-    const rpc = rpcForChain(chain);
+async function scanOneAavePool(w, chain, aave, positions, symbols) {
+  if (!aave?.pool) return;
+  const rpc = rpcForChain(chain);
 
     let account;
     try {
       const raw = await rpc.ethCall(aave.pool, SEL_USER_ACCOUNT + padAddr(w));
-      if (!raw || raw.length < 64 * 6) continue;
+      if (!raw || raw.length < 64 * 6) return;
       const hex = raw.slice(2);
       account = {
         collateralBase: decodeUint(hex, 0),
@@ -90,10 +84,10 @@ export async function scanAaveLending(wallet, chains = SCAN_CHAINS) {
         healthFactor: Number(decodeUint(hex, 5)) / 1e18,
       };
     } catch {
-      continue;
+      return;
     }
 
-    if (account.collateralBase === 0n && account.debtBase === 0n) continue;
+    if (account.collateralBase === 0n && account.debtBase === 0n) return;
 
     const supplied = [];
     const borrowed = [];
@@ -159,6 +153,20 @@ export async function scanAaveLending(wallet, chains = SCAN_CHAINS) {
         source: "onchain",
       }),
     );
+}
+
+export async function scanAaveLending(wallet, chains = SCAN_CHAINS) {
+  const w = wallet.toLowerCase();
+  const positions = [];
+  const symbols = new Set();
+
+  for (const chain of chains) {
+    const cfg = CHAINS[chain];
+    if (!cfg) continue;
+    await scanOneAavePool(w, chain, cfg.aave, positions, symbols);
+    for (const extra of cfg.extraAave || []) {
+      await scanOneAavePool(w, chain, extra, positions, symbols);
+    }
   }
 
   return positions;

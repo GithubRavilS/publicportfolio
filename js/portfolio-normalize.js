@@ -10,6 +10,8 @@ import {
   fillCoverageFromProtocolTabs,
   fillCoverageFromChainGaps,
   fillCoverageCatchUp,
+  removeLegacyDebankGroups,
+  recalcAllProtocolUsd,
 } from "./portfolio-debank-fill.js";
 import { applyLendingMetrics } from "./lending-metrics.js";
 
@@ -22,7 +24,44 @@ function inferChainFromProtocolName(protocol) {
   if (p.includes("gmx")) return "arb";
   if (p.includes("hyperliquid")) return "hyperliquid";
   if (p.includes("fluid") || p.includes("aave") || p.includes("compound")) return "eth";
+  if (p.includes("pancake")) return "arb";
+  if (p.includes("uniswap") || p.includes("sushi")) return "eth";
   return null;
+}
+
+/** Цепочки из позиций (не из group.chain=unknown). */
+export function rebuildChainBreakdown(portfolio) {
+  if (!portfolio) return portfolio;
+  const byChain = new Map();
+  const add = (slug, usd) => {
+    const ch = chainSlug(slug || "unknown");
+    if (!usd || usd < 0.001) return;
+    byChain.set(ch, (byChain.get(ch) || 0) + usd);
+  };
+  for (const t of portfolio.walletTokens || []) add(t.chain, t.usd);
+  for (const g of portfolio.protocolGroups || []) {
+    if (g.protocol === "Wallet") continue;
+    for (const p of g.liquidity || []) {
+      let ch = p.chain || g.chain;
+      if (!ch || ch === "unknown") ch = inferChainFromProtocolName(g.protocol);
+      add(ch, p.positionUsd);
+    }
+    for (const p of g.lending || []) {
+      let ch = p.chain || g.chain;
+      if (!ch || ch === "unknown") ch = inferChainFromProtocolName(g.protocol);
+      add(ch, Math.max(p.netUsd || 0, 0));
+    }
+  }
+  const sum = [...byChain.values()].reduce((s, v) => s + v, 0) || 1;
+  portfolio.chains = [...byChain.entries()]
+    .map(([slug, usd]) => ({
+      slug,
+      name: slug === "unknown" ? "Other" : slug.toUpperCase(),
+      usd: Math.round(usd * 100) / 100,
+      pct: Math.round((usd / sum) * 100),
+    }))
+    .sort((a, b) => b.usd - a.usd);
+  return portfolio;
 }
 
 /** Quick DeBank: LP без сети — сопоставляем вкладки протокола с breakdown по chain. */
@@ -311,7 +350,7 @@ export function syncDisplayTotals(portfolio) {
   }
 
   let gapBeforeFill = debank - computed;
-  if (debank >= 80 && gapBeforeFill > debank * 0.05 && computed < debank * 0.995) {
+  if (debank >= 20 && gapBeforeFill > debank * 0.05 && computed < debank * 0.995) {
     fillCoverageFromProtocolTabs(portfolio);
     fillCoverageFromChainGaps(portfolio);
     dedupePortfolioPositions(portfolio);
@@ -332,7 +371,7 @@ export function syncDisplayTotals(portfolio) {
     computed = roundUsd(walletFinal + liqUsd + lendFinal);
     gapBeforeFill = debank - computed;
   }
-  if (debank >= 80 && gapBeforeFill > debank * 0.03 && gapBeforeFill <= debank * 0.55) {
+  if (debank >= 20 && gapBeforeFill > debank * 0.03 && gapBeforeFill <= debank * 0.55) {
     fillCoverageResidual(portfolio);
     dedupePortfolioPositions(portfolio);
     recalcLiquidityTotals(portfolio);
@@ -390,7 +429,10 @@ export function syncDisplayTotals(portfolio) {
   }
 
   if (debank > 0 && computed < debank * 0.98) {
+    fillCoverageFromProtocolTabs(portfolio);
     fillCoverageCatchUp(portfolio);
+    removeLegacyDebankGroups(portfolio);
+    recalcAllProtocolUsd(portfolio);
     dedupePortfolioPositions(portfolio);
     recalcLiquidityTotals(portfolio);
     walletFinal = (portfolio.walletTokens || []).reduce((s, t) => s + (t.usd || 0), 0);
@@ -415,10 +457,14 @@ export function syncDisplayTotals(portfolio) {
     portfolio.overCountUsd = 0;
   }
 
-  portfolio.totalUsd = roundUsd(debank > 0 ? debank : computed);
+  const gapLarge = debank > 0 && computed > 0 && debank - computed > debank * 0.08;
+  portfolio.debankReferenceUsd = debank > 0 ? roundUsd(debank) : null;
+  portfolio.totalUsd = roundUsd(gapLarge ? computed : debank > 0 ? debank : computed);
   portfolio.partial =
     portfolio.coverageGapUsd > Math.max(0.5, debank * 0.08) ||
     portfolio.overCountUsd > Math.max(0.5, debank * 0.08);
+
+  rebuildChainBreakdown(portfolio);
 
   if (portfolio.coverageGapUsd <= Math.max(1, debank * 0.03)) {
     purgeSyntheticFills(portfolio);
@@ -497,5 +543,6 @@ export function normalizePortfolioChains(portfolio) {
 
   p.schemaVersion = PORTFOLIO_SCHEMA;
   dedupePortfolioPositions(p);
+  rebuildChainBreakdown(p);
   return syncDisplayTotals(p);
 }

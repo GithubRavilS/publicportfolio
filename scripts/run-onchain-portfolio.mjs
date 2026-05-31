@@ -7,5 +7,6 @@ if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
   process.exit(1);
 }
 
-const portfolio = await scanOnchainPortfolio(wallet);
+const quick = process.env.PT_QUICK === "1";
+const portfolio = await scanOnchainPortfolio(wallet, { quick });
 process.stdout.write(JSON.stringify({ ok: true, portfolio }));

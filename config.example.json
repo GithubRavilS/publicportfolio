@@ -9,10 +9,11 @@
     "op": "https://optimism-rpc.publicnode.com",
     "matic": "https://polygon-bor-rpc.publicnode.com"
   },
+  "etherscan_api_key": "",
   "etherscan_keys": {
+    "default": "",
     "eth": "",
-    "base": "",
     "arb": "",
-    "op": ""
+    "matic": ""
   }
 }

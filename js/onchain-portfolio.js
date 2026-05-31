@@ -2,7 +2,8 @@
  * Полный ончейн-портфель: кошелёк + LP + лендинг + Beefy-вольты.
  * Формат совместим с DeBank parse (protocolGroups, liquidity, lending, walletTokens).
  */
-import { SCAN_CHAINS } from "./onchain-registry.js";
+import { SCAN_CHAINS, TOP20_CHAINS } from "./onchain-registry.js";
+import { ETHERSCAN_FREE_CHAINS } from "./etherscan-api.js";
 import { scanWalletBalances } from "./onchain-wallet.js";
 import { scanLpPositions } from "./onchain-lp.js";
 import { scanAaveLending } from "./onchain-lending.js";
@@ -10,7 +11,34 @@ import { scanVaultPositions } from "./onchain-vaults.js";
 import { scanFluidLending } from "./onchain-fluid.js";
 import { scanYearnVaults } from "./onchain-yearn.js";
 import { scanGmxPositions } from "./onchain-gmx.js";
+import { scanMorphoPositions } from "./onchain-morpho.js";
+import { scanCompoundV3 } from "./onchain-compound.js";
+import { scanLlamaYieldTokens, loadYieldIndex } from "./onchain-llama-scan.js";
+import { etherscanEnabled, getEtherscanUsageStats } from "./etherscan-api.js";
 import { formatPairDisplay } from "./revert-parse.js";
+
+function mergeWalletTokens(base, extra) {
+  const map = new Map();
+  for (const t of base) {
+    map.set(`${t.chain}|${(t.address || t.symbol || "").toLowerCase()}`, t);
+  }
+  for (const t of extra) {
+    const k = `${t.chain}|${(t.address || t.symbol || "").toLowerCase()}`;
+    const prev = map.get(k);
+    if (!prev || (t.usd || 0) > (prev.usd || 0)) map.set(k, t);
+  }
+  return [...map.values()];
+}
+
+function mergePositions(base, extra, keyFn) {
+  const map = new Map();
+  for (const p of base) map.set(keyFn(p), p);
+  for (const p of extra) {
+    const k = keyFn(p);
+    if (!map.has(k) || p.onchain) map.set(k, p);
+  }
+  return [...map.values()];
+}
 
 function buildProtocolGroups(lending, liquidity, walletTokens) {
   const map = new Map();
@@ -116,26 +144,64 @@ function buildProtocolTabs(protocolGroups) {
  * @param {{ chains?: string[], includeWallet?: boolean, includeVaults?: boolean }} opts
  */
 export async function scanOnchainPortfolio(wallet, opts = {}) {
-  const chains = opts.chains || SCAN_CHAINS;
+  const quick = opts.quick || process.env.PT_QUICK === "1";
+  const chains =
+    opts.chains ||
+    (quick ? [...ETHERSCAN_FREE_CHAINS] : SCAN_CHAINS);
   const w = wallet.toLowerCase();
 
-  const [walletRes, liquidity, aaveLending, vaults, fluidLending, yearnLiq, gmxLiq] =
-    await Promise.all([
-      opts.includeWallet !== false
-        ? scanWalletBalances(w, chains)
-        : { walletTokens: [], walletByChain: {} },
-      scanLpPositions(w, chains),
-      scanAaveLending(w, chains),
-      opts.includeVaults !== false ? scanVaultPositions(w, chains) : [],
-      scanFluidLending(w, chains),
-      scanYearnVaults(w, chains),
-      scanGmxPositions(w, chains),
-    ]);
+  const [
+    walletRes,
+    liquidity,
+    aaveLending,
+    vaults,
+    fluidLending,
+    yearnLiq,
+    gmxLiq,
+    morphoRes,
+    compoundLending,
+    llamaRes,
+  ] = await Promise.all([
+    opts.includeWallet !== false
+      ? scanWalletBalances(w, chains)
+      : { walletTokens: [], walletByChain: {} },
+    quick ? Promise.resolve([]) : scanLpPositions(w, chains),
+    quick ? Promise.resolve([]) : scanAaveLending(w, chains),
+    quick || opts.includeVaults === false ? Promise.resolve([]) : scanVaultPositions(w, chains),
+    quick ? Promise.resolve([]) : scanFluidLending(w, chains),
+    quick ? Promise.resolve([]) : scanYearnVaults(w, chains),
+    quick ? Promise.resolve([]) : scanGmxPositions(w, chains),
+    quick ? Promise.resolve([]) : scanMorphoPositions(w, chains),
+    quick ? Promise.resolve([]) : scanCompoundV3(w, chains),
+    loadYieldIndex() && !etherscanEnabled()
+      ? scanLlamaYieldTokens(w, chains)
+      : Promise.resolve({ walletTokens: [], liquidity: [], lending: [], projectsHit: [] }),
+  ]);
 
-  const lending = [...aaveLending, ...fluidLending];
-  const allLiquidity = [...liquidity, ...vaults, ...yearnLiq, ...gmxLiq];
-  const { walletTokens } = walletRes;
-
+  const lending = mergePositions(
+    [
+      ...aaveLending,
+      ...fluidLending,
+      ...compoundLending,
+      ...(morphoRes?.lending || []),
+      ...(llamaRes?.lending || []),
+    ],
+    [],
+    (p) => `${p.protocol}|${p.chain}|${p.netUsd}`,
+  );
+  const allLiquidity = mergePositions(
+    [
+      ...liquidity,
+      ...vaults,
+      ...yearnLiq,
+      ...gmxLiq,
+      ...(morphoRes?.liquidity || []),
+      ...(llamaRes?.liquidity || []),
+    ],
+    [],
+    (p) => `${p.protocol}|${p.chain}|${p.pair}|${p.poolId}`,
+  );
+  const walletTokens = mergeWalletTokens(walletRes.walletTokens, llamaRes?.walletTokens || []);
   const protocolGroups = buildProtocolGroups(lending, allLiquidity, walletTokens);
   const chainsBreakdown = buildChains(protocolGroups, walletTokens);
   const protocolTabs = buildProtocolTabs(protocolGroups);
@@ -158,7 +224,7 @@ export async function scanOnchainPortfolio(wallet, opts = {}) {
     lending,
     liquidity: allLiquidity,
     source: "onchain",
-    partial: false,
+    partial: quick,
     onchain: true,
     scannedAt: Date.now(),
     stats: {
@@ -166,7 +232,16 @@ export async function scanOnchainPortfolio(wallet, opts = {}) {
       vaultCount: vaults.length,
       lendCount: lending.length,
       fluidCount: fluidLending.length,
+      morphoCount: (morphoRes?.lending || []).length + (morphoRes?.liquidity || []).length,
+      compoundCount: compoundLending.length,
+      llamaProjectsHit: (llamaRes?.projectsHit || []).length,
+      llamaTokenScan: !!loadYieldIndex() && !etherscanEnabled(),
+      etherscan: etherscanEnabled(),
+      etherscanUsage: etherscanEnabled() ? getEtherscanUsageStats() : null,
       chains: chains.length,
+      chainCount: chains.length,
+      top20: chains.length >= TOP20_CHAINS.length,
+      scannedChains: chains,
     },
   };
 }

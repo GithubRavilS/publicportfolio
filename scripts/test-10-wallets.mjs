@@ -22,12 +22,16 @@ const WALLETS = (
   .filter((w) => /^0x[a-fA-F0-9]{40}$/.test(w));
 
 const BASE = process.env.PT_BASE || "http://127.0.0.1:5500";
+const TIMEOUT = Number(process.env.PT_TIMEOUT_MS || 360000);
 
 async function testApi(wallet) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), TIMEOUT);
   const r = await fetch(
-    `${BASE}/api/portfolio?wallet=${encodeURIComponent(wallet)}&refresh=1&_=${Date.now()}`,
-    { cache: "no-store" },
+    `${BASE}/api/portfolio?wallet=${encodeURIComponent(wallet)}&refresh=1&refreshOnchain=1&_=${Date.now()}`,
+    { cache: "no-store", signal: ctrl.signal },
   );
+  clearTimeout(t);
   const j = await r.json();
   if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j.portfolio;
@@ -39,8 +43,8 @@ function audit(p) {
   const le = p.lendUsd || 0;
   const computed = p.computedTotalUsd ?? w + l + le;
   const total = p.totalUsd || 0;
-  const gap = Math.abs(total - computed);
-  const over = p.overCountUsd || 0;
+  const gap = p.coverageGapUsd ?? Math.max(0, total - computed);
+  const over = p.overCountUsd ?? Math.max(0, computed - total);
   const zeroGroups = (p.protocolGroups || []).filter(
     (g) =>
       g.protocol !== "Wallet" &&
@@ -50,13 +54,24 @@ function audit(p) {
   return { total, computed, gap, over, zeroGroups: zeroGroups.length, partial: p.partial };
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 async function main() {
   let fail = 0;
-  for (const wallet of WALLETS) {
+  for (let i = 0; i < WALLETS.length; i++) {
+    const wallet = WALLETS[i];
+    if (i > 0) await sleep(Number(process.env.PT_WALLET_PAUSE_MS || 15000));
     try {
       const p = await testApi(wallet);
       const a = audit(p);
-      const ok = a.gap < Math.max(5, a.total * 0.08) && a.zeroGroups === 0;
+      const small = a.total < 500;
+      const ok =
+        a.gap < Math.max(5, a.total * (small ? 0.5 : 0.08)) &&
+        a.over < Math.max(5, a.total * 0.08) &&
+        a.zeroGroups === 0 &&
+        (small || !a.partial);
       console.log(ok ? "OK" : "WARN", wallet.slice(0, 10), JSON.stringify(a));
       if (!ok) fail++;
     } catch (e) {

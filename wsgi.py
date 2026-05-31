@@ -111,20 +111,26 @@ def _handle_portfolio(qs: dict) -> Response:
                 {"ok": True, "portfolio": portfolio, "cached": False, "source": "hybrid"}
             )
 
-        if use_onchain_only and not quick:
-            if not refresh:
+        if use_onchain_only:
+            if not refresh and not quick:
                 cached = srv.load_onchain_portfolio_cache(wallet)
-                if cached:
+                if cached and (cached.get("totalUsd") or 0) > 0:
                     cached = dict(cached)
                     cached["fromCache"] = True
                     return _json_response(
                         {"ok": True, "portfolio": cached, "cached": True, "source": "onchain"}
                     )
             try:
-                portfolio = srv.run_onchain_portfolio(wallet)
-                srv.save_onchain_portfolio_cache(wallet, portfolio)
+                portfolio = srv.run_onchain_portfolio(wallet, quick=quick)
+                if not quick:
+                    srv.save_onchain_portfolio_cache(wallet, portfolio)
                 return _json_response(
-                    {"ok": True, "portfolio": portfolio, "cached": False, "source": "onchain"}
+                    {
+                        "ok": True,
+                        "portfolio": portfolio,
+                        "cached": False,
+                        "source": "onchain",
+                    }
                 )
             except Exception as ex:
                 _api_log(f"onchain portfolio failed: {ex!s}")
@@ -266,6 +272,7 @@ def portfolio_application(environ, start_response):  # noqa: N802
                 "node": srv.NODE_BIN,
                 "node_ok": os.path.isfile(srv.NODE_BIN),
                 "config_ok": cfg.is_file(),
+                "debank_api": bool(srv.load_debank_access_key()),
                 "wsgi": "portfolio_v3",
             }
         )(environ, start_response)

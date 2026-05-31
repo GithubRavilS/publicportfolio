@@ -18,6 +18,15 @@ export const UNI_V3_NFPM = {
   linea: "0x03a520b32c04bf3beef7beb72e919cf822ed34f1",
   blast: "0x03a520b32c04bf3beef7beb72e919cf822ed34f1",
   gnosis: "0xC36442b4a4528e0023c12d580d40bc8e907d24e5",
+  avax: "0x655C40EfD1A380b5A360B233D1FB5B2035b6849d",
+  era: "0x335E8bC3A3edFBa8d0495A4CaA46eA4945ee8f82",
+  mantle: "0x03a520b32c04bf3beef7beb72e919cf822ed34f1",
+  mode: "0x03a520b32c04bf3beef7beb72e919cf822ed34f1",
+  celo: "0xC36442b4a4528e0023c12d580d40bc8e907d24e5",
+  metis: "0xC36442b4a4528e0023c12d580d40bc8e907d24e5",
+  cro: "0xC36442b4a4528e0023c12d580d40bc8e907d24e5",
+  sonic: "0x03a520b32c04bf3beef7beb72e919cf822ed34f1",
+  zora: "0xC36442b4a4528e0023c12d580d40bc8e907d24e5",
 };
 
 export const PANCAKE_V3_NFPM = {
@@ -38,6 +47,15 @@ export const CHAIN_IDS = {
   linea: 59144,
   blast: 81457,
   gnosis: 100,
+  era: 324,
+  mantle: 5000,
+  ftm: 250,
+  celo: 42220,
+  cro: 25,
+  metis: 1088,
+  mode: 34443,
+  sonic: 146,
+  zora: 7777777,
 };
 
 export const NATIVE_SYMBOL = {
@@ -52,7 +70,40 @@ export const NATIVE_SYMBOL = {
   linea: "ETH",
   blast: "ETH",
   gnosis: "xDAI",
+  era: "ETH",
+  mantle: "MNT",
+  ftm: "FTM",
+  celo: "CELO",
+  cro: "CRO",
+  metis: "METIS",
+  mode: "ETH",
+  sonic: "S",
+  zora: "ETH",
 };
+
+/** Топ-20 EVM по DeFi TVA / DeBank — единый список для скана. */
+export const TOP20_CHAINS = [
+  "eth",
+  "bsc",
+  "arb",
+  "base",
+  "matic",
+  "op",
+  "avax",
+  "era",
+  "linea",
+  "blast",
+  "scroll",
+  "mantle",
+  "gnosis",
+  "ftm",
+  "celo",
+  "cro",
+  "metis",
+  "mode",
+  "sonic",
+  "zora",
+];
 
 /** @type {Record<string, { rpc: string[], scan: boolean, nfpm: object[], aave?: object, fluid?: boolean, gmx?: object }>} */
 export const CHAINS = {
@@ -78,6 +129,12 @@ export const CHAINS = {
       protocol: "Aave V3",
       pool: "0x87870bca3f3fd6335c3f4e2d2e6550e1d3f4b5c0",
     },
+    extraAave: [
+      {
+        protocol: "SparkLend",
+        pool: "0xC13e21B648A35F1e55Fe051aFa671FcC3Bb3A3bA",
+      },
+    ],
   },
   base: {
     rpc: [
@@ -186,10 +243,31 @@ export const CHAINS = {
       {
         protocol: "PancakeSwap V3",
         address: PANCAKE_V3_NFPM.bsc,
-        factory: "0x1f98431c8ad98523631ae4a59f267346ea31f984",
+        factory: "0x0BFbcf9fa4f9c56b0f40A671ad40e0802a091865",
         feeDiv: 10000,
       },
     ],
+  },
+  avax: {
+    rpc: [
+      "https://avalanche-c-chain-rpc.publicnode.com",
+      "https://api.avax.network/ext/bc/C/rpc",
+      "https://1rpc.io/avax/c",
+    ],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.avax,
+        factory: "0x740b1c83140422D41c17eD930D32B47b2e3d838",
+        feeDiv: 10000,
+      },
+    ],
+    aave: {
+      protocol: "Aave V3",
+      pool: "0x794613f7df38654b07e5c4a8a4e239e38af8c194",
+    },
   },
   scroll: {
     rpc: ["https://scroll-rpc.publicnode.com", "https://rpc.scroll.io"],
@@ -243,6 +321,120 @@ export const CHAINS = {
       },
     ],
   },
+  era: {
+    rpc: ["https://mainnet.era.zksync.io", "https://zksync.drpc.org"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.era,
+        factory: "0xfA7816C865A43139E17a7079aE39D515d427fbf2",
+        feeDiv: 10000,
+      },
+    ],
+    aave: {
+      protocol: "Aave V3",
+      pool: "0xF410abF484c709823a5A2D4F447930Dce5B2d0f9",
+    },
+  },
+  mantle: {
+    rpc: ["https://mantle-rpc.publicnode.com", "https://rpc.mantle.xyz"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.mantle,
+        factory: "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        feeDiv: 10000,
+      },
+    ],
+  },
+  ftm: {
+    rpc: ["https://fantom-rpc.publicnode.com", "https://rpc.ftm.tools"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [],
+  },
+  celo: {
+    rpc: ["https://forno.celo.org", "https://celo-rpc.publicnode.com"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.celo,
+        factory: "0xAfE208a311B21f13eF87f8A1B14d0dE6F04FE96",
+        feeDiv: 10000,
+      },
+    ],
+  },
+  cro: {
+    rpc: ["https://cronos-evm-rpc.publicnode.com", "https://evm.cronos.org"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.cro,
+        factory: "0x9B3a8CaEC13B27f314C8B22d522D7F0e4C7895e0",
+        feeDiv: 10000,
+      },
+    ],
+  },
+  metis: {
+    rpc: ["https://andromeda.metis.io/?owner=1088", "https://metis-rpc.publicnode.com"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.metis,
+        factory: "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        feeDiv: 10000,
+      },
+    ],
+  },
+  mode: {
+    rpc: ["https://mainnet.mode.network", "https://mode.drpc.org"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.mode,
+        factory: "0x33128a8fc17869897dc68a0263f970ae9ce2eb20",
+        feeDiv: 10000,
+      },
+    ],
+  },
+  sonic: {
+    rpc: ["https://rpc.soniclabs.com", "https://sonic-rpc.publicnode.com"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.sonic,
+        factory: "0x33128a8fc17869897dc68a0263f970ae9ce2eb20",
+        feeDiv: 10000,
+      },
+    ],
+  },
+  zora: {
+    rpc: ["https://rpc.zora.energy", "https://zora.drpc.org"],
+    scan: true,
+    multicall: MULTICALL3,
+    nfpm: [
+      {
+        protocol: "Uniswap V3",
+        address: UNI_V3_NFPM.zora,
+        factory: "0x33128a8fc17869897dc68a0263f970ae9ce2eb20",
+        feeDiv: 10000,
+      },
+    ],
+  },
 };
 
 export const SCAN_CHAINS = Object.keys(CHAINS).filter((c) => CHAINS[c].scan);
@@ -270,6 +462,12 @@ export const COINGECKO_IDS = {
   DUST: "dust-protocol",
   AERO: "aerodrome-finance",
   CAKE: "pancakeswap-token",
+  MNT: "mantle",
+  FTM: "fantom",
+  CELO: "celo",
+  CRO: "crypto-com-chain",
+  METIS: "metis-token",
+  S: "sonic-3",
   GMX: "gmx",
   PENDLE: "pendle",
   AAVE: "aave",

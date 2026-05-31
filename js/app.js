@@ -14,7 +14,8 @@ import {
 import { syncDisplayTotals } from "./portfolio-normalize.js";
 import { applyPortfolioPipeline, PORTFOLIO_SCHEMA } from "./portfolio-pipeline.js";
 
-const APP_VER = "64";
+const APP_VER = "70";
+const SHOW_DEBUG = new URLSearchParams(location.search).has("debug");
 const FETCH_TIMEOUT_MS = 150000;
 const PREVIEW_TIMEOUT_MS = 75000;
 const CACHE_MS = 15 * 60 * 1000;
@@ -190,24 +191,35 @@ function dismissBlockingLoader(minPct = 15) {
   if (state.data) render();
 }
 
-async function backgroundFullDebank(wallet, { refresh = false } = {}) {
+async function backgroundFullHybrid(wallet, { refresh = false } = {}) {
+  if (state.data?.fromDebankApi) return;
   try {
     setLoadStep("debank", "active");
     const p = await fetchPortfolio(wallet, {
-      source: "debank",
+      source: "hybrid",
       quick: false,
       refresh,
+      refreshOnchain: refresh,
+      timeoutMs: FETCH_TIMEOUT_MS,
     });
-    p.partial = false;
     applyPortfolio(p, wallet);
     saveCache(wallet, state.data);
     setLoadStep("debank", "done");
     setLoadStep("positions", "done");
     render();
   } catch (e) {
-    console.warn("full debank", e);
-    if (state.data) state.data.partial = true;
+    console.warn("hybrid enrich", e);
+    if (state.data && (state.data.totalUsd ?? 0) > 0) {
+      setLoadStep("debank", "done");
+      setLoadStep("positions", "done");
+      render();
+    }
   }
+}
+
+/** @deprecated use backgroundFullHybrid */
+async function backgroundFullDebank(wallet, opts) {
+  return backgroundFullHybrid(wallet, opts);
 }
 
 function hideLoadProgressSoon() {
@@ -264,7 +276,10 @@ function renderLoadProgress() {
   }
 
   const hasData = !!(state.data?.protocolGroups?.length || state.data?.walletTokens?.length);
-  document.body.classList.toggle("portfolio-incomplete", onResults && state.loadPct < 100 && !hasData);
+  document.body.classList.toggle(
+    "portfolio-incomplete",
+    onResults && state.loadPct < 100 && !hasData,
+  );
   document.body.classList.toggle(
     "portfolio-ready",
     onResults && state.loadPct >= 100 && state.loadReady,
@@ -430,8 +445,14 @@ function groupMatchesChain(g, chain) {
   return false;
 }
 
+function isHiddenProtocolGroup(g) {
+  const p = String(g?.protocol || "");
+  if (p === "DeBank" || p.startsWith("DeBank ·")) return true;
+  return false;
+}
+
 function getVisibleGroups() {
-  const all = state.data?.protocolGroups || [];
+  const all = (state.data?.protocolGroups || []).filter((g) => !isHiddenProtocolGroup(g));
   let list = [...all];
 
   if (state.view === "wallet") {
@@ -1352,6 +1373,8 @@ function applyPortfolio(p, wallet) {
     fetchedAt: Date.now(),
     partial: !!p.partial,
     fromCache: !!p._cached || !!p.fromCache,
+    fromDebankApi: !!p.fromDebankApi,
+    source: p.source,
     totalUsd: p.totalUsd,
     computedTotalUsd: p.computedTotalUsd,
     debankTotalUsd: p.debankTotalUsd,
@@ -1427,8 +1450,15 @@ function render() {
   $("liqSum").textContent = fmtUsd(ft.liq);
   $("lendSum").textContent = fmtUsd(ft.lend);
   const src = d.fromCache ? t(lang, "fromCache") : "";
+  const debankRef =
+    d.debankReferenceUsd && (d.coverageGapUsd || 0) > Math.max(5, (d.totalUsd || 0) * 0.05)
+      ? ` · ${t(lang, "debankReference", {
+          debank: fmtUsd(d.debankReferenceUsd),
+          computed: fmtUsd(d.computedTotalUsd ?? d.totalUsd),
+        })}`
+      : "";
   $("updatedAt").textContent =
-    `${t(lang, "updated")}: ${new Date(d.fetchedAt).toLocaleString(lang === "ru" ? "ru-RU" : "en-US")}${src ? ` · ${src}` : ""}`;
+    `${t(lang, "updated")}: ${new Date(d.fetchedAt).toLocaleString(lang === "ru" ? "ru-RU" : "en-US")}${src ? ` · ${src}` : ""}${debankRef}`;
 
   const banner = $("partialBanner");
   if (banner) {
@@ -1456,15 +1486,19 @@ function render() {
   updateNavActive();
 
   const groups = getVisibleGroups();
-  const pillSource =
+  const pillSource = (
     state.view === "liquidity"
       ? (d.protocolGroups || []).filter((g) => g.liquidity?.length)
       : state.view === "lending"
         ? (d.protocolGroups || []).filter((g) => g.lending?.length)
-        : d.protocolGroups || [];
+        : d.protocolGroups || []
+  ).filter((g) => !isHiddenProtocolGroup(g));
 
   const rev = countRevertLpStats();
   let revertHdr = "";
+  if (!SHOW_DEBUG) {
+    revertHdr = "";
+  } else {
   const hm = d.hybridMeta || {};
   if (d.source === "hybrid" || d.hybrid) {
     revertHdr = `<p class="revert-stats">${t(lang, "portfolioHybrid", {
@@ -1521,6 +1555,7 @@ function render() {
     if (state.revertOnchainEnriched > 0) {
       revertHdr += `<p class="revert-stats sub">${t(lang, "revertOnchainLine", { n: state.revertOnchainEnriched })}</p>`;
     }
+  }
   }
 
   $("positions").innerHTML =
@@ -1886,49 +1921,57 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
       render();
       if (!cached.partial) saveCache(wallet, state.data);
       void runEnrichmentPipeline(wallet, { refresh: false });
-      if (cached.partial) void backgroundFullDebank(wallet, { refresh });
+      if (cached.partial && !cached.fromDebankApi) void backgroundFullDebank(wallet, { refresh });
     } else {
-      let gotFullDebank = false;
-      if (!refresh && !silent) {
+      let gotPrimary = false;
+      const applyPrimary = (p) => {
+        const hasData =
+          (p.totalUsd ?? 0) > 0 ||
+          (p.walletTokens?.length ?? 0) > 0 ||
+          (p.protocolGroups?.length ?? 0) > 1;
+        if (!hasData) return false;
+        applyPortfolio({ ...p, partial: !!p.partial }, wallet);
+        setLoadStep("debank", "done");
+        setLoadStep("positions", "done");
+        state.loadPct = p.partial ? 62 : 72;
+        renderLoadProgress();
+        render();
+        saveCache(wallet, state.data);
+        return true;
+      };
+
+      if (!silent) {
         try {
           const preview = await fetchPortfolio(wallet, {
-            source: "debank",
+            source: "onchain",
             quick: true,
             refresh: false,
+            timeoutMs: PREVIEW_TIMEOUT_MS,
           });
-          applyPortfolio({ ...preview, partial: true }, wallet);
-          setLoadStep("debank", "done");
-          setLoadStep("positions", "done");
-          state.loadPct = 58;
-          renderLoadProgress();
-          render();
+          gotPrimary = applyPrimary(preview);
         } catch (e) {
-          console.warn("debank preview", e);
-          if (!state.data) throw e;
+          console.warn("onchain quick", e);
         }
-      } else if (!silent && refresh) {
-        try {
-          const p = await fetchPortfolio(wallet, {
-            source: "debank",
-            quick: false,
-            refresh,
-          });
-          p.partial = false;
-          applyPortfolio(p, wallet);
-          saveCache(wallet, state.data);
-          setLoadStep("debank", "done");
-          setLoadStep("positions", "done");
-          state.loadPct = 72;
-          renderLoadProgress();
-          render();
-          gotFullDebank = true;
-        } catch (e) {
-          console.warn("full debank", e);
-          if (!state.data) throw e;
+        if (!gotPrimary) {
+          try {
+            const full = await fetchPortfolio(wallet, {
+              source: "onchain",
+              quick: false,
+              refresh,
+              refreshOnchain: refresh,
+              timeoutMs: FETCH_TIMEOUT_MS,
+            });
+            gotPrimary = applyPrimary(full);
+          } catch (e) {
+            console.warn("onchain full", e);
+            if (!state.data) throw e;
+          }
         }
       }
 
-      if (!gotFullDebank) void backgroundFullDebank(wallet, { refresh });
+      if (!gotPrimary && !state.data) throw new Error("FETCH_FAILED");
+
+      void backgroundFullHybrid(wallet, { refresh: false });
       void runEnrichmentPipeline(wallet, { refresh });
     }
 
@@ -2208,7 +2251,8 @@ function init() {
         dismissBlockingLoader(cached.partial ? 58 : 72);
         render();
         void runEnrichmentPipeline(w, { refresh: false });
-        if (cached.partial) void backgroundFullDebank(w, { refresh: false });
+        if (cached.partial && !cached.fromDebankApi)
+          void backgroundFullDebank(w, { refresh: false });
         return;
       }
       await scanWallet();

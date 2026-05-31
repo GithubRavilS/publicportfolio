@@ -48,6 +48,63 @@ const DUST_USD = 0.01;
 const KNOWN_PROTOCOL_PREFIXES =
   /uniswap|pancake|compound|aave|fluid|curve|balancer|gmx|beefy|yearn|aerodrome|velodrome|pendle|morpho|euler|sushi|maker|lido|stakewise|rocket|convex|frax|supernova|hyperliquid/i;
 
+/** Имена протоколов из Jina markdown: убираем [](url) и склеенные ссылки. */
+export function cleanProtocolName(name) {
+  return String(name || "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, (_, label) => label || "")
+    .replace(/\[\]\([^)]*\)/g, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function protocolKey(name) {
+  return cleanProtocolName(name).toLowerCase();
+}
+
+/** Приводим Jina markdown к плотному тексту для парсера. */
+export function normalizeDebankInput(raw) {
+  const linesOut = [];
+  let started = false;
+  for (const line of String(raw || "").split("\n")) {
+    let s = line.replace(/\r/g, "").trim();
+    if (!started) {
+      if (s.startsWith("Markdown Content:")) {
+        started = true;
+        continue;
+      }
+      if (
+        s.startsWith("Title:") ||
+        s.startsWith("URL Source:") ||
+        s.startsWith("Published Time:")
+      ) {
+        continue;
+      }
+    }
+    if (!s || s.startsWith("![")) continue;
+    s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, (_, label) => label || "");
+    s = s.replace(/\[\]\([^)]*\)/g, "");
+    s = s.replace(
+      /Wallet(?=(PancakeSwap|Uniswap|Compound|Aave|Curve|Fluid|GMX|Sushi|Balancer|Morpho|Yearn|Beefy|Velodrome|Aerodrome|Lido|Pendle|Euler|Synthetix|Hyperliquid))/i,
+      "Wallet\n",
+    );
+    s = s.replace(/V3(?=(Compound|Pancake|Uniswap|Aave|Curve|Sushi|Balancer))/i, "V3\n");
+    s = s.trim();
+    if (!s) continue;
+    const hm = s.match(/^Health Rate\s*>?\s*([\d.]+)/i);
+    if (hm) {
+      linesOut.push("Health Rate", hm[1]);
+      continue;
+    }
+    if (/^Health Rate\s*>\s*10/i.test(s)) {
+      linesOut.push("Health Rate", ">10");
+      continue;
+    }
+    linesOut.push(s);
+  }
+  return linesOut.join("\n");
+}
+
 function isLikelyTokenSymbol(l) {
   const s = String(l || "").trim();
   if (!s || s.length > 20) return false;
@@ -167,7 +224,7 @@ const TABLE_HDR = new Set([
 ]);
 
 function isProtocolHeader(line, lines, lineIndex) {
-  const l = line.trim();
+  const l = cleanProtocolName(line.trim());
   if (!l || NAV.has(l) || TABLE_HDR.has(l)) return false;
   if (/^health\s*rate/i.test(l)) return false;
   if (l.startsWith("$") || l.startsWith("#") || l.startsWith("0x")) return false;
@@ -776,12 +833,13 @@ function parseWalletTokensInRange(lines, start, end, chain, showSmall) {
       let amountLine = "";
       let usdLine = "";
 
-      if (isLikelyTokenSymbol(row0)) {
+      const rowClean = row0.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim();
+      if (isLikelyTokenSymbol(rowClean)) {
         const pi = nextNonemptyIndex(lines, i + 1, end);
         const ai = nextNonemptyIndex(lines, pi + 1, end);
         const ui = nextNonemptyIndex(lines, ai + 1, end);
         if (!lines[pi]?.trim().includes("$")) break;
-        sym = row0;
+        sym = rowClean;
         priceLine = lines[pi]?.trim() || "";
         amountLine = lines[ai]?.trim() || "";
         usdLine = lines[ui]?.trim() || "";
@@ -834,12 +892,12 @@ function sectionHasContent(lines, start, end) {
 export function buildProtocolSections(lines) {
   const sections = [];
   for (let i = 0; i < lines.length - 1; i++) {
-    const l = lines[i].trim();
-    if (!isProtocolHeader(l, lines, i)) continue;
+    const l = cleanProtocolName(lines[i].trim());
+    if (!l || !isProtocolHeader(l, lines, i)) continue;
     const protocolUsd = protocolUsdAfterHeader(lines, i);
     let end = lines.length;
     for (let j = i + 1; j < lines.length - 1; j++) {
-      if (isProtocolHeader(lines[j].trim(), lines, j)) {
+      if (isProtocolHeader(cleanProtocolName(lines[j].trim()), lines, j)) {
         end = j;
         break;
       }
@@ -863,43 +921,62 @@ function mergeChains(a, b) {
   return [...map.values()].sort((x, y) => (y.usd || 0) - (x.usd || 0));
 }
 
-function mergeProtocolTabs(a, b) {
-  const out = [...(a || [])];
-  const seen = new Set(out.map((t) => `${t.protocol}:${Math.round(t.usd || 0)}`));
-  for (const t of b || []) {
-    const k = `${t.protocol}:${Math.round(t.usd || 0)}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push({ ...t });
+function dedupeProtocolTabs(tabs) {
+  const map = new Map();
+  for (const t of tabs || []) {
+    if (!isValidProtocolTab(t.protocol)) continue;
+    const k = protocolKey(t.protocol);
+    const usd = t.usd || 0;
+    if (usd < 1) continue;
+    const prev = map.get(k);
+    if (!prev || usd < prev.usd) map.set(k, { protocol: cleanProtocolName(t.protocol), usd });
   }
-  return out.sort((x, y) => (y.usd || 0) - (x.usd || 0));
+  return [...map.values()].sort((a, b) => (b.usd || 0) - (a.usd || 0));
+}
+
+function mergeProtocolTabs(a, b) {
+  return dedupeProtocolTabs([...(a || []), ...(b || [])]);
+}
+
+export function isValidProtocolTab(name) {
+  const p = cleanProtocolName(name);
+  if (!p || p.length > 36) return false;
+  const compact = p.replace(/\s+/g, "");
+  if (/compound.*pancake|pancake.*compound|uniswap.*compound/i.test(compact)) return false;
+  if ((p.match(/\bv3\b/gi) || []).length > 1) return false;
+  return (
+    p === "Wallet" ||
+    KNOWN_PROTOCOL_PREFIXES.test(p) ||
+    /v\d|swap|lend|fluid|beefy|yearn|gmx/i.test(p)
+  );
 }
 
 function parseProtocolTabGrid(lines) {
   const tabs = [];
   let started = false;
   for (let i = 0; i < lines.length - 1; i++) {
-    const l = lines[i].trim();
+    const l = cleanProtocolName(lines[i].trim());
     if (l.includes("Unfold") || l === "All Chain") started = true;
     if (!started) continue;
     if (l === "Token" && lines[i + 1]?.trim() === "Price") break;
     if (["Default", "Change", "Summary", "Time Machine"].includes(l)) break;
-    const nxt = lines[i + 1]?.trim() || "";
-    if (
-      l &&
-      nxt.match(/^\$[\d,]/) &&
-      !isChainOrNavLabel(l) &&
-      !isLikelyTokenSymbol(l) &&
-      (KNOWN_PROTOCOL_PREFIXES.test(l) || /v\d|swap|lend|fluid|beefy|yearn|gmx/i.test(l))
-    ) {
-      tabs.push({ protocol: l, usd: parseUsd(nxt) || 0 });
-      i++;
+    if (!isValidProtocolTab(l)) continue;
+    let tabUsd = 0;
+    for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+      const v = parseUsd(lines[j]?.trim() || "");
+      if (v != null && v >= 0.01) {
+        tabUsd = v;
+        break;
+      }
+    }
+    if (tabUsd > 0 && !isChainOrNavLabel(l) && !isLikelyTokenSymbol(l)) {
+      tabs.push({ protocol: l, usd: tabUsd });
     }
   }
   return tabs;
 }
 
-function buildProtocolGroups(lending, liquidity, walletTokens, protocolTabs) {
+export function buildProtocolGroups(lending, liquidity, walletTokens, protocolTabs) {
   const map = new Map();
   const ensure = (protocol, chain) => {
     const k = `${protocol}\0${chain || "unknown"}`;
@@ -989,19 +1066,16 @@ export function indexProtocolsOnChainPage(text, chainSlugId) {
 export function parseDebankProfileText(rawText, options = {}) {
   const showSmall = !!options.showSmallBalances;
   const chainTexts = options.chainTexts || {};
-  const lines = String(rawText || "")
-    .split("\n")
-    .map((l) => l.replace(/\r/g, ""));
+  const lines = normalizeDebankInput(rawText).split("\n");
 
   let chains = parseChainBreakdown(lines);
   let protocolTabs = parseProtocolTabGrid(lines);
   for (const text of Object.values(chainTexts)) {
-    const clines = String(text || "")
-      .split("\n")
-      .map((l) => l.replace(/\r/g, ""));
+    const clines = normalizeDebankInput(text).split("\n");
     chains = mergeChains(chains, parseChainBreakdown(clines));
     protocolTabs = mergeProtocolTabs(protocolTabs, parseProtocolTabGrid(clines));
   }
+  protocolTabs = dedupeProtocolTabs(protocolTabs);
   const chainSum = chains.reduce((s, c) => s + (c.usd || 0), 0);
   const bannerTotal = scanBannerPortfolioTotal(lines);
   let totalUsd = chainSum;
@@ -1148,11 +1222,7 @@ export function parseDebankProfileText(rawText, options = {}) {
   })();
 
   for (const [slug, text] of Object.entries(chainTexts)) {
-    scanWalletTables(
-      text.split("\n").map((l) => l.replace(/\r/g, "")),
-      slug,
-      true,
-    );
+    scanWalletTables(normalizeDebankInput(text).split("\n"), slug, true, { once: false });
   }
   scanWalletTables(lines, chains[0]?.slug || "eth", false, { once: false });
 

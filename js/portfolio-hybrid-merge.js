@@ -6,7 +6,15 @@ import { normalizeChain, poolPairKey } from "./revert-match.js";
 import { extractLpTokenId } from "./lp-onchain.js";
 import { recalcLiquidityTotals } from "./revert-portfolio-merge.js";
 import { saneLendingPosition, saneLiquidityPosition } from "./portfolio-sanity.js";
-import { syncDisplayTotals } from "./portfolio-normalize.js";
+import {
+  syncDisplayTotals,
+  rebuildChainBreakdown,
+} from "./portfolio-normalize.js";
+import {
+  fillCoverageFromProtocolTabs,
+  removeLegacyDebankGroups,
+  recalcAllProtocolUsd,
+} from "./portfolio-debank-fill.js";
 
 function clone(p) {
   return JSON.parse(JSON.stringify(p || {}));
@@ -231,8 +239,21 @@ export function mergeHybridPortfolio(onchain, debank) {
   let onchainOnlyCount = 0;
   const debankTotal = db.debankTotalUsd ?? db.totalUsd ?? 0;
 
+  const protocolLiqUsd = (groups, protocol) => {
+    let s = 0;
+    for (const g of groups || []) {
+      if (g.protocol !== protocol) continue;
+      for (const p of g.liquidity || []) s += p.positionUsd || 0;
+    }
+    return s;
+  };
+
   for (const og of oc.protocolGroups || []) {
     if (og.protocol === "Wallet") continue;
+
+    const dbLiq = protocolLiqUsd(out.protocolGroups, og.protocol);
+    const ocLiq = (og.liquidity || []).reduce((s, p) => s + (p.positionUsd || 0), 0);
+    if (dbLiq > ocLiq * 1.08) continue;
 
     for (const p of og.liquidity || []) {
       if (!saneLiquidityPosition(p, debankTotal)) continue;
@@ -250,7 +271,7 @@ export function mergeHybridPortfolio(onchain, debank) {
         hit.g.liquidity[hit.idx] = {
           ...prev,
           ...enriched,
-          positionUsd: prev.positionUsd || enriched.positionUsd,
+          positionUsd: Math.max(prev.positionUsd || 0, enriched.positionUsd || 0),
           pair: prev.pair || enriched.pair,
           poolId: prev.poolId || enriched.poolId,
           inPool: (prev.inPool || []).length ? prev.inPool : enriched.inPool,
@@ -317,29 +338,14 @@ export function mergeHybridPortfolio(onchain, debank) {
 
   dedupeGroups(out);
 
-  for (const g of out.protocolGroups || []) {
-    for (const p of g.liquidity || []) {
-      if (!p.onchain && !p.debankFill) {
-        p.debankFill = true;
-        p.source = p.source || "debank";
-      }
-    }
-    for (const p of g.lending || []) {
-      if (!p.onchain && !p.debankFill) {
-        p.debankFill = true;
-        p.source = p.source || "debank";
-      }
-    }
-  }
-  for (const t of out.walletTokens || []) {
-    if (!t.onchain) {
-      t.debankFill = true;
-      t.source = t.source || "debank";
-    }
-  }
-
   recomputeTotals(out);
-  const computedTotal = out.totalUsd;
+  fillCoverageFromProtocolTabs(out);
+  removeLegacyDebankGroups(out);
+  recalcAllProtocolUsd(out);
+  dedupeGroups(out);
+  recomputeTotals(out);
+  rebuildChainBreakdown(out);
+  const computedTotal = out.computedTotalUsd ?? 0;
 
   const fillCount = (out.protocolGroups || []).reduce((n, g) => {
     return (
@@ -355,21 +361,33 @@ export function mergeHybridPortfolio(onchain, debank) {
   out.partial = !!db.partial;
   out.totalUsd = roundUsd(debankTotal);
   out.debankTotalUsd = roundUsd(debankTotal);
+  const gapUsd = roundUsd(Math.max(0, debankTotal - computedTotal));
+  const coveragePct =
+    debankTotal > 0 ? Math.min(100, Math.round((computedTotal / debankTotal) * 1000) / 10) : 100;
   out.hybridMeta = {
     onchainUsd: roundUsd(oc.totalUsd || 0),
     debankTotalUsd: roundUsd(debankTotal),
     computedUsd: roundUsd(computedTotal),
     mergedTotalUsd: roundUsd(debankTotal),
-    gapUsd: roundUsd(debankTotal - computedTotal),
+    gapUsd,
+    coveragePct,
+    onchainCoveragePct: coveragePct,
     replacedCount,
     onchainOnlyCount,
     fillCount,
+    debankFillUsd: gapUsd,
+    scanChains: oc.stats?.chains ?? oc.stats?.chainCount,
     priority: ["onchain", "revert", "debank"],
   };
+  out.coverageGapUsd = gapUsd;
+  out.partial = gapUsd > Math.max(1, debankTotal * 0.02);
   out.stats = {
+    ...(oc.stats || {}),
     ...(out.stats || {}),
     debankFillCount: fillCount,
     onchainReplaced: replacedCount,
+    etherscan: oc.stats?.etherscan ?? out.stats?.etherscan,
+    etherscanUsage: oc.stats?.etherscanUsage ?? out.stats?.etherscanUsage,
   };
 
   return syncDisplayTotals(out);

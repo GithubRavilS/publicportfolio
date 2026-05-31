@@ -1,0 +1,4249 @@
+{
+  "builtAt": "2026-05-31T10:53:05.337Z",
+  "stats": {
+    "totalProtocols": 5635,
+    "lending": 100,
+    "dex": 100,
+    "other": 100,
+    "implementedSlugs": 509,
+    "massAdapters": 509,
+    "top300TvlUsd": 222456297061,
+    "coveredTvlInTop300Usd": 222456297061,
+    "coveragePctTop300": 100,
+    "globalImplementedTvlUsd": 131609211963
+  },
+  "lending": [
+    {
+      "name": "Lido",
+      "slug": "lido",
+      "tvlUsd": 17973745865,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum",
+        "Solana",
+        "Moonbeam",
+        "Moonriver",
+        "Terra"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SSV Network",
+      "slug": "ssv-network",
+      "tvlUsd": 14909395635,
+      "category": "Staking Pool",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aave V3",
+      "slug": "aave-v3",
+      "tvlUsd": 13374310143,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "Plasma",
+        "Arbitrum",
+        "Base",
+        "Avalanche",
+        "Binance",
+        "Mantle",
+        "Polygon",
+        "MegaETH",
+        "X Layer",
+        "xDai",
+        "Optimism",
+        "Linea",
+        "Sonic",
+        "Celo",
+        "Scroll",
+        "zkSync Era",
+        "Metis",
+        "Soneium",
+        "Fantom",
+        "Harmony"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "WBTC",
+      "slug": "wbtc",
+      "tvlUsd": 8446241532,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Binance staked ETH",
+      "slug": "binance-staked-eth",
+      "tvlUsd": 7487856771,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum",
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Morpho Blue",
+      "slug": "morpho-blue",
+      "tvlUsd": 7330748434,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Hyperliquid L1",
+        "Monad",
+        "Katana",
+        "Arbitrum",
+        "Flare",
+        "Sei",
+        "World Chain",
+        "Stable",
+        "Polygon",
+        "Optimism",
+        "Plume Mainnet",
+        "Citrea",
+        "Etherlink",
+        "Hemi",
+        "Tempo",
+        "Unichain",
+        "Celo",
+        "TAC",
+        "Abstract",
+        "Klaytn",
+        "Lisk",
+        "Soneium",
+        "Scroll",
+        "Binance",
+        "Fraxtal",
+        "Corn",
+        "Sonic",
+        "Botanix",
+        "Ink",
+        "Zircuit",
+        "xDai",
+        "Linea",
+        "Bitlayer",
+        "Mode"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Coinbase Bridge",
+      "slug": "coinbase-bridge",
+      "tvlUsd": 6260139283,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin",
+        "Ripple",
+        "Doge",
+        "Cardano",
+        "Litecoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Sky Lending",
+      "slug": "sky-lending",
+      "tvlUsd": 6126953558,
+      "category": "CDP",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "EigenCloud",
+      "slug": "eigencloud",
+      "tvlUsd": 5799487910,
+      "category": "Restaking",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Hyperliquid Bridge",
+      "slug": "hyperliquid-bridge",
+      "tvlUsd": 5412222496,
+      "category": "Bridge",
+      "chains": [
+        "Arbitrum",
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Binance Bitcoin",
+      "slug": "binance-bitcoin",
+      "tvlUsd": 5034867377,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Babylon Protocol",
+      "slug": "babylon-protocol",
+      "tvlUsd": 3769158136,
+      "category": "Restaking",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SparkLend",
+      "slug": "sparklend",
+      "tvlUsd": 3651542876,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "xDai"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "USDT0",
+      "slug": "usdt0",
+      "tvlUsd": 3595073919,
+      "category": "Bridge",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "ether.fi Stake",
+      "slug": "ether.fi-stake",
+      "tvlUsd": 3455452873,
+      "category": "Liquid Restaking",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Base"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "JustLend",
+      "slug": "justlend",
+      "tvlUsd": 3385792935,
+      "category": "Lending",
+      "chains": [
+        "Tron"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "JustCryptos",
+      "slug": "justcryptos",
+      "tvlUsd": 2289411820,
+      "category": "Bridge",
+      "chains": [
+        "Tron"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Portal",
+      "slug": "portal",
+      "tvlUsd": 2082026968,
+      "category": "Bridge",
+      "chains": [
+        "Ethereum",
+        "Solana",
+        "Binance",
+        "Algorand",
+        "Polygon",
+        "Near",
+        "Base",
+        "Avalanche",
+        "Arbitrum",
+        "Moonbeam",
+        "Optimism",
+        "Celo",
+        "Klaytn",
+        "Terra",
+        "Oasis",
+        "Aurora",
+        "Fantom",
+        "Karura",
+        "Acala",
+        "Terra2",
+        "Injective",
+        "Sui",
+        "Aptos",
+        "XPLA"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Maple",
+      "slug": "maple",
+      "tvlUsd": 2032524999,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "USDD",
+      "slug": "usdd",
+      "tvlUsd": 1390508523,
+      "category": "CDP",
+      "chains": [
+        "Tron",
+        "Ethereum",
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Kelp",
+      "slug": "kelp",
+      "tvlUsd": 1323362610,
+      "category": "Liquid Restaking",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Optimism",
+        "Manta",
+        "Mode",
+        "Blast",
+        "Scroll",
+        "Base",
+        "Linea",
+        "X Layer",
+        "zkSync Era",
+        "Zircuit",
+        "Swellchain",
+        "Hemi",
+        "Berachain",
+        "Sonic"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Kamino Lend",
+      "slug": "kamino-lend",
+      "tvlUsd": 1304700720,
+      "category": "Lending",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Compound V3",
+      "slug": "compound-v3",
+      "tvlUsd": 1192314196,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Base",
+        "Optimism",
+        "Polygon",
+        "Mantle",
+        "Unichain",
+        "Ronin",
+        "Scroll"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Venus Core Pool",
+      "slug": "venus-core-pool",
+      "tvlUsd": 1186926116,
+      "category": "Lending",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Arbitrum",
+        "zkSync Era",
+        "Unichain",
+        "Base",
+        "Optimism",
+        "Op_Bnb"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Sanctum Validator LSTs",
+      "slug": "sanctum-validator-lsts",
+      "tvlUsd": 1185514182,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Kinetiq kHYPE",
+      "slug": "kinetiq-khype",
+      "tvlUsd": 1141672504,
+      "category": "Liquid Staking",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Jupiter Lend",
+      "slug": "jupiter-lend",
+      "tvlUsd": 948670273,
+      "category": "Lending",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Binance Staked SOL",
+      "slug": "binance-staked-sol",
+      "tvlUsd": 935546027,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Rocket Pool",
+      "slug": "rocket-pool",
+      "tvlUsd": 877441231,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Jito Liquid Staking",
+      "slug": "jito-liquid-staking",
+      "tvlUsd": 805092513,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Function FBTC",
+      "slug": "function-fbtc",
+      "tvlUsd": 793263874,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Obol",
+      "slug": "obol",
+      "tvlUsd": 781358399,
+      "category": "Staking Pool",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Fluid Lending",
+      "slug": "fluid-lending",
+      "tvlUsd": 759345545,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Plasma",
+        "Base",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "StakeWise V2",
+      "slug": "stakewise-v2",
+      "tvlUsd": 739571856,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum",
+        "xDai"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Liquid Collective",
+      "slug": "liquid-collective",
+      "tvlUsd": 713188672,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lista Lending",
+      "slug": "lista-lending",
+      "tvlUsd": 671409610,
+      "category": "Lending",
+      "chains": [
+        "Binance",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lista Liquid Staking",
+      "slug": "lista-liquid-staking",
+      "tvlUsd": 656130432,
+      "category": "Liquid Staking",
+      "chains": [
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aster Bridge",
+      "slug": "aster-bridge",
+      "tvlUsd": 587151881,
+      "category": "Bridge",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Arbitrum",
+        "Solana",
+        "Scroll"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "HyperLend Pooled",
+      "slug": "hyperlend-pooled",
+      "tvlUsd": 528477501,
+      "category": "Lending",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lighter Bridge",
+      "slug": "lighter-bridge",
+      "tvlUsd": 515498351,
+      "category": "Bridge",
+      "chains": [
+        "Ethereum",
+        "Arbitrum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SolvBTC",
+      "slug": "solvbtc",
+      "tvlUsd": 467915331,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin",
+        "Ethereum",
+        "Binance",
+        "Solana",
+        "Base",
+        "Arbitrum",
+        "X Layer",
+        "Mantle",
+        "Polygon",
+        "Merlin",
+        "Avalanche",
+        "BOB"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "mETH Protocol",
+      "slug": "meth-protocol",
+      "tvlUsd": 454383977,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lorenzo enzoBTC",
+      "slug": "lorenzo-enzobtc",
+      "tvlUsd": 443410666,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Merlins Seal",
+      "slug": "merlins-seal",
+      "tvlUsd": 439580115,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin",
+        "Ethereum",
+        "Arbitrum",
+        "Zkfair"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Jupiter Staked SOL",
+      "slug": "jupiter-staked-sol",
+      "tvlUsd": 438308752,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lista CDP",
+      "slug": "lista-cdp",
+      "tvlUsd": 438300237,
+      "category": "CDP",
+      "chains": [
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Unit",
+      "slug": "unit",
+      "tvlUsd": 431146487,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin",
+        "Ethereum",
+        "Solana",
+        "Plasma",
+        "Monad"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "DoubleZero Staked SOL",
+      "slug": "doublezero-staked-sol",
+      "tvlUsd": 431112034,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Symbiotic",
+      "slug": "symbiotic",
+      "tvlUsd": 425520919,
+      "category": "Restaking",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Avalon USDa",
+      "slug": "avalon-usda",
+      "tvlUsd": 401045376,
+      "category": "CDP",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Klaytn",
+        "Berachain",
+        "Sonic",
+        "Mantle"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aave Horizon RWA",
+      "slug": "aave-horizon-rwa",
+      "tvlUsd": 345179148,
+      "category": "RWA Lending",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "aave_v3",
+      "implemented": true
+    },
+    {
+      "name": "Stader",
+      "slug": "stader",
+      "tvlUsd": 316118288,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum",
+        "Hedera",
+        "Binance",
+        "Fantom",
+        "Terra2",
+        "Near"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Free Protocol",
+      "slug": "free-protocol",
+      "tvlUsd": 310862274,
+      "category": "Bridge",
+      "chains": [
+        "Merlin",
+        "Ethereum",
+        "Binance",
+        "Arbitrum",
+        "Manta",
+        "Kroma",
+        "Hemi",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Kraken Bitcoin",
+      "slug": "kraken-bitcoin",
+      "tvlUsd": 303702987,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "cap",
+      "slug": "cap",
+      "tvlUsd": 294887326,
+      "category": "Lending",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Coinbase Wrapped Staked ETH",
+      "slug": "coinbase-wrapped-staked-eth",
+      "tvlUsd": 294011174,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "USD AI",
+      "slug": "usd-ai",
+      "tvlUsd": 293170258,
+      "category": "RWA Lending",
+      "chains": [
+        "Arbitrum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Euler V2",
+      "slug": "euler-v2",
+      "tvlUsd": 277623749,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "Monad",
+        "Plasma",
+        "Base",
+        "Avalanche",
+        "BOB",
+        "Hyperliquid L1",
+        "Unichain",
+        "Arbitrum",
+        "Sonic",
+        "Binance",
+        "Berachain",
+        "TAC",
+        "Linea",
+        "Swellchain",
+        "Mantle"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Defi Saver",
+      "slug": "defi-saver",
+      "tvlUsd": 262217722,
+      "category": "CDP Manager",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Optimism",
+        "Base"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Marinade Liquid Staking",
+      "slug": "marinade-liquid-staking",
+      "tvlUsd": 253442753,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "UniRouter",
+      "slug": "unirouter",
+      "tvlUsd": 246378575,
+      "category": "Bridge",
+      "chains": [
+        "BSquared"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Benqi Staked Avax",
+      "slug": "benqi-staked-avax",
+      "tvlUsd": 240194437,
+      "category": "Liquid Staking",
+      "chains": [
+        "Avalanche"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "b14g",
+      "slug": "b14g",
+      "tvlUsd": 239874878,
+      "category": "Restaking",
+      "chains": [
+        "Bitcoin",
+        "CORE",
+        "Babylon Genesis"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Drift Staked SOL",
+      "slug": "drift-staked-sol",
+      "tvlUsd": 231586118,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lombard BTC.b",
+      "slug": "lombard-btc.b",
+      "tvlUsd": 226097775,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "FAssets",
+      "slug": "fassets",
+      "tvlUsd": 224024519,
+      "category": "Bridge",
+      "chains": [
+        "Ripple",
+        "Flare"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Stacks sBTC",
+      "slug": "stacks-sbtc",
+      "tvlUsd": 218244101,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Cooler Loans",
+      "slug": "cooler-loans",
+      "tvlUsd": 216825178,
+      "category": "Lending",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Marinade Native",
+      "slug": "marinade-native",
+      "tvlUsd": 214117491,
+      "category": "Staking Pool",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "stHYPE",
+      "slug": "sthype",
+      "tvlUsd": 211111376,
+      "category": "Liquid Staking",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Tydro",
+      "slug": "tydro",
+      "tvlUsd": 189634304,
+      "category": "Lending",
+      "chains": [
+        "Ink"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Nexus BTC",
+      "slug": "nexus-btc",
+      "tvlUsd": 189073560,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Pareto Credit",
+      "slug": "pareto-credit",
+      "tvlUsd": 182128513,
+      "category": "RWA Lending",
+      "chains": [
+        "Ethereum",
+        "Polygon",
+        "Arbitrum",
+        "Optimism"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Tonstakers LSD",
+      "slug": "tonstakers-lsd",
+      "tvlUsd": 171893007,
+      "category": "Liquid Staking",
+      "chains": [
+        "TON"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "EtherFi Borrowing Market",
+      "slug": "etherfi-borrowing-market",
+      "tvlUsd": 169223896,
+      "category": "Lending",
+      "chains": [
+        "Optimism",
+        "Scroll"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Echo Bridge",
+      "slug": "echo-bridge",
+      "tvlUsd": 166088871,
+      "category": "Bridge",
+      "chains": [
+        "BSquared",
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "exSat Staking BTC",
+      "slug": "exsat-staking-btc",
+      "tvlUsd": 160509194,
+      "category": "Bridge",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Renzo",
+      "slug": "renzo",
+      "tvlUsd": 154438105,
+      "category": "Liquid Restaking",
+      "chains": [
+        "Ethereum",
+        "Linea",
+        "Solana",
+        "Arbitrum",
+        "Zircuit",
+        "Monad",
+        "Mode",
+        "Base",
+        "Optimism",
+        "Blast",
+        "Fraxtal",
+        "Binance",
+        "Sei"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Dolomite",
+      "slug": "dolomite",
+      "tvlUsd": 154223505,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "Berachain",
+        "Arbitrum",
+        "Mantle",
+        "Botanix",
+        "Polygon zkEVM",
+        "X Layer"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Blend Pools V2",
+      "slug": "blend-pools-v2",
+      "tvlUsd": 153299521,
+      "category": "Lending",
+      "chains": [
+        "Stellar"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Liquity V1",
+      "slug": "liquity-v1",
+      "tvlUsd": 152730677,
+      "category": "CDP",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Axelar",
+      "slug": "axelar",
+      "tvlUsd": 151075706,
+      "category": "Bridge",
+      "chains": [
+        "Ethereum",
+        "Binance",
+        "Optimism",
+        "Ripple",
+        "Fantom",
+        "Arbitrum",
+        "Polygon",
+        "Regen",
+        "Avalanche",
+        "Osmosis",
+        "Cosmos",
+        "Base",
+        "Stride",
+        "Celestia",
+        "Agoric",
+        "Persistence",
+        "Chihuahua",
+        "Secret",
+        "Sei",
+        "Stargaze",
+        "Juno",
+        "Mantle",
+        "XRPL EVM",
+        "Carbon",
+        "Umee",
+        "Blast",
+        "Evmos",
+        "Kujira",
+        "Migaloo",
+        "Archway",
+        "Dymension",
+        "Injective",
+        "Neutron",
+        "Terra2",
+        "XPLA",
+        "Aurora",
+        "Immutable zkEVM",
+        "Fraxtal",
+        "Celo",
+        "Kava",
+        "Moonbeam",
+        "Linea",
+        "Filecoin",
+        "Scroll"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "NAVI Lending",
+      "slug": "navi-lending",
+      "tvlUsd": 148656991,
+      "category": "Lending",
+      "chains": [
+        "Sui"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "edgeX Bridge",
+      "slug": "edgex-bridge",
+      "tvlUsd": 147627253,
+      "category": "Bridge",
+      "chains": [
+        "Ethereum",
+        "edgeX L1",
+        "Arbitrum",
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Suilend",
+      "slug": "suilend",
+      "tvlUsd": 132949785,
+      "category": "Lending",
+      "chains": [
+        "Sui"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Vault Bridge",
+      "slug": "vault-bridge",
+      "tvlUsd": 125150035,
+      "category": "Risk Curators",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Phantom SOL",
+      "slug": "phantom-sol",
+      "tvlUsd": 124742564,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Echo Lending",
+      "slug": "echo-lending",
+      "tvlUsd": 123184772,
+      "category": "Lending",
+      "chains": [
+        "Aptos"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Tectonic",
+      "slug": "tectonic",
+      "tvlUsd": 121125848,
+      "category": "Lending",
+      "chains": [
+        "Cronos"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aave V2",
+      "slug": "aave-v2",
+      "tvlUsd": 120252350,
+      "category": "Lending",
+      "chains": [
+        "Ethereum",
+        "Polygon",
+        "Avalanche"
+      ],
+      "adapter": "aave_v3",
+      "implemented": true
+    },
+    {
+      "name": "Bybit Staked SOL",
+      "slug": "bybit-staked-sol",
+      "tvlUsd": 114636938,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Project 0",
+      "slug": "project-0",
+      "tvlUsd": 114225673,
+      "category": "Lending",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Compound V2",
+      "slug": "compound-v2",
+      "tvlUsd": 113890030,
+      "category": "Lending",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Benqi Lending",
+      "slug": "benqi-lending",
+      "tvlUsd": 113592314,
+      "category": "Lending",
+      "chains": [
+        "Avalanche"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Frax Ether",
+      "slug": "frax-ether",
+      "tvlUsd": 113160609,
+      "category": "Liquid Staking",
+      "chains": [
+        "Ethereum",
+        "Fraxtal"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "The Vault Liquid Staking",
+      "slug": "the-vault-liquid-staking",
+      "tvlUsd": 109042805,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "JPool",
+      "slug": "jpool",
+      "tvlUsd": 107076733,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Rhea Lend",
+      "slug": "rhea-lend",
+      "tvlUsd": 102728964,
+      "category": "Lending",
+      "chains": [
+        "Near"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "crvUSD",
+      "slug": "crvusd",
+      "tvlUsd": 96811877,
+      "category": "CDP",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Marinade Select",
+      "slug": "marinade-select",
+      "tvlUsd": 94815505,
+      "category": "Staking Pool",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    }
+  ],
+  "dex": [
+    {
+      "name": "PancakeSwap AMM",
+      "slug": "pancakeswap-amm",
+      "tvlUsd": 1911161991,
+      "category": "Dexs",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Aptos",
+        "zkSync Era",
+        "Base",
+        "Op_Bnb",
+        "Arbitrum",
+        "Linea",
+        "Polygon zkEVM",
+        "Monad"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Uniswap V3",
+      "slug": "uniswap-v3",
+      "tvlUsd": 1656917260,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Arbitrum",
+        "Binance",
+        "Polygon",
+        "X Layer",
+        "Optimism",
+        "xDai",
+        "Plasma",
+        "Celo",
+        "Avalanche",
+        "RSK",
+        "Monad",
+        "Nibiru",
+        "0G",
+        "World Chain",
+        "XDC",
+        "Unichain",
+        "zkSync Era",
+        "Filecoin",
+        "Boba",
+        "Etherlink",
+        "Mantle",
+        "Goat",
+        "BOB",
+        "Telos",
+        "Lens",
+        "Sonic",
+        "Redbelly",
+        "Hemi",
+        "Scroll",
+        "Linea",
+        "Sei",
+        "Blast",
+        "Taiko",
+        "Lisk",
+        "Polygon zkEVM",
+        "Moonbeam",
+        "Corn",
+        "Manta",
+        "LightLink",
+        "Tempo",
+        "Saga"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Curve DEX",
+      "slug": "curve-dex",
+      "tvlUsd": 1606850409,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Fraxtal",
+        "Base",
+        "Etherlink",
+        "Monad",
+        "Polygon",
+        "Plasma",
+        "X Layer",
+        "Avalanche",
+        "TAC",
+        "Hyperliquid L1",
+        "xDai",
+        "Optimism",
+        "XDC",
+        "Binance",
+        "Kava",
+        "Unichain",
+        "Celo",
+        "Taiko",
+        "Sonic",
+        "Fantom",
+        "Aurora",
+        "Moonbeam",
+        "Plume Mainnet",
+        "Ink",
+        "Stable",
+        "Corn",
+        "Harmony",
+        "Mantle"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Raydium AMM",
+      "slug": "raydium-amm",
+      "tvlUsd": 977561257,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Uniswap V2",
+      "slug": "uniswap-v2",
+      "tvlUsd": 870230764,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Polygon",
+        "Arbitrum",
+        "Binance",
+        "Monad",
+        "Optimism",
+        "X Layer",
+        "Avalanche",
+        "Unichain",
+        "Tempo",
+        "Zora",
+        "Celo"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Jupiter Perpetual Exchange",
+      "slug": "jupiter-perpetual-exchange",
+      "tvlUsd": 767972366,
+      "category": "Derivatives",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Uniswap V4",
+      "slug": "uniswap-v4",
+      "tvlUsd": 712715710,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Arbitrum",
+        "Polygon",
+        "Binance",
+        "Unichain",
+        "Monad",
+        "Soneium",
+        "Optimism",
+        "Tempo",
+        "Avalanche",
+        "World Chain",
+        "X Layer",
+        "Blast",
+        "Ink",
+        "Zora"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Quickswap Dex",
+      "slug": "quickswap-dex",
+      "tvlUsd": 392805807,
+      "category": "Dexs",
+      "chains": [
+        "Polygon",
+        "Base"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "PancakeSwap AMM V3",
+      "slug": "pancakeswap-amm-v3",
+      "tvlUsd": 320096950,
+      "category": "Dexs",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Base",
+        "Solana",
+        "Arbitrum",
+        "Monad",
+        "zkSync Era",
+        "Linea",
+        "Polygon zkEVM",
+        "Op_Bnb"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Fluid DEX",
+      "slug": "fluid-dex",
+      "tvlUsd": 299765603,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Plasma",
+        "Arbitrum",
+        "Base",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Orca DEX",
+      "slug": "orca-dex",
+      "tvlUsd": 255193983,
+      "category": "Dexs",
+      "chains": [
+        "Solana",
+        "Eclipse"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Dswap",
+      "slug": "dswap",
+      "tvlUsd": 244182772,
+      "category": "Dexs",
+      "chains": [
+        "ENI"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "PumpSwap",
+      "slug": "pumpswap",
+      "tvlUsd": 235999323,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Meteora DLMM",
+      "slug": "meteora-dlmm",
+      "tvlUsd": 194056194,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "GMX V2 Perps",
+      "slug": "gmx-v2-perps",
+      "tvlUsd": 191025706,
+      "category": "Derivatives",
+      "chains": [
+        "Arbitrum",
+        "Avalanche",
+        "MegaETH",
+        "Botanix"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aerodrome Slipstream",
+      "slug": "aerodrome-slipstream",
+      "tvlUsd": 187272122,
+      "category": "Dexs",
+      "chains": [
+        "Base"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Sanctum Infinity",
+      "slug": "sanctum-infinity",
+      "tvlUsd": 168551642,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Hyperliquid Spot Orderbook",
+      "slug": "hyperliquid-spot-orderbook",
+      "tvlUsd": 152143763,
+      "category": "Dexs",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aerodrome V1",
+      "slug": "aerodrome-v1",
+      "tvlUsd": 137717013,
+      "category": "Dexs",
+      "chains": [
+        "Base"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Mantle Index Four Fund",
+      "slug": "mantle-index-four-fund",
+      "tvlUsd": 131749448,
+      "category": "RWA",
+      "chains": [
+        "Mantle"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "VVS Standard",
+      "slug": "vvs-standard",
+      "tvlUsd": 112218294,
+      "category": "Dexs",
+      "chains": [
+        "Cronos"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SUNSwap V3",
+      "slug": "sunswap-v3",
+      "tvlUsd": 107936341,
+      "category": "Dexs",
+      "chains": [
+        "Tron"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SoSoValue Indexes",
+      "slug": "sosovalue-indexes",
+      "tvlUsd": 95942627,
+      "category": "Indexes",
+      "chains": [
+        "Bitcoin",
+        "Ethereum",
+        "Binance",
+        "Ripple",
+        "Solana",
+        "Doge",
+        "Cardano",
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Enzyme Finance",
+      "slug": "enzyme-finance",
+      "tvlUsd": 85094443,
+      "category": "Indexes",
+      "chains": [
+        "Ethereum",
+        "Polygon",
+        "Arbitrum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Balancer V3",
+      "slug": "balancer-v3",
+      "tvlUsd": 83175299,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Monad",
+        "Arbitrum",
+        "Base",
+        "Hyperliquid L1",
+        "Optimism",
+        "Avalanche",
+        "Plasma",
+        "xDai"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "PancakeSwap Infinity",
+      "slug": "pancakeswap-infinity",
+      "tvlUsd": 78517043,
+      "category": "Dexs",
+      "chains": [
+        "Binance",
+        "Base"
+      ],
+      "adapter": "uni_v3_nfpm",
+      "implemented": true
+    },
+    {
+      "name": "Lista DEX",
+      "slug": "lista-dex",
+      "tvlUsd": 76432233,
+      "category": "Dexs",
+      "chains": [
+        "Binance",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Thorchain DEX",
+      "slug": "thorchain-dex",
+      "tvlUsd": 66593267,
+      "category": "Dexs",
+      "chains": [
+        "Thorchain",
+        "Bitcoin",
+        "Ethereum",
+        "Bitcoincash",
+        "Avalanche",
+        "Doge",
+        "Litecoin",
+        "Ripple",
+        "Binance",
+        "Tron",
+        "Cosmos",
+        "Base"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SUNSwap V1",
+      "slug": "sunswap-v1",
+      "tvlUsd": 62776237,
+      "category": "Dexs",
+      "chains": [
+        "Tron"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SoDEX Bridge",
+      "slug": "sodex-bridge",
+      "tvlUsd": 62163393,
+      "category": "Bridge",
+      "chains": [
+        "Base",
+        "Arbitrum",
+        "Ethereum",
+        "Binance",
+        "Hyperliquid L1",
+        "Bitcoin",
+        "Solana",
+        "Ripple",
+        "Doge",
+        "Litecoin",
+        "Cardano"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Reserve Protocol",
+      "slug": "reserve-protocol",
+      "tvlUsd": 58790566,
+      "category": "Indexes",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Arbitrum",
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Bwatch",
+      "slug": "bwatch",
+      "tvlUsd": 58324019,
+      "category": "Indexes",
+      "chains": [],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Nado Spot",
+      "slug": "nado-spot",
+      "tvlUsd": 54487635,
+      "category": "Dexs",
+      "chains": [
+        "Ink"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SushiSwap V3",
+      "slug": "sushiswap-v3",
+      "tvlUsd": 53755530,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Katana",
+        "Hemi",
+        "Base",
+        "Polygon",
+        "Arbitrum",
+        "RSK",
+        "Filecoin",
+        "Optimism",
+        "ThunderCore",
+        "Europa",
+        "xDai",
+        "Scroll",
+        "Binance",
+        "Avalanche",
+        "Linea",
+        "Arbitrum Nova",
+        "Sonic",
+        "Polygon zkEVM",
+        "CORE",
+        "Metis",
+        "Blast",
+        "Fantom",
+        "Moonriver",
+        "ZetaChain",
+        "Kava",
+        "Fuse",
+        "Bittorrent",
+        "Moonbeam"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Project X",
+      "slug": "project-x",
+      "tvlUsd": 47251903,
+      "category": "Dexs",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SushiSwap",
+      "slug": "sushiswap",
+      "tvlUsd": 37385594,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Polygon",
+        "Arbitrum",
+        "Base",
+        "Boba",
+        "Celo",
+        "xDai",
+        "Binance",
+        "Moonriver",
+        "Arbitrum Nova",
+        "Avalanche",
+        "Harmony",
+        "Fantom",
+        "Fuse",
+        "Katana",
+        "Scroll",
+        "OKExChain",
+        "Optimism",
+        "Filecoin",
+        "Linea",
+        "RSK",
+        "CORE",
+        "Palm",
+        "Moonbeam",
+        "Polygon zkEVM",
+        "Hemi",
+        "Blast",
+        "Bittorrent",
+        "Sonic",
+        "Europa",
+        "Telos",
+        "ZetaChain",
+        "ThunderCore",
+        "Metis",
+        "Kava",
+        "HAQQ",
+        "Heco",
+        "Boba_Bnb"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "XRPL DEX",
+      "slug": "xrpl-dex",
+      "tvlUsd": 35921662,
+      "category": "Dexs",
+      "chains": [
+        "Ripple"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Merchant Moe Liquidity Book",
+      "slug": "merchant-moe-liquidity-book",
+      "tvlUsd": 35880764,
+      "category": "Dexs",
+      "chains": [
+        "Mantle"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aquarius Stellar",
+      "slug": "aquarius-stellar",
+      "tvlUsd": 33239898,
+      "category": "Dexs",
+      "chains": [
+        "Stellar"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Pharaoh V3",
+      "slug": "pharaoh-v3",
+      "tvlUsd": 32925642,
+      "category": "Dexs",
+      "chains": [
+        "Avalanche"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "IDEX V1",
+      "slug": "idex-v1",
+      "tvlUsd": 32644830,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Hydration DEX",
+      "slug": "hydration-dex",
+      "tvlUsd": 32355150,
+      "category": "Dexs",
+      "chains": [
+        "HydraDX"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "STON.fi",
+      "slug": "ston.fi",
+      "tvlUsd": 32073076,
+      "category": "Dexs",
+      "chains": [
+        "TON"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Cetus CLMM",
+      "slug": "cetus-clmm",
+      "tvlUsd": 31698233,
+      "category": "Dexs",
+      "chains": [
+        "Sui",
+        "Aptos"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Paradex Bridge",
+      "slug": "paradex-bridge",
+      "tvlUsd": 31271557,
+      "category": "Bridge",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Balancer V2",
+      "slug": "balancer-v2",
+      "tvlUsd": 31042310,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Polygon",
+        "Arbitrum",
+        "Base",
+        "xDai",
+        "Avalanche",
+        "Polygon zkEVM",
+        "Fraxtal",
+        "Mode"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Rhea Dex",
+      "slug": "rhea-dex",
+      "tvlUsd": 30938063,
+      "category": "Dexs",
+      "chains": [
+        "Near"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Minswap DEX",
+      "slug": "minswap-dex",
+      "tvlUsd": 30735648,
+      "category": "Dexs",
+      "chains": [
+        "Cardano"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Pacifica Perps",
+      "slug": "pacifica-perps",
+      "tvlUsd": 30661522,
+      "category": "Derivatives",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Ethereal DEX",
+      "slug": "ethereal-dex",
+      "tvlUsd": 29688955,
+      "category": "Derivatives",
+      "chains": [
+        "Ethereal"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Kodiak V3",
+      "slug": "kodiak-v3",
+      "tvlUsd": 28388648,
+      "category": "Dexs",
+      "chains": [
+        "Berachain"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Meteora DAMM V2",
+      "slug": "meteora-damm-v2",
+      "tvlUsd": 26762653,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Ekubo",
+      "slug": "ekubo",
+      "tvlUsd": 25846638,
+      "category": "Dexs",
+      "chains": [
+        "Starknet",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Blackhole CLMM",
+      "slug": "blackhole-clmm",
+      "tvlUsd": 25657394,
+      "category": "Dexs",
+      "chains": [
+        "Avalanche"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Velodrome V3",
+      "slug": "velodrome-v3",
+      "tvlUsd": 24674055,
+      "category": "Dexs",
+      "chains": [
+        "Ink",
+        "Optimism",
+        "Lisk",
+        "Unichain",
+        "Celo",
+        "Fraxtal",
+        "Soneium",
+        "Superseed",
+        "Mode",
+        "Swellchain"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "PulseX V1",
+      "slug": "pulsex-v1",
+      "tvlUsd": 24153933,
+      "category": "Dexs",
+      "chains": [
+        "Pulse"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Kumbaya",
+      "slug": "kumbaya",
+      "tvlUsd": 23710386,
+      "category": "Dexs",
+      "chains": [
+        "MegaETH"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SaucerSwap V2",
+      "slug": "saucerswap-v2",
+      "tvlUsd": 22119555,
+      "category": "Dexs",
+      "chains": [
+        "Hedera"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Agni Finance",
+      "slug": "agni-finance",
+      "tvlUsd": 21977937,
+      "category": "Dexs",
+      "chains": [
+        "Mantle"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Manifest Trade",
+      "slug": "manifest-trade",
+      "tvlUsd": 21210836,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Meteora DAMM V1",
+      "slug": "meteora-damm-v1",
+      "tvlUsd": 20575215,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Chamber Vaults",
+      "slug": "chamber-vaults",
+      "tvlUsd": 20533952,
+      "category": "Indexes",
+      "chains": [
+        "Base",
+        "Optimism",
+        "Polygon",
+        "Arbitrum",
+        "Hyperliquid L1",
+        "Ethereum",
+        "Plasma"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Valantis STEX",
+      "slug": "valantis-stex",
+      "tvlUsd": 20095195,
+      "category": "Dexs",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Bancor V3",
+      "slug": "bancor-v3",
+      "tvlUsd": 19910384,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Camelot V3",
+      "slug": "camelot-v3",
+      "tvlUsd": 19576853,
+      "category": "Dexs",
+      "chains": [
+        "Arbitrum",
+        "Plume Mainnet",
+        "ApeChain",
+        "Gravity",
+        "Superposition",
+        "Xai",
+        "EDU Chain",
+        "Rari",
+        "Reya Network",
+        "Corn",
+        "DuckChain",
+        "WINR"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Dano Finance",
+      "slug": "dano-finance",
+      "tvlUsd": 18934892,
+      "category": "Dexs",
+      "chains": [
+        "Cardano"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Bluefin Spot",
+      "slug": "bluefin-spot",
+      "tvlUsd": 18495500,
+      "category": "Dexs",
+      "chains": [
+        "Sui"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "PulseX V2",
+      "slug": "pulsex-v2",
+      "tvlUsd": 18404422,
+      "category": "Dexs",
+      "chains": [
+        "Pulse"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Byreal",
+      "slug": "byreal",
+      "tvlUsd": 17387460,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Osmosis DEX",
+      "slug": "osmosis-dex",
+      "tvlUsd": 17149110,
+      "category": "Dexs",
+      "chains": [
+        "Osmosis"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Stellar DEX",
+      "slug": "stellar-dex",
+      "tvlUsd": 17053186,
+      "category": "Dexs",
+      "chains": [
+        "Stellar"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "PancakeSwap StableSwap",
+      "slug": "pancakeswap-stableswap",
+      "tvlUsd": 16742937,
+      "category": "Dexs",
+      "chains": [
+        "Binance",
+        "Arbitrum",
+        "Ethereum"
+      ],
+      "adapter": "uni_v3_nfpm",
+      "implemented": true
+    },
+    {
+      "name": "nest CLMM",
+      "slug": "nest-clmm",
+      "tvlUsd": 16408872,
+      "category": "Dexs",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Saphyre V3",
+      "slug": "saphyre-v3",
+      "tvlUsd": 16231299,
+      "category": "Dexs",
+      "chains": [
+        "Sei"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aevo Perps",
+      "slug": "aevo-perps",
+      "tvlUsd": 16174583,
+      "category": "Derivatives",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Arbitrum",
+        "Optimism"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Joe V2.2",
+      "slug": "joe-v2.2",
+      "tvlUsd": 15704517,
+      "category": "Dexs",
+      "chains": [
+        "Avalanche",
+        "Monad",
+        "Arbitrum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Serum",
+      "slug": "serum",
+      "tvlUsd": 15236884,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "DeepBook V3",
+      "slug": "deepbook-v3",
+      "tvlUsd": 15064025,
+      "category": "Dexs",
+      "chains": [
+        "Sui"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SparkDEX V4",
+      "slug": "sparkdex-v4",
+      "tvlUsd": 15041527,
+      "category": "Dexs",
+      "chains": [
+        "Flare"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Hyperion",
+      "slug": "hyperion",
+      "tvlUsd": 14812719,
+      "category": "Dexs",
+      "chains": [
+        "Aptos"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "EGAS swap",
+      "slug": "egas-swap",
+      "tvlUsd": 14601958,
+      "category": "Dexs",
+      "chains": [
+        "ENI"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "HyperSwap V3",
+      "slug": "hyperswap-v3",
+      "tvlUsd": 13258168,
+      "category": "Dexs",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Velodrome V2",
+      "slug": "velodrome-v2",
+      "tvlUsd": 13111779,
+      "category": "Dexs",
+      "chains": [
+        "Optimism",
+        "Ink",
+        "BOB",
+        "Fraxtal",
+        "Mode",
+        "Soneium",
+        "Swellchain",
+        "Lisk",
+        "Superseed",
+        "Celo",
+        "Unichain"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Futarchy AMM",
+      "slug": "futarchy-amm",
+      "tvlUsd": 13002559,
+      "category": "Dexs",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Joe DEX",
+      "slug": "joe-dex",
+      "tvlUsd": 12883717,
+      "category": "Dexs",
+      "chains": [
+        "Avalanche",
+        "Monad",
+        "Arbitrum",
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Frax Swap",
+      "slug": "frax-swap",
+      "tvlUsd": 12827845,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum",
+        "Fraxtal",
+        "Binance",
+        "Avalanche",
+        "Polygon",
+        "Optimism",
+        "Dogechain",
+        "Arbitrum",
+        "Moonbeam",
+        "Fantom"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Fulcrom Perps",
+      "slug": "fulcrom-perps",
+      "tvlUsd": 12652930,
+      "category": "Derivatives",
+      "chains": [
+        "Cronos",
+        "zkSync Era",
+        "Cronos zkEVM"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "SaucerSwap V1",
+      "slug": "saucerswap-v1",
+      "tvlUsd": 12608070,
+      "category": "Dexs",
+      "chains": [
+        "Hedera"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "FstSwap",
+      "slug": "fstswap",
+      "tvlUsd": 12549399,
+      "category": "Dexs",
+      "chains": [
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Reya Perps",
+      "slug": "reya-perps",
+      "tvlUsd": 12537240,
+      "category": "Derivatives",
+      "chains": [
+        "Reya Network"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "DODO AMM",
+      "slug": "dodo-amm",
+      "tvlUsd": 12070983,
+      "category": "Dexs",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Avalanche",
+        "Arbitrum",
+        "Polygon",
+        "Base",
+        "Aurora",
+        "Manta",
+        "Zircuit",
+        "Scroll",
+        "Linea",
+        "Optimism",
+        "Hemi",
+        "HashKey Chain",
+        "Mantle",
+        "Defi Oracle Meta"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Index Coop",
+      "slug": "index-coop",
+      "tvlUsd": 11952607,
+      "category": "Indexes",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Base"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Chainge Finance",
+      "slug": "chainge-finance",
+      "tvlUsd": 11745819,
+      "category": "Dexs",
+      "chains": [
+        "Rollux",
+        "Fusion"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Angstrom",
+      "slug": "angstrom",
+      "tvlUsd": 11035126,
+      "category": "Dexs",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Chainflip AMM",
+      "slug": "chainflip-amm",
+      "tvlUsd": 10834762,
+      "category": "Dexs",
+      "chains": [
+        "Chainflip",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Astroport",
+      "slug": "astroport",
+      "tvlUsd": 10775032,
+      "category": "Dexs",
+      "chains": [
+        "Neutron",
+        "Terra2",
+        "Injective",
+        "Osmosis",
+        "Sei"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Set Protocol",
+      "slug": "set-protocol",
+      "tvlUsd": 10716524,
+      "category": "Indexes",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Quickswap V3",
+      "slug": "quickswap-v3",
+      "tvlUsd": 10426820,
+      "category": "Dexs",
+      "chains": [
+        "Polygon",
+        "Manta",
+        "Immutable zkEVM",
+        "Soneium",
+        "Polygon zkEVM",
+        "X Layer",
+        "Dogechain",
+        "Astar zkEVM"
+      ],
+      "adapter": "uni_v3_nfpm",
+      "implemented": true
+    },
+    {
+      "name": "Stellar AMM",
+      "slug": "stellar-amm",
+      "tvlUsd": 10278623,
+      "category": "Dexs",
+      "chains": [
+        "Stellar"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "ApeSwap AMM",
+      "slug": "apeswap-amm",
+      "tvlUsd": 10203472,
+      "category": "Dexs",
+      "chains": [
+        "Binance",
+        "Polygon",
+        "Arbitrum",
+        "Telos",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    }
+  ],
+  "other": [
+    {
+      "name": "Ethena USDe",
+      "slug": "ethena-usde",
+      "tvlUsd": 4501701011,
+      "category": "Basis Trading",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Tether Gold",
+      "slug": "tether-gold",
+      "tvlUsd": 3223414843,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Monad",
+        "Plasma",
+        "Avalanche",
+        "Arbitrum",
+        "Celo",
+        "Ink",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "BlackRock BUIDL",
+      "slug": "blackrock-buidl",
+      "tvlUsd": 2981347321,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Aptos",
+        "Solana",
+        "Avalanche",
+        "Binance",
+        "Optimism",
+        "Arbitrum",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Circle USYC",
+      "slug": "circle-usyc",
+      "tvlUsd": 2960167480,
+      "category": "RWA",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Near",
+        "Noble"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Ondo Yield Assets",
+      "slug": "ondo-yield-assets",
+      "tvlUsd": 2681980574,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Stellar",
+        "Ripple",
+        "Sei",
+        "Solana",
+        "Mantle",
+        "Sui",
+        "Noble",
+        "Aptos",
+        "Arbitrum",
+        "Plume Mainnet",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Steakhouse Financial",
+      "slug": "steakhouse-financial",
+      "tvlUsd": 2198932450,
+      "category": "Risk Curators",
+      "chains": [
+        "Base",
+        "Ethereum",
+        "Monad",
+        "Solana",
+        "Katana",
+        "Arbitrum",
+        "Polygon",
+        "Corn",
+        "Unichain"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Paxos Gold",
+      "slug": "paxos-gold",
+      "tvlUsd": 2114258514,
+      "category": "RWA",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Spark Savings",
+      "slug": "spark-savings",
+      "tvlUsd": 2042931305,
+      "category": "Yield",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Avalanche",
+        "Base",
+        "Optimism",
+        "Unichain"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Sentora",
+      "slug": "sentora",
+      "tvlUsd": 1572821286,
+      "category": "Risk Curators",
+      "chains": [
+        "Ethereum",
+        "Solana",
+        "Ink"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Figure Markets Exchange",
+      "slug": "figure-markets-exchange",
+      "tvlUsd": 1502301452,
+      "category": "OTC Marketplace",
+      "chains": [
+        "Provenance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Falcon Finance",
+      "slug": "falcon-finance",
+      "tvlUsd": 1500658007,
+      "category": "Basis Trading",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Gauntlet",
+      "slug": "gauntlet",
+      "tvlUsd": 1472529562,
+      "category": "Risk Curators",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Base",
+        "Katana",
+        "Stable",
+        "Solana",
+        "Arbitrum",
+        "Polygon",
+        "Optimism",
+        "Hyperliquid L1",
+        "Unichain",
+        "Tempo"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Pendle",
+      "slug": "pendle",
+      "tvlUsd": 1448362215,
+      "category": "Yield",
+      "chains": [
+        "Ethereum",
+        "Plasma",
+        "Arbitrum",
+        "Hyperliquid L1",
+        "Binance",
+        "Base",
+        "Sonic",
+        "Mantle",
+        "Avalanche",
+        "Optimism",
+        "Berachain"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Centrifuge Protocol",
+      "slug": "centrifuge-protocol",
+      "tvlUsd": 1382640181,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Avalanche",
+        "Plume Mainnet",
+        "Pharos",
+        "Monad",
+        "Base",
+        "Binance",
+        "Optimism",
+        "Arbitrum",
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Spiko",
+      "slug": "spiko",
+      "tvlUsd": 1199890787,
+      "category": "RWA",
+      "chains": [
+        "Stellar",
+        "Arbitrum",
+        "Polygon",
+        "Ethereum",
+        "Starknet",
+        "Base",
+        "Etherlink"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Ondo Global Markets",
+      "slug": "ondo-global-markets",
+      "tvlUsd": 1197130970,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Binance",
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Ethena USDtb",
+      "slug": "ethena-usdtb",
+      "tvlUsd": 1059664653,
+      "category": "RWA",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Blockchain Capital",
+      "slug": "blockchain-capital",
+      "tvlUsd": 976453815,
+      "category": "RWA",
+      "chains": [
+        "zkSync Era"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "WisdomTree",
+      "slug": "wisdomtree",
+      "tvlUsd": 921297793,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Stellar"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Anemoy Capital",
+      "slug": "anemoy-capital",
+      "tvlUsd": 864399330,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Celo",
+        "Base"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Superstate USTB",
+      "slug": "superstate-ustb",
+      "tvlUsd": 771809464,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Plume Mainnet",
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lombard LBTC",
+      "slug": "lombard-lbtc",
+      "tvlUsd": 706229154,
+      "category": "Restaked BTC",
+      "chains": [
+        "Bitcoin",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Convex Finance",
+      "slug": "convex-finance",
+      "tvlUsd": 557507576,
+      "category": "Yield",
+      "chains": [
+        "Ethereum",
+        "Fraxtal",
+        "Arbitrum",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "xStocks",
+      "slug": "xstocks",
+      "tvlUsd": 526154232,
+      "category": "RWA",
+      "chains": [
+        "Solana",
+        "Arbitrum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Tornado Cash",
+      "slug": "tornado-cash",
+      "tvlUsd": 507747971,
+      "category": "Privacy",
+      "chains": [
+        "Ethereum",
+        "Binance",
+        "Arbitrum",
+        "xDai",
+        "Avalanche",
+        "Polygon",
+        "EthereumClassic",
+        "Optimism"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Solstice",
+      "slug": "solstice",
+      "tvlUsd": 501009941,
+      "category": "Basis Trading",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Polymarket International",
+      "slug": "polymarket-international",
+      "tvlUsd": 458675492,
+      "category": "Prediction Market",
+      "chains": [
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Hastra",
+      "slug": "hastra",
+      "tvlUsd": 391688421,
+      "category": "RWA",
+      "chains": [
+        "Solana",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "M0",
+      "slug": "m0",
+      "tvlUsd": 373205200,
+      "category": "Stablecoin Issuer",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "tBTC",
+      "slug": "tbtc",
+      "tvlUsd": 365555321,
+      "category": "Decentralized BTC",
+      "chains": [
+        "Bitcoin",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lightning Network",
+      "slug": "lightning-network",
+      "tvlUsd": 360616949,
+      "category": "Payments",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Hyperliquid HLP",
+      "slug": "hyperliquid-hlp",
+      "tvlUsd": 356354998,
+      "category": "Derivatives",
+      "chains": [
+        "Hyperliquid L1"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "BounceBit CeDeFi Yield",
+      "slug": "bouncebit-cedefi-yield",
+      "tvlUsd": 350411650,
+      "category": "Basis Trading",
+      "chains": [
+        "BounceBit",
+        "Binance",
+        "Ethereum",
+        "Base",
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Bedrock uniBTC",
+      "slug": "bedrock-unibtc",
+      "tvlUsd": 339908175,
+      "category": "Anchor BTC",
+      "chains": [
+        "Bitcoin",
+        "Ethereum",
+        "Merlin",
+        "BOB",
+        "Binance",
+        "Mantle",
+        "Arbitrum",
+        "Bitlayer",
+        "Berachain",
+        "Base",
+        "BSquared",
+        "ZetaChain",
+        "Optimism",
+        "RSK",
+        "Hemi",
+        "TAC",
+        "Taiko",
+        "Mode"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "CIAN Yield Layer",
+      "slug": "cian-yield-layer",
+      "tvlUsd": 333613497,
+      "category": "Yield Aggregator",
+      "chains": [
+        "Ethereum",
+        "Mantle",
+        "Arbitrum",
+        "Optimism",
+        "Base",
+        "Binance",
+        "Scroll"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Re",
+      "slug": "re",
+      "tvlUsd": 281166621,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Avalanche",
+        "Arbitrum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "BitFi Basis",
+      "slug": "bitfi-basis",
+      "tvlUsd": 257842764,
+      "category": "Basis Trading",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Hemi",
+        "Base",
+        "CORE",
+        "Bitlayer"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Buzz Farming",
+      "slug": "buzz-farming",
+      "tvlUsd": 237677478,
+      "category": "Farm",
+      "chains": [
+        "BSquared"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Superstate USCC",
+      "slug": "superstate-uscc",
+      "tvlUsd": 231253326,
+      "category": "Basis Trading",
+      "chains": [
+        "Ethereum",
+        "Solana",
+        "Plume Mainnet"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "AFI Protocol",
+      "slug": "afi-protocol",
+      "tvlUsd": 225299989,
+      "category": "Farm",
+      "chains": [
+        "Base",
+        "Ethereum",
+        "Monad"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "GTBTC",
+      "slug": "gtbtc",
+      "tvlUsd": 222188826,
+      "category": "Restaked BTC",
+      "chains": [
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "K3 Capital",
+      "slug": "k3-capital",
+      "tvlUsd": 201100220,
+      "category": "Risk Curators",
+      "chains": [
+        "Ethereum",
+        "Monad",
+        "Plasma",
+        "Avalanche",
+        "Arbitrum",
+        "Binance",
+        "Unichain",
+        "BOB"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "OnRe",
+      "slug": "onre",
+      "tvlUsd": 190089475,
+      "category": "RWA",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Solv Basis Trading",
+      "slug": "solv-basis-trading",
+      "tvlUsd": 182201050,
+      "category": "Basis Trading",
+      "chains": [
+        "Binance",
+        "Arbitrum",
+        "Ethereum",
+        "Mantle",
+        "Polygon",
+        "Solana",
+        "Soneium",
+        "Merlin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aster asBNB",
+      "slug": "aster-asbnb",
+      "tvlUsd": 175368474,
+      "category": "Yield",
+      "chains": [
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lorenzo sUSD1+",
+      "slug": "lorenzo-susd1+",
+      "tvlUsd": 172699013,
+      "category": "Yield",
+      "chains": [
+        "Binance",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Yearn Finance",
+      "slug": "yearn-finance",
+      "tvlUsd": 171216427,
+      "category": "Yield Aggregator",
+      "chains": [
+        "Ethereum",
+        "Katana",
+        "Base",
+        "Optimism",
+        "Polygon",
+        "Arbitrum",
+        "Fantom"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "OpenTrade",
+      "slug": "opentrade",
+      "tvlUsd": 169649541,
+      "category": "RWA",
+      "chains": [
+        "Avalanche",
+        "Ethereum",
+        "Plume Mainnet"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "OpenEden TBILL",
+      "slug": "openeden-tbill",
+      "tvlUsd": 168668306,
+      "category": "RWA",
+      "chains": [
+        "Binance",
+        "Ripple",
+        "Ethereum",
+        "Solana",
+        "Arbitrum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "KPK",
+      "slug": "kpk",
+      "tvlUsd": 167351589,
+      "category": "Risk Curators",
+      "chains": [
+        "Ethereum",
+        "xDai",
+        "Arbitrum",
+        "Binance",
+        "Base",
+        "Optimism",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "PinkSale",
+      "slug": "pinksale",
+      "tvlUsd": 166233509,
+      "category": "Launchpad",
+      "chains": [
+        "Binance",
+        "Ethereum",
+        "Polygon",
+        "Cronos",
+        "Avalanche",
+        "Fantom"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "DigiFT",
+      "slug": "digift",
+      "tvlUsd": 164962514,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Binance",
+        "Arbitrum",
+        "Plume Mainnet"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Huma Finance V2",
+      "slug": "huma-finance-v2",
+      "tvlUsd": 162957809,
+      "category": "Yield",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "RealT Tokens",
+      "slug": "realt-tokens",
+      "tvlUsd": 156775576,
+      "category": "RWA",
+      "chains": [
+        "xDai"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Saturn",
+      "slug": "saturn",
+      "tvlUsd": 154092982,
+      "category": "Stablecoin Wrapper",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Kamino Liquidity",
+      "slug": "kamino-liquidity",
+      "tvlUsd": 150729374,
+      "category": "Liquidity Manager",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Extended",
+      "slug": "extended",
+      "tvlUsd": 149415393,
+      "category": "Derivatives",
+      "chains": [
+        "Starknet",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Telos Consilium",
+      "slug": "telos-consilium",
+      "tvlUsd": 138727302,
+      "category": "Risk Curators",
+      "chains": [
+        "Plasma",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Yield Basis",
+      "slug": "yield-basis",
+      "tvlUsd": 138447745,
+      "category": "Leveraged Farming",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "EtherFi Cash Liquid",
+      "slug": "etherfi-cash-liquid",
+      "tvlUsd": 136925188,
+      "category": "Crypto Card Issuer",
+      "chains": [
+        "Optimism",
+        "Scroll"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Doppler Finance",
+      "slug": "doppler-finance",
+      "tvlUsd": 132677341,
+      "category": "CeDeFi",
+      "chains": [
+        "Ripple",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Derive V2",
+      "slug": "derive-v2",
+      "tvlUsd": 132354173,
+      "category": "Derivatives",
+      "chains": [
+        "Hyperliquid L1",
+        "Arbitrum",
+        "Optimism",
+        "Base",
+        "Ethereum",
+        "Mode",
+        "Blast"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Sky Money",
+      "slug": "sky-money",
+      "tvlUsd": 129996202,
+      "category": "Risk Curators",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Fluid Lite",
+      "slug": "fluid-lite",
+      "tvlUsd": 129170390,
+      "category": "Yield Aggregator",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "UNCX Network V2",
+      "slug": "uncx-network-v2",
+      "tvlUsd": 126955354,
+      "category": "Token Locker",
+      "chains": [
+        "Ethereum",
+        "Binance",
+        "Base",
+        "Polygon",
+        "Arbitrum",
+        "Avalanche",
+        "xDai"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "GAIB",
+      "slug": "gaib",
+      "tvlUsd": 126428449,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Sei",
+        "Arbitrum",
+        "Binance",
+        "Base",
+        "Story"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Beefy",
+      "slug": "beefy",
+      "tvlUsd": 122320426,
+      "category": "Yield Aggregator",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Arbitrum",
+        "Binance",
+        "Fraxtal",
+        "Polygon",
+        "Optimism",
+        "Fantom",
+        "Avalanche",
+        "Monad",
+        "Cronos",
+        "Plasma",
+        "Hyperliquid L1",
+        "Sonic",
+        "Metis",
+        "MegaETH",
+        "Linea",
+        "xDai",
+        "zkSync Era",
+        "Sei",
+        "Lisk",
+        "RSK",
+        "Berachain",
+        "Mantle",
+        "Kava",
+        "Moonbeam",
+        "Aurora",
+        "Moonriver",
+        "Celo",
+        "Fuse",
+        "Mode",
+        "Oasis",
+        "Manta",
+        "Harmony",
+        "Scroll",
+        "Heco",
+        "Saga",
+        "Canto",
+        "re.al",
+        "Polygon zkEVM"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "RockawayX",
+      "slug": "rockawayx",
+      "tvlUsd": 121240193,
+      "category": "Risk Curators",
+      "chains": [
+        "Ethereum",
+        "Solana",
+        "Sei",
+        "Binance",
+        "Etherlink",
+        "Plume Mainnet"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "RAAC",
+      "slug": "raac",
+      "tvlUsd": 119785878,
+      "category": "RWA",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Stake DAO",
+      "slug": "stake-dao",
+      "tvlUsd": 117886736,
+      "category": "Yield",
+      "chains": [
+        "Ethereum",
+        "Base",
+        "Arbitrum",
+        "Fraxtal",
+        "Polygon",
+        "Avalanche",
+        "Sonic",
+        "Optimism",
+        "xDai",
+        "Linea"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aster USDF",
+      "slug": "aster-usdf",
+      "tvlUsd": 116452482,
+      "category": "Basis Trading",
+      "chains": [
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Midas RWA",
+      "slug": "midas-rwa",
+      "tvlUsd": 115667521,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Plasma",
+        "Arbitrum",
+        "Monad",
+        "Hyperliquid L1",
+        "Base",
+        "Etherlink",
+        "Plume Mainnet",
+        "RSK",
+        "Flare",
+        "Binance",
+        "Katana",
+        "Optimism",
+        "Solana",
+        "Sonic",
+        "Linea",
+        "Unichain",
+        "TAC",
+        "Avalanche",
+        "Mantle",
+        "Ink",
+        "Celo",
+        "Sei",
+        "Berachain",
+        "0G",
+        "Polygon",
+        "XRPL EVM",
+        "Scroll",
+        "Sapphire",
+        "Bitcoin",
+        "Sui"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Theo Network thBill",
+      "slug": "theo-network-thbill",
+      "tvlUsd": 114838435,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Clearstar",
+      "slug": "clearstar",
+      "tvlUsd": 111730751,
+      "category": "Risk Curators",
+      "chains": [
+        "Flare",
+        "Ethereum",
+        "Base",
+        "Monad",
+        "Hyperliquid L1",
+        "Hemi",
+        "Starknet",
+        "Arbitrum",
+        "Katana",
+        "Unichain",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Homora V2",
+      "slug": "homora-v2",
+      "tvlUsd": 110273717,
+      "category": "Leveraged Farming",
+      "chains": [
+        "Ethereum",
+        "Binance",
+        "Avalanche",
+        "Fantom",
+        "Optimism"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Hyperithm",
+      "slug": "hyperithm",
+      "tvlUsd": 109611578,
+      "category": "Risk Curators",
+      "chains": [
+        "Ethereum",
+        "Monad",
+        "Solana",
+        "Arbitrum",
+        "Plasma",
+        "Stable",
+        "Hyperliquid L1",
+        "Katana",
+        "XRPL EVM",
+        "Binance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Bitlayer YBTC Family",
+      "slug": "bitlayer-ybtc-family",
+      "tvlUsd": 105302683,
+      "category": "Anchor BTC",
+      "chains": [
+        "Bitcoin",
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Securitize Tokenized AAA CLO Fund",
+      "slug": "securitize-tokenized-aaa-clo-fund",
+      "tvlUsd": 102115009,
+      "category": "RWA",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Avalon CeDeFi",
+      "slug": "avalon-cedefi",
+      "tvlUsd": 100601301,
+      "category": "Anchor BTC",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lofty",
+      "slug": "lofty",
+      "tvlUsd": 99610424,
+      "category": "RWA",
+      "chains": [
+        "Algorand"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Strata Markets",
+      "slug": "strata-markets",
+      "tvlUsd": 99453379,
+      "category": "Yield",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Avant avUSD",
+      "slug": "avant-avusd",
+      "tvlUsd": 97525353,
+      "category": "Basis Trading",
+      "chains": [
+        "Avalanche"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "dYdX V4",
+      "slug": "dydx-v4",
+      "tvlUsd": 96860217,
+      "category": "Derivatives",
+      "chains": [
+        "dYdX"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Usual USD0",
+      "slug": "usual-usd0",
+      "tvlUsd": 95787353,
+      "category": "RWA",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "infiniFi",
+      "slug": "infinifi",
+      "tvlUsd": 95743760,
+      "category": "Yield",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Sky RWA",
+      "slug": "sky-rwa",
+      "tvlUsd": 95677198,
+      "category": "RWA",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Figure Markets Democratized Prime",
+      "slug": "figure-markets-democratized-prime",
+      "tvlUsd": 94077980,
+      "category": "RWA Lending",
+      "chains": [
+        "Provenance"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Nexus Mutual",
+      "slug": "nexus-mutual",
+      "tvlUsd": 93211068,
+      "category": "Insurance",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "fx Protocol",
+      "slug": "fx-protocol",
+      "tvlUsd": 92485207,
+      "category": "Dual-Token Stablecoin",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "River Omni-CDP",
+      "slug": "river-omni-cdp",
+      "tvlUsd": 92436764,
+      "category": "CeDeFi",
+      "chains": [
+        "Binance",
+        "Base",
+        "BSquared",
+        "Ethereum",
+        "BOB",
+        "Bitlayer",
+        "Hemi",
+        "Arbitrum",
+        "X Layer",
+        "Sonic",
+        "BEVM",
+        "Bitcoin"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "R25",
+      "slug": "r25",
+      "tvlUsd": 92432549,
+      "category": "RWA",
+      "chains": [
+        "Pharos"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Flying Tulip Yield",
+      "slug": "flying-tulip-yield",
+      "tvlUsd": 92207025,
+      "category": "Services",
+      "chains": [],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Apollo Diversified Credit Securitize Fund",
+      "slug": "apollo-diversified-credit-securitize-fund",
+      "tvlUsd": 89791622,
+      "category": "RWA",
+      "chains": [
+        "Ethereum",
+        "Aptos",
+        "Sei",
+        "Ink",
+        "Avalanche",
+        "Polygon",
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Railgun",
+      "slug": "railgun",
+      "tvlUsd": 88274268,
+      "category": "Privacy",
+      "chains": [
+        "Ethereum",
+        "Arbitrum",
+        "Binance",
+        "Polygon"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Pleasing Gold",
+      "slug": "pleasing-gold",
+      "tvlUsd": 87873759,
+      "category": "RWA",
+      "chains": [],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "BlazeStake",
+      "slug": "blazestake",
+      "tvlUsd": 87378612,
+      "category": "Liquid Staking",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Lulo",
+      "slug": "lulo",
+      "tvlUsd": 86025958,
+      "category": "Yield Aggregator",
+      "chains": [
+        "Solana"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Aave V4",
+      "slug": "aave-v4",
+      "tvlUsd": 85774497,
+      "category": "Lending",
+      "chains": [
+        "Ethereum"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Treehouse Protocol",
+      "slug": "treehouse-protocol",
+      "tvlUsd": 85162185,
+      "category": "DOR",
+      "chains": [
+        "Ethereum",
+        "Avalanche",
+        "Mantle"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    },
+    {
+      "name": "Zest V2",
+      "slug": "zest-v2",
+      "tvlUsd": 84203894,
+      "category": "Lending",
+      "chains": [
+        "Stacks"
+      ],
+      "adapter": "llama_token_scan",
+      "implemented": true
+    }
+  ],
+  "gaps": {
+    "lending": [],
+    "dex": [],
+    "other": []
+  }
+}

@@ -2,10 +2,12 @@
 
 ## Поток данных
 
-1. **DeBank (Jina)** — источник истины по `totalUsd` и списку позиций.
-2. **`buildPortfolioFromDebank`** (`js/portfolio-pipeline.js`) — парс → `dedupe` → `normalize` → KPI.
-3. **Hybrid** (`mergeHybridPortfolio`) — ончейн заменяет совпадения; Revert — APY/диапазоны; DeBank — пробелы.
-4. **`syncDisplayTotals`** — `totalUsd = debankTotalUsd`, категории = сумма позиций, `partial` при расхождении.
+1. **Ончейн (RPC, 20 сетей)** — LP/lending/wallet по известным контрактам (`js/onchain-portfolio.js`).
+2. **DeBank (Jina, бесплатно)** — эталон `totalUsd` + позиции, которые ончейн не нашёл.
+3. **Hybrid** (`mergeHybridPortfolio`) — ончейн заменяет совпадения; DeBank — `debankFill` для gap.
+4. **`syncDisplayTotals`** — `totalUsd = debankTotalUsd`, `coverageGapUsd` = разница с `computedTotalUsd`.
+
+Подробнее: [docs/ONCHAIN_PIPELINE.md](docs/ONCHAIN_PIPELINE.md)
 
 ## Модули
 

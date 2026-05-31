@@ -10,10 +10,20 @@ export const EXPLORER_HOST = {
   op: "https://optimistic.etherscan.io",
   matic: "https://polygonscan.com",
   bsc: "https://bscscan.com",
+  avax: "https://snowtrace.io",
   scroll: "https://scrollscan.com",
   linea: "https://lineascan.build",
   blast: "https://blastscan.io",
   gnosis: "https://gnosisscan.io",
+  era: "https://era.zksync.network",
+  mantle: "https://mantlescan.xyz",
+  ftm: "https://ftmscan.com",
+  celo: "https://celoscan.io",
+  cro: "https://cronoscan.com",
+  metis: "https://andromeda-explorer.metis.io",
+  mode: "https://explorer.mode.network",
+  sonic: "https://sonicscan.org",
+  zora: "https://explorer.zora.energy",
 };
 
 const cache = new Map();

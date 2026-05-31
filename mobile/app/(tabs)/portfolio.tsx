@@ -70,7 +70,7 @@ export default function PortfolioScreen() {
           {total != null ? `$${total.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
         </Text>
         <Text style={styles.heroHint}>
-          EVM: DeBank · LP: Krystal · Solana: Jupiter (по ключам на сервере)
+          Hybrid: ончейн 20 EVM-сетей + добор пробелов (без платного DeBank API)
         </Text>
       </View>
 

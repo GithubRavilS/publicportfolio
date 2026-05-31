@@ -2,6 +2,8 @@
 
 DeFi portfolio viewer (DeBank + on-chain RPC): wallet balances, LP positions, lending, chain filters.
 
+> **Cursor:** открывай папку `~/Documents/Cursor/portfolio-tracker` (см. [PROJECT.md](PROJECT.md)).
+
 **Production:** [cry-maden008.pythonanywhere.com/portfolio](https://cry-maden008.pythonanywhere.com/portfolio/)
 
 **GitHub:** [github.com/GithubRavilS/publicportfolio](https://github.com/GithubRavilS/publicportfolio) — branch `portfolio-tracker`

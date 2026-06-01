@@ -65,6 +65,16 @@ async function main() {
     await sleep(1600);
   }
 
+  console.log("== patch config (keys from env / local config.json) ==");
+  const patch = spawnSync("node", ["scripts/pa-patch-config.mjs"], {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (patch.status !== 0) {
+    console.warn("pa-patch-config skipped (no keys in env?) — hybrid needs Alchemy key");
+  }
+
   console.log("== reload webapp ==");
   await reloadWebapp(cfg);
 

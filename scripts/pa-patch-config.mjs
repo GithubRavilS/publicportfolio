@@ -11,8 +11,22 @@ import { loadPaEnv, paFetch } from "./pa-env.mjs";
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dir, "..");
 
+function alchemyUrls(key) {
+  const k = String(key || "").trim();
+  if (!k) return null;
+  return {
+    eth: `https://eth-mainnet.g.alchemy.com/v2/${k}`,
+    arb: `https://arb-mainnet.g.alchemy.com/v2/${k}`,
+    op: `https://opt-mainnet.g.alchemy.com/v2/${k}`,
+    matic: `https://polygon-mainnet.g.alchemy.com/v2/${k}`,
+    // Base RPC getLogs: publicnode (Alchemy Portfolio API uses api.g.alchemy.com separately)
+    base: "https://base-rpc.publicnode.com",
+  };
+}
+
 const PATCH = {
   etherscan_api_key: process.env.ETHERSCAN_API_KEY || "",
+  alchemy_api_key: process.env.ALCHEMY_API_KEY || "",
 };
 
 async function readRemoteConfig(cfg) {
@@ -44,18 +58,31 @@ async function main() {
   if (!PATCH.etherscan_api_key) {
     PATCH.etherscan_api_key = local.etherscan_api_key || "";
   }
-  if (!PATCH.etherscan_api_key) {
-    console.error("No etherscan_api_key in config.json or ETHERSCAN_API_KEY");
+  if (!PATCH.alchemy_api_key) {
+    PATCH.alchemy_api_key = local.alchemy_api_key || "";
+  }
+  if (!PATCH.etherscan_api_key && !PATCH.alchemy_api_key) {
+    console.error(
+      "Need at least one: etherscan_api_key or alchemy_api_key in config.json / env",
+    );
     process.exit(1);
   }
 
   const remote = await readRemoteConfig(cfg);
-  const merged = { ...remote, ...PATCH };
-  if (!merged.rpc_urls?.eth) {
+  const merged = { ...remote };
+  if (PATCH.etherscan_api_key) merged.etherscan_api_key = PATCH.etherscan_api_key;
+  if (PATCH.alchemy_api_key) {
+    merged.alchemy_api_key = PATCH.alchemy_api_key;
+    const urls = alchemyUrls(PATCH.alchemy_api_key);
+    merged.rpc_urls = { ...(remote.rpc_urls || {}), ...(local.rpc_urls || {}), ...urls };
+  } else if (!merged.rpc_urls?.eth) {
     merged.rpc_urls = { ...local.rpc_urls, ...(remote.rpc_urls || {}) };
   }
   await writeRemoteConfig(cfg, merged);
-  console.log("OK: config.json patched on PA (etherscan_api_key set, rpc preserved)");
+  const parts = [];
+  if (PATCH.etherscan_api_key) parts.push("etherscan");
+  if (PATCH.alchemy_api_key) parts.push("alchemy");
+  console.log(`OK: PA config.json patched (${parts.join(" + ")})`);
 }
 
 main().catch((e) => {

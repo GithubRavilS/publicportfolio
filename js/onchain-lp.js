@@ -193,7 +193,7 @@ const LOG_LOOKBACK = {
 };
 
 const LOG_LOOKBACK_FAST = {
-  base: 400_000n,
+  base: 800_000n,
   arb: 600_000n,
   op: 400_000n,
   eth: 400_000n,
@@ -455,6 +455,11 @@ async function scanChainLp(wallet, chain, symbols, fast = false, pancakeOnly = f
 
 const FARM_DEPOSIT_TOPIC = "0xb19157bff94fdd40c58c7d4a5d52e8eb8c2d570ca17b322b49a2bbbeedc82fbf";
 
+function walletInLogTopics(log, wallet) {
+  const needle = wallet.slice(2).toLowerCase();
+  return (log.topics || []).some((t) => String(t).toLowerCase().includes(needle));
+}
+
 async function scanPancakeFarmTokenIds(chain, wallet) {
   const mc = PANCAKE_MASTER_CHEF[chain];
   if (!mc) return [];
@@ -464,14 +469,42 @@ async function scanPancakeFarmTokenIds(chain, wallet) {
     ? LOG_LOOKBACK_FAST[chain] || LOG_LOOKBACK_FAST.default
     : LOG_LOOKBACK[chain] || LOG_LOOKBACK.default;
   const topicFrom = "0x" + padAddr(w);
-  const logs = await scanLogsBack(
+  let logs = await scanLogsBack(
     chain,
     { address: mc, topics: [FARM_DEPOSIT_TOPIC, topicFrom] },
     lookback,
   );
+  if (!logs.length) {
+    const wide = await scanLogsBack(
+      chain,
+      { address: mc, topics: [FARM_DEPOSIT_TOPIC] },
+      lookback,
+    );
+    logs = wide.filter((log) => walletInLogTopics(log, w));
+  }
   const ids = new Set();
   for (const log of logs) {
     if (log.topics?.[3]) ids.add(BigInt(log.topics[3]).toString());
+  }
+  if (!ids.size && fast) {
+    const nf = CHAINS[chain]?.nfpm?.find((n) => n.protocol?.includes("Pancake"));
+    if (nf) {
+      const xfer = await scanLogsBack(
+        chain,
+        {
+          address: nf.address,
+          topics: [
+            ERC721_TRANSFER,
+            topicFrom,
+            "0x" + padAddr(mc),
+          ],
+        },
+        lookback,
+      );
+      for (const log of xfer) {
+        if (log.topics?.[3]) ids.add(BigInt(log.topics[3]).toString());
+      }
+    }
   }
   return [...ids];
 }

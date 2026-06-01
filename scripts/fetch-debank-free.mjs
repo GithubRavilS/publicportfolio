@@ -14,10 +14,12 @@ if (!wallet || !/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
 
 try {
   const bundle = await fetchDebankFreeBundle(wallet, { quick });
-  const p = buildPortfolioFromDebank(bundle.mainText, {
+  const { correctDebankLiquidityChains } = await import("../js/debank-lp-chains.js");
+  let p = buildPortfolioFromDebank(bundle.mainText, {
     showSmallBalances: showSmall,
     chainTexts: bundle.chainTexts,
   });
+  p = await correctDebankLiquidityChains(p, wallet);
   p.fromFreeFetch = true;
   p.fetchSource = bundle.source;
   p.fetchMs = bundle.ms;

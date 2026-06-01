@@ -3,6 +3,12 @@
  * Формат совместим с DeBank parse (protocolGroups, liquidity, lending, walletTokens).
  */
 import { SCAN_CHAINS, TOP20_CHAINS } from "./onchain-registry.js";
+
+/** LP-скан только на сетях с DEX (быстрее; override: PT_LP_CHAINS=base,arb,op) */
+const LP_SCAN_CHAINS = (process.env.PT_LP_CHAINS || "base,arb,op,eth,bsc,matic")
+  .split(",")
+  .map((c) => c.trim())
+  .filter((c) => SCAN_CHAINS.includes(c));
 import { ETHERSCAN_FREE_CHAINS } from "./etherscan-api.js";
 import { scanWalletBalances } from "./onchain-wallet.js";
 import { scanLpPositions } from "./onchain-lp.js";
@@ -13,9 +19,14 @@ import { scanYearnVaults } from "./onchain-yearn.js";
 import { scanGmxPositions } from "./onchain-gmx.js";
 import { scanMorphoPositions } from "./onchain-morpho.js";
 import { scanCompoundV3 } from "./onchain-compound.js";
+import { buildLiquidityPositions } from "./onchain-liquidity-merge.js";
 import { scanLlamaYieldTokens, loadYieldIndex } from "./onchain-llama-scan.js";
 import { etherscanEnabled, getEtherscanUsageStats } from "./etherscan-api.js";
 import { formatPairDisplay } from "./revert-parse.js";
+import {
+  finalizeOnchainPortfolio,
+  ONCHAIN_PORTFOLIO_SCHEMA,
+} from "./portfolio-onchain-finalize.js";
 
 function mergeWalletTokens(base, extra) {
   const map = new Map();
@@ -40,7 +51,7 @@ function mergePositions(base, extra, keyFn) {
   return [...map.values()];
 }
 
-function buildProtocolGroups(lending, liquidity, walletTokens) {
+export function buildProtocolGroups(lending, liquidity, walletTokens) {
   const map = new Map();
   const ensure = (protocol, chain) => {
     const k = `${protocol}\0${chain || "unknown"}`;
@@ -112,7 +123,7 @@ function buildProtocolGroups(lending, liquidity, walletTokens) {
     .sort((a, b) => b.protocolUsd - a.protocolUsd);
 }
 
-function buildChains(protocolGroups, walletTokens) {
+export function buildChains(protocolGroups, walletTokens) {
   const byChain = new Map();
   for (const g of protocolGroups) {
     if (g.protocol === "Wallet") continue;
@@ -133,7 +144,7 @@ function buildChains(protocolGroups, walletTokens) {
     .sort((a, b) => b.usd - a.usd);
 }
 
-function buildProtocolTabs(protocolGroups) {
+export function buildProtocolTabs(protocolGroups) {
   return protocolGroups
     .map((g) => ({ protocol: g.protocol, usd: g.protocolUsd }))
     .sort((a, b) => b.usd - a.usd);
@@ -145,9 +156,7 @@ function buildProtocolTabs(protocolGroups) {
  */
 export async function scanOnchainPortfolio(wallet, opts = {}) {
   const quick = opts.quick || process.env.PT_QUICK === "1";
-  const chains =
-    opts.chains ||
-    (quick ? [...ETHERSCAN_FREE_CHAINS] : SCAN_CHAINS);
+  const chains = opts.chains || (quick ? [...ETHERSCAN_FREE_CHAINS] : SCAN_CHAINS);
   const w = wallet.toLowerCase();
 
   const [
@@ -165,7 +174,7 @@ export async function scanOnchainPortfolio(wallet, opts = {}) {
     opts.includeWallet !== false
       ? scanWalletBalances(w, chains)
       : { walletTokens: [], walletByChain: {} },
-    quick ? Promise.resolve([]) : scanLpPositions(w, chains),
+    quick ? Promise.resolve([]) : buildLiquidityPositions(w, LP_SCAN_CHAINS),
     quick ? Promise.resolve([]) : scanAaveLending(w, chains),
     quick || opts.includeVaults === false ? Promise.resolve([]) : scanVaultPositions(w, chains),
     quick ? Promise.resolve([]) : scanFluidLending(w, chains),
@@ -211,7 +220,7 @@ export async function scanOnchainPortfolio(wallet, opts = {}) {
   const lendUsd = lending.reduce((s, p) => s + (p.netUsd || 0), 0);
   const totalUsd = walletUsd + liqUsd + lendUsd;
 
-  return {
+  let portfolio = {
     totalUsd: Math.round(totalUsd * 100) / 100,
     walletUsd: Math.round(walletUsd * 100) / 100,
     liqUsd: Math.round(liqUsd * 100) / 100,
@@ -228,7 +237,11 @@ export async function scanOnchainPortfolio(wallet, opts = {}) {
     onchain: true,
     scannedAt: Date.now(),
     stats: {
-      lpCount: liquidity.length,
+      lpCount: allLiquidity.length,
+      lpRpcCount: allLiquidity.filter(
+        (p) => p.source === "onchain-rpc" || p.source === "onchain-farm",
+      ).length,
+      lpRevertEnriched: allLiquidity.filter((p) => p.fromRevert).length,
       vaultCount: vaults.length,
       lendCount: lending.length,
       fluidCount: fluidLending.length,
@@ -243,5 +256,13 @@ export async function scanOnchainPortfolio(wallet, opts = {}) {
       top20: chains.length >= TOP20_CHAINS.length,
       scannedChains: chains,
     },
+    scannedChains: chains,
+    schemaVersion: ONCHAIN_PORTFOLIO_SCHEMA,
   };
+
+  if (!quick) {
+    portfolio = await finalizeOnchainPortfolio(portfolio, w);
+  }
+
+  return portfolio;
 }

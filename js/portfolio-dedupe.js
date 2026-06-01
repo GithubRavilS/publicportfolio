@@ -37,7 +37,15 @@ function poolScore(p, g) {
   return s;
 }
 
+function lpTokenIdKey(p) {
+  const raw = String(p.tokenId || p.onchainTokenId || p.poolId || "").trim();
+  const m = raw.match(/#?(\d{4,})/);
+  return m ? m[1] : "";
+}
+
 function liquiditySoftKey(protocol, p) {
+  const tid = lpTokenIdKey(p);
+  if (tid) return `${protocol}|${chainSlug(p.chain)}|id:${tid}`;
   const pair = String(p.pair || poolPairKey(p) || "")
     .trim()
     .toLowerCase();
@@ -60,8 +68,11 @@ function collapseNearDuplicateLiquidity(portfolio) {
         .trim()
         .toLowerCase();
       if (!pair.includes("+")) continue;
+      const tid = lpTokenIdKey(p);
       const usd = Math.round((p.positionUsd || 0) / 5) * 5;
-      const sk = `${g.protocol}|${chainSlug(p.chain)}|${pair}|${usd}`;
+      const sk = tid
+        ? `${g.protocol}|${chainSlug(p.chain)}|id:${tid}`
+        : `${g.protocol}|${chainSlug(p.chain)}|${pair}|${usd}`;
       const prev = winners.get(sk);
       if (!prev || poolScore(p, g) > poolScore(prev.p, prev.g)) {
         winners.set(sk, { g, p });
@@ -76,8 +87,11 @@ function collapseNearDuplicateLiquidity(portfolio) {
         .trim()
         .toLowerCase();
       if (!pair.includes("+")) return true;
+      const tid = lpTokenIdKey(p);
       const usd = Math.round((p.positionUsd || 0) / 5) * 5;
-      const sk = `${g.protocol}|${chainSlug(p.chain)}|${pair}|${usd}`;
+      const sk = tid
+        ? `${g.protocol}|${chainSlug(p.chain)}|id:${tid}`
+        : `${g.protocol}|${chainSlug(p.chain)}|${pair}|${usd}`;
       const w = winners.get(sk);
       return w && w.p === p && w.g === g;
     });

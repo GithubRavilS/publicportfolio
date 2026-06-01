@@ -9,6 +9,7 @@ import {
   padAddr,
   encodeAddress,
   encodeUint256,
+  scanLogsBack,
 } from "./onchain-rpc.js";
 import { amountsForLiquidity, formatAmount } from "./onchain-v3-math.js";
 import { fetchPricesUsd, usdValue } from "./onchain-prices.js";
@@ -28,6 +29,7 @@ import {
 const SEL = {
   balanceOf: "0x70a08231",
   tokenOfOwnerByIndex: "0x2f745c59",
+  ownerOf: "0x6352211e",
   positions: "0x99fbab88",
   slot0: "0x3850c7bd",
   decimals: "0x313ce567",
@@ -119,6 +121,47 @@ async function readPoolSlot0(chain, poolAddress) {
   return { tick: decodeSlot0Tick(hex), sqrtX96: BigInt("0x" + hex.slice(0, 64)) };
 }
 
+export const PANCAKE_MASTER_CHEF = {
+  base: "0xc6a2db661d5a5690172d8eb0a7dea2d3008665a3",
+  arb: "0x5e09acf80c0296740ec5d6f643005a4ef8daa694",
+};
+
+/** pendingCake(uint256) */
+const SEL_PENDING_CAKE = "0xce5f39c6";
+
+export async function readPendingCake(chain, tokenId) {
+  const mc = PANCAKE_MASTER_CHEF[chain];
+  if (!mc) return 0n;
+  try {
+    const raw = await ethCallRotate(chain, mc, SEL_PENDING_CAKE + encodeUint256(tokenId));
+    if (!raw || raw === "0x") return 0n;
+    return BigInt(raw);
+  } catch {
+    return 0n;
+  }
+}
+
+export async function readNfpmOwner(chain, nfpm, tokenId) {
+  try {
+    const data = SEL.ownerOf + encodeUint256(tokenId);
+    const raw = await ethCallRotate(chain, nfpm, data);
+    if (!raw || raw === "0x" || raw.length < 42) return null;
+    const h = raw.replace(/^0x/i, "").padStart(64, "0");
+    return "0x" + h.slice(-40).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function isLpOwnerForWallet(owner, wallet, chain) {
+  if (!owner) return false;
+  const o = owner.toLowerCase();
+  const w = wallet.toLowerCase();
+  if (o === w) return true;
+  const mc = PANCAKE_MASTER_CHEF[chain];
+  return Boolean(mc && o === mc.toLowerCase());
+}
+
 async function readPosition(chain, nfpm, tokenId) {
   const data = SEL.positions + encodeUint256(tokenId);
   const raw = await ethCallRotate(chain, nfpm, data);
@@ -141,47 +184,57 @@ async function readPosition(chain, nfpm, tokenId) {
   };
 }
 
-async function enumerateTokenIds(rpc, nfpm, wallet) {
+const LOG_LOOKBACK = {
+  arb: 2_000_000n,
+  eth: 800_000n,
+  base: 2_000_000n,
+  op: 1_000_000n,
+  default: 300_000n,
+};
+
+const LOG_LOOKBACK_FAST = {
+  base: 400_000n,
+  arb: 600_000n,
+  op: 400_000n,
+  eth: 400_000n,
+  default: 200_000n,
+};
+
+async function collectTransferIds(chain, nfpm, walletTopic, lookback, topicSlot) {
   const ids = new Set();
+  const topics =
+    topicSlot === "from"
+      ? [ERC721_TRANSFER, walletTopic, null]
+      : [ERC721_TRANSFER, null, walletTopic];
+  const logs = await scanLogsBack(chain, { address: nfpm, topics }, lookback);
+  for (const log of logs) {
+    if (log.topics?.[3]) ids.add(BigInt(log.topics[3]).toString());
+  }
+  return ids;
+}
+
+async function enumerateTokenIds(rpc, nfpm, wallet, chain = "", fast = false) {
+  const ids = new Set();
+  const w = wallet.toLowerCase();
   try {
-    const balRaw = await rpc.ethCall(nfpm, SEL.balanceOf + padAddr(wallet));
+    const balRaw = await rpc.ethCall(nfpm, SEL.balanceOf + padAddr(w));
     const n = Number(BigInt(balRaw || 0));
     for (let i = 0; i < n; i++) {
-      const data = SEL.tokenOfOwnerByIndex + padAddr(wallet) + encodeUint256(i);
+      const data = SEL.tokenOfOwnerByIndex + padAddr(w) + encodeUint256(i);
       const tid = BigInt(await rpc.ethCall(nfpm, data));
       if (tid > 0n) ids.add(tid.toString());
     }
   } catch {
     /* */
   }
-  if (!ids.size) {
-    let latest;
-    try {
-      latest = await rpc.blockNumber();
-    } catch {
-      return [];
-    }
-    const walletTopic = "0x" + padAddr(wallet);
-    const chunk = 50000n;
-    let to = latest;
-    while (to > latest - 200000n && to > 0n) {
-      const from = to > chunk ? to - chunk : 0n;
-      try {
-        const logs = await rpc.call("eth_getLogs", [
-          {
-            fromBlock: "0x" + from.toString(16),
-            toBlock: "0x" + to.toString(16),
-            address: nfpm,
-            topics: [ERC721_TRANSFER, null, walletTopic],
-          },
-        ]);
-        for (const log of logs || []) {
-          if (log.topics?.[3]) ids.add(BigInt(log.topics[3]).toString());
-        }
-      } catch {
-        /* */
-      }
-      to = from > 0n ? from - 1n : 0n;
+
+  const walletTopic = "0x" + padAddr(w);
+  const lookback = fast
+    ? LOG_LOOKBACK_FAST[chain] || LOG_LOOKBACK_FAST.default
+    : LOG_LOOKBACK[chain] || LOG_LOOKBACK.default;
+  for (const slot of ["to", "from"]) {
+    for (const tid of await collectTransferIds(chain, nfpm, walletTopic, lookback, slot)) {
+      ids.add(tid);
     }
   }
   return [...ids];
@@ -288,7 +341,7 @@ async function nfpmHasCode(chain, address) {
   }
 }
 
-async function scanChainLp(wallet, chain, symbols) {
+async function scanChainLp(wallet, chain, symbols, fast = false, pancakeOnly = false) {
   const w = wallet.toLowerCase();
   const liquidity = [];
   const cfg = CHAINS[chain];
@@ -296,6 +349,7 @@ async function scanChainLp(wallet, chain, symbols) {
   const rpc = rpcForChain(chain);
 
   for (const nf of cfg.nfpm) {
+    if (pancakeOnly && !nf.protocol?.toLowerCase().includes("pancake")) continue;
     if (nf.v4) continue;
     try {
       if (!(await nfpmHasCode(chain, nf.address))) continue;
@@ -303,7 +357,7 @@ async function scanChainLp(wallet, chain, symbols) {
       continue;
     }
 
-    const tokenIds = await enumerateTokenIds(rpc, nf.address, w);
+    const tokenIds = await enumerateTokenIds(rpc, nf.address, w, chain, fast);
     for (const tokenIdStr of tokenIds) {
       let pos;
       try {
@@ -311,7 +365,10 @@ async function scanChainLp(wallet, chain, symbols) {
       } catch {
         continue;
       }
-      if (!pos) continue;
+      if (!pos || pos.liquidity === 0n) continue;
+
+      const owner = await readNfpmOwner(chain, nf.address, BigInt(tokenIdStr));
+      if (!isLpOwnerForWallet(owner, w, chain)) continue;
 
       const t0 = await readTokenMeta(chain, pos.token0);
       const t1 = await readTokenMeta(chain, pos.token1);
@@ -362,6 +419,8 @@ async function scanChainLp(wallet, chain, symbols) {
         pairKey,
         feeTier,
         feeTierPct,
+        kind: "Liquidity Pool",
+        staked: false,
         inPool: [
           { amount: amt0.toFixed(6), symbol: t0.symbol },
           { amount: amt1.toFixed(8), symbol: t1.symbol },
@@ -369,6 +428,7 @@ async function scanChainLp(wallet, chain, symbols) {
         positionUsd: 0,
         claimable: [],
         claimableUsd: 0,
+        cakeRewardUsd: 0,
         netUsd: 0,
         source: "onchain",
         onchain: true,
@@ -393,12 +453,154 @@ async function scanChainLp(wallet, chain, symbols) {
   return liquidity;
 }
 
-export async function scanLpPositions(wallet, chains = SCAN_CHAINS) {
+const FARM_DEPOSIT_TOPIC = "0xb19157bff94fdd40c58c7d4a5d52e8eb8c2d570ca17b322b49a2bbbeedc82fbf";
+
+async function scanPancakeFarmTokenIds(chain, wallet) {
+  const mc = PANCAKE_MASTER_CHEF[chain];
+  if (!mc) return [];
+  const w = wallet.toLowerCase();
+  const fast = process.env.PT_FAST_LP === "1";
+  const lookback = fast
+    ? LOG_LOOKBACK_FAST[chain] || LOG_LOOKBACK_FAST.default
+    : LOG_LOOKBACK[chain] || LOG_LOOKBACK.default;
+  const topicFrom = "0x" + padAddr(w);
+  const logs = await scanLogsBack(
+    chain,
+    { address: mc, topics: [FARM_DEPOSIT_TOPIC, topicFrom] },
+    lookback,
+  );
+  const ids = new Set();
+  for (const log of logs) {
+    if (log.topics?.[3]) ids.add(BigInt(log.topics[3]).toString());
+  }
+  return [...ids];
+}
+
+async function scanPancakeFarmChainLp(wallet, chain, symbols) {
+  const w = wallet.toLowerCase();
+  const cfg = CHAINS[chain];
+  const nf = cfg?.nfpm?.find((n) => n.protocol?.includes("Pancake"));
+  if (!nf) return [];
+  const rpc = rpcForChain(chain);
+  const tokenIds = await scanPancakeFarmTokenIds(chain, w);
+  const liquidity = [];
+  for (const tokenIdStr of tokenIds) {
+    let pos;
+    try {
+      pos = await readPosition(chain, nf.address, BigInt(tokenIdStr));
+    } catch {
+      continue;
+    }
+    if (!pos || pos.liquidity === 0n) continue;
+    const owner = await readNfpmOwner(chain, nf.address, BigInt(tokenIdStr));
+    if (!isLpOwnerForWallet(owner, w, chain)) continue;
+    const t0 = await readTokenMeta(chain, pos.token0);
+    const t1 = await readTokenMeta(chain, pos.token1);
+    symbols.add(t0.symbol);
+    symbols.add(t1.symbol);
+    const pairKey = normPair(`${t0.symbol}+${t1.symbol}`);
+    let poolAddress = await resolvePoolAddress(
+      chain,
+      nf.factory,
+      pos.token0,
+      pos.token1,
+      pos.fee,
+      nf,
+    );
+    let tickCurrent = Math.round((pos.tickLower + pos.tickUpper) / 2);
+    if (poolAddress) {
+      const slot = await readPoolSlot0(chain, poolAddress);
+      if (slot?.tick != null) tickCurrent = slot.tick;
+    }
+    const range = displayRangeFromTicks(
+      pos.tickLower,
+      pos.tickUpper,
+      tickCurrent,
+      t0.decimals,
+      t1.decimals,
+      pairKey,
+    );
+    const { amount0, amount1 } = amountsForLiquidity(
+      pos.liquidity,
+      pos.tickLower,
+      pos.tickUpper,
+      tickCurrent,
+    );
+    const amt0 = formatAmount(amount0, t0.decimals);
+    const amt1 = formatAmount(amount1, t1.decimals);
+    const feeTierPct = pos.fee / (nf.feeDiv || 10000);
+    const cakeRaw = await readPendingCake(chain, BigInt(tokenIdStr));
+    const cakeAmt = formatAmount(cakeRaw, 18);
+    if (cakeAmt > 0) symbols.add("CAKE");
+    const cakeClaim =
+      cakeAmt > 0 ? [{ symbol: "CAKE", amount: cakeAmt.toFixed(6) }] : [];
+
+    liquidity.push({
+      protocol: nf.protocol,
+      chain,
+      poolId: tokenIdStr,
+      pair: pairKey.replace("+", "+"),
+      pairKey,
+      feeTier: `${feeTierPct.toFixed(2)}%`,
+      feeTierPct,
+      kind: "Farming",
+      staked: true,
+      inPool: [
+        { amount: amt0.toFixed(6), symbol: t0.symbol },
+        { amount: amt1.toFixed(8), symbol: t1.symbol },
+      ],
+      positionUsd: 0,
+      claimable: cakeClaim,
+      claimableUsd: 0,
+      cakeReward: cakeAmt > 0 ? { symbol: "CAKE", amount: cakeAmt } : undefined,
+      cakeRewardUsd: 0,
+      netUsd: 0,
+      source: "onchain-farm",
+      onchain: true,
+      tokenId: tokenIdStr,
+      poolAddress,
+      tickLower: pos.tickLower,
+      tickUpper: pos.tickUpper,
+      liquidity: pos.liquidity.toString(),
+      ...range,
+      _amt0: amt0,
+      _amt1: amt1,
+      _sym0: t0.symbol,
+      _sym1: t1.symbol,
+      _nf: nf,
+      _pos: pos,
+      _tickCurrent: tickCurrent,
+      _t0: t0,
+      _t1: t1,
+    });
+  }
+  return liquidity;
+}
+
+export async function scanLpPositions(wallet, chains = SCAN_CHAINS, opts = {}) {
+  const fast = opts.fast === true || process.env.PT_FAST_LP === "1";
+  const pancakeOnly = opts.pancakeOnly === true || process.env.PT_PANCAKE_ONLY === "1";
   const w = wallet.toLowerCase();
   const symbols = new Set();
   const chainList = chains.filter((c) => CHAINS[c]?.nfpm?.length);
-  const parts = await Promise.all(chainList.map((chain) => scanChainLp(w, chain, symbols)));
-  const liquidity = parts.flat();
+  const parts = await Promise.all(
+    chainList.flatMap((chain) => {
+      const farm = PANCAKE_MASTER_CHEF[chain];
+      if (pancakeOnly && farm) {
+        return [scanPancakeFarmChainLp(w, chain, symbols)];
+      }
+      return [
+        scanChainLp(w, chain, symbols, fast, pancakeOnly),
+        farm ? scanPancakeFarmChainLp(w, chain, symbols) : Promise.resolve([]),
+      ];
+    }),
+  );
+  const byKey = new Map();
+  for (const row of parts.flat()) {
+    const k = `${row.chain}|${row.tokenId}`;
+    if (!byKey.has(k)) byKey.set(k, row);
+  }
+  const liquidity = [...byKey.values()];
 
   const prices = await fetchPricesUsd([...symbols]);
   for (const p of liquidity) {
@@ -407,7 +609,7 @@ export async function scanLpPositions(wallet, chains = SCAN_CHAINS) {
     p.positionUsd = usd0 + usd1;
     p.netUsd = p.positionUsd;
 
-    if (p._nf && p._pos) {
+    if (!fast && p._nf && p._pos) {
       await enrichLpMetrics(
         w,
         rpcForChain(p.chain),
@@ -419,6 +621,31 @@ export async function scanLpPositions(wallet, chains = SCAN_CHAINS) {
         p._tickCurrent,
         p,
       );
+    } else if (fast && p._pos && p._t0 && p._t1) {
+      const u0 = Number(p._pos.tokensOwed0 || 0) / 10 ** p._t0.decimals;
+      const u1 = Number(p._pos.tokensOwed1 || 0) / 10 ** p._t1.decimals;
+      if (u0 > 0 || u1 > 0) {
+        p.claimable = [
+          ...(u0 > 0 ? [{ symbol: p._sym0, amount: u0.toFixed(8) }] : []),
+          ...(u1 > 0 ? [{ symbol: p._sym1, amount: u1.toFixed(8) }] : []),
+        ];
+      }
+    }
+
+    if (p.cakeReward?.amount) {
+      const cakeUsd = usdValue(p.cakeReward.amount, "CAKE", prices);
+      p.cakeRewardUsd = cakeUsd;
+      p.claimableUsd = (p.claimableUsd || 0) + cakeUsd;
+      if (!p.claimable?.length) {
+        p.claimable = [
+          { symbol: "CAKE", amount: String(p.cakeReward.amount), usd: cakeUsd },
+        ];
+      } else {
+        p.claimable = [
+          ...p.claimable,
+          { symbol: "CAKE", amount: String(p.cakeReward.amount), usd: cakeUsd },
+        ];
+      }
     }
 
     if (p.feesEarned) {
@@ -426,10 +653,11 @@ export async function scanLpPositions(wallet, chains = SCAN_CHAINS) {
       const u1 = usdValue(parseFloat(p.feesEarned.unclaimed[1]?.amount || 0), p._sym1, prices);
       const c0 = usdValue(parseFloat(p.feesEarned.collected[0]?.amount || 0), p._sym0, prices);
       const c1 = usdValue(parseFloat(p.feesEarned.collected[1]?.amount || 0), p._sym1, prices);
-      p.claimableUsd = u0 + u1;
+      p.claimableUsd = (p.claimableUsd || 0) + u0 + u1;
       p.collectedFeesUsd = c0 + c1;
       p.totalFeesUsd = p.claimableUsd + p.collectedFeesUsd;
-      p.claimable = p.feesEarned.unclaimed.filter((x) => parseFloat(x.amount) > 0);
+      const feeClaim = p.feesEarned.unclaimed.filter((x) => parseFloat(x.amount) > 0);
+      p.claimable = [...(p.claimable || []), ...feeClaim];
       p.apyAnnualized = annualizedApy(p.totalFeesUsd, p.positionUsd, p.hoursOpen);
       const storeKey = positionStoreKey(p.protocol, p.chain, p.tokenId);
       const { apyFromSnapshots } = applyPositionSnapshot(w, storeKey, {

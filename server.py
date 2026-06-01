@@ -51,7 +51,10 @@ CACHE_DIR = ROOT / ".cache" / "portfolio"
 REVERT_CACHE_DIR = ROOT / ".cache" / "revert"
 ONCHAIN_CACHE_DIR = ROOT / ".cache" / "onchain"
 ONCHAIN_PORTFOLIO_CACHE_DIR = ROOT / ".cache" / "onchain-portfolio"
-CACHE_TTL = 600
+RPC_PORTFOLIO_CACHE_DIR = ROOT / ".cache" / "rpc-portfolio"
+# RPC: короткий TTL только против двойного скана за секунды (не «15 минут данных»)
+RPC_PORTFOLIO_TTL = int(os.environ.get("PT_RPC_CACHE_SEC", "90"))
+CACHE_TTL = 600  # legacy default; overridden by config cache.portfolio_fresh_sec
 REVERT_CACHE_TTL = 900
 ONCHAIN_CACHE_TTL = 300
 ONCHAIN_PORTFOLIO_TTL = 300
@@ -111,6 +114,50 @@ def load_krystal_key() -> str:
         return str(data.get("krystal_cloud_api_key") or data.get("krystal_api_key") or "").strip()
     except (json.JSONDecodeError, OSError):
         return ""
+
+
+def load_cache_config() -> dict[str, int]:
+    """TTL кэша портфеля: fresh → отдаём без сети; stale → отдаём + фоновое обновление."""
+    defaults = {
+        "portfolio_fresh_sec": 300,
+        "portfolio_stale_sec": 3600,
+        "portfolio_max_sec": 86400,
+    }
+    if not CONFIG_PATH.exists():
+        return defaults
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        block = data.get("cache") if isinstance(data.get("cache"), dict) else {}
+        out = dict(defaults)
+        for key in defaults:
+            if block.get(key) is not None:
+                out[key] = max(30, int(block[key]))
+        return out
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return defaults
+
+
+def portfolio_cache_file_meta(wallet: str) -> dict | None:
+    path = _cache_path(wallet)
+    if not path.exists():
+        return None
+    try:
+        age = max(0, int(time.time() - path.stat().st_mtime))
+    except OSError:
+        return None
+    cfg = load_cache_config()
+    fresh = age <= cfg["portfolio_fresh_sec"]
+    stale = age <= cfg["portfolio_stale_sec"]
+    expired = age > cfg["portfolio_max_sec"]
+    return {
+        "ageSec": age,
+        "fresh": fresh and not expired,
+        "stale": (not fresh) and stale and not expired,
+        "expired": expired or (not fresh and not stale),
+        "freshTtlSec": cfg["portfolio_fresh_sec"],
+        "staleTtlSec": cfg["portfolio_stale_sec"],
+        "maxTtlSec": cfg["portfolio_max_sec"],
+    }
 
 
 def normalize_profile_text(raw: str) -> str:
@@ -281,7 +328,8 @@ def _cache_path(wallet: str) -> Path:
     return CACHE_DIR / f"{wallet.lower()}.json"
 
 
-PORTFOLIO_SCHEMA = 12
+PORTFOLIO_SCHEMA = 13
+ONCHAIN_PORTFOLIO_SCHEMA = 13
 
 
 def is_portfolio_rich(portfolio: dict) -> bool:
@@ -298,17 +346,42 @@ def is_portfolio_rich(portfolio: dict) -> bool:
     return len(groups) >= 3
 
 
+def portfolio_cache_usable(portfolio: dict | None) -> bool:
+    """Кэш пригоден для отдачи без полного refresh."""
+    if not portfolio:
+        return False
+    total = float(portfolio.get("totalUsd") or 0)
+    defi = float(portfolio.get("liqUsd") or 0) + float(portfolio.get("lendUsd") or 0)
+    src = str(portfolio.get("source") or "")
+    if portfolio.get("fromDebankApi") or src in (
+        "debank-free",
+        "debank-api",
+        "aggregator",
+        "debank",
+    ):
+        return total > 50 or defi > 30 or is_portfolio_rich(portfolio)
+    if portfolio.get("onchainVerified") and total > 50:
+        return True
+    return is_portfolio_rich(portfolio)
+
+
 def load_portfolio_cache(wallet: str, *, allow_stale: bool = False) -> dict | None:
     path = _cache_path(wallet)
-    if not path.exists():
+    meta = portfolio_cache_file_meta(wallet)
+    if not path.exists() or not meta or meta["expired"]:
+        return None
+    if not meta["fresh"] and not (allow_stale and meta["stale"]):
         return None
     try:
-        if not allow_stale and time.time() - path.stat().st_mtime > CACHE_TTL:
-            return None
         data = json.loads(path.read_text(encoding="utf-8"))
         p = data.get("portfolio")
         if not p or int(p.get("schemaVersion") or 0) < PORTFOLIO_SCHEMA:
             return None
+        if p.get("source") == "hybrid" and not p.get("onchainVerified"):
+            return None
+        p = dict(p)
+        p["cacheMeta"] = meta
+        p["cacheStale"] = bool(meta.get("stale"))
         return p
     except (json.JSONDecodeError, OSError):
         return None
@@ -697,7 +770,12 @@ def load_onchain_portfolio_cache(wallet: str, *, allow_stale: bool = False) -> d
     try:
         if not allow_stale and time.time() - path.stat().st_mtime > ONCHAIN_PORTFOLIO_TTL:
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        p = json.loads(path.read_text(encoding="utf-8"))
+        if int(p.get("schemaVersion") or 0) < ONCHAIN_PORTFOLIO_SCHEMA:
+            return None
+        if not p.get("onchainVerified"):
+            return None
+        return p
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -705,57 +783,65 @@ def load_onchain_portfolio_cache(wallet: str, *, allow_stale: bool = False) -> d
 def build_hybrid_portfolio(
     wallet: str, *, refresh: bool, show_small: bool, force_onchain: bool = False
 ) -> dict:
-    """DeBank + on-chain merge. На refresh обновляем on-chain и диапазоны LP."""
-    onchain_portfolio: dict = {}
+    """Ончейн — источник истины; DeBank только справочный total; Revert — APY/диапазоны."""
     refresh_onchain = force_onchain or bool(refresh)
+    portfolio: dict = {}
 
     if refresh_onchain:
         try:
-            onchain_portfolio = run_onchain_portfolio(wallet)
-            save_onchain_portfolio_cache(wallet, onchain_portfolio)
+            portfolio = run_onchain_portfolio(wallet, quick=False)
+            save_onchain_portfolio_cache(wallet, portfolio)
         except Exception as ex:
-            _api_log(f"onchain scan partial fail: {ex!s}")
-            onchain_portfolio = load_onchain_portfolio_cache(wallet, allow_stale=True) or {}
+            _api_log(f"onchain scan fail: {ex!s}")
+            portfolio = load_onchain_portfolio_cache(wallet, allow_stale=True) or {}
     else:
-        onchain_portfolio = load_onchain_portfolio_cache(wallet, allow_stale=True) or {}
-
-    debank_portfolio: dict = {}
-    try:
-        debank_portfolio = fetch_debank_portfolio(
-            wallet, quick=False, refresh=refresh, show_small=show_small
+        portfolio = (
+            load_onchain_portfolio_cache(wallet)
+            or load_onchain_portfolio_cache(wallet, allow_stale=True)
+            or {}
         )
-        save_portfolio_cache(wallet, debank_portfolio)
+
+    if not portfolio:
+        try:
+            portfolio = run_onchain_portfolio(wallet, quick=False)
+            save_onchain_portfolio_cache(wallet, portfolio)
+        except Exception as ex:
+            _api_log(f"onchain cold scan fail: {ex!s}")
+            raise ValueError("FETCH_FAILED") from ex
+
+    debank_total = 0.0
+    try:
+        debank_ref = fetch_debank_portfolio(
+            wallet, quick=True, refresh=False, show_small=show_small
+        )
+        debank_total = float(debank_ref.get("debankTotalUsd") or debank_ref.get("totalUsd") or 0)
     except Exception as ex:
-        _api_log(f"debank fetch partial fail: {ex!s}")
-        debank_portfolio = load_portfolio_cache(wallet) or {}
+        _api_log(f"debank ref total: {ex!s}")
 
-    if not onchain_portfolio and not debank_portfolio:
-        raise ValueError("FETCH_FAILED")
+    computed = float(portfolio.get("computedTotalUsd") or portfolio.get("totalUsd") or 0)
+    if debank_total > 0:
+        portfolio["debankTotalUsd"] = round(debank_total, 2)
+        portfolio["coverageGapUsd"] = round(max(0, debank_total - computed), 2)
 
-    if debank_portfolio and not is_portfolio_rich(debank_portfolio):
-        try:
-            debank_portfolio = fetch_debank_portfolio(
-                wallet, quick=False, refresh=True, show_small=show_small
-            )
-            save_portfolio_cache(wallet, debank_portfolio)
-        except Exception as ex:
-            _api_log(f"debank re-fetch for thin portfolio: {ex!s}")
-
-    portfolio = run_hybrid_merge(onchain_portfolio, debank_portfolio)
     if refresh or force_onchain:
-        try:
-            portfolio = enrich_portfolio_lp_ranges(wallet, portfolio)
-        except Exception as ex:
-            _api_log(f"lp range enrich failed: {ex!s}")
         try:
             portfolio = merge_portfolio_revert(wallet, portfolio, refresh=refresh)
         except Exception as ex:
             _api_log(f"revert merge failed: {ex!s}")
+
     portfolio["fromCache"] = False
-    if is_portfolio_rich(portfolio):
-        save_portfolio_cache(wallet, portfolio)
-    else:
-        _api_log(f"skip cache save: thin portfolio {wallet[:10]}")
+    portfolio["source"] = "onchain"
+    portfolio["onchain"] = True
+    portfolio["hybrid"] = True
+    portfolio["hybridMeta"] = {
+        "mode": "onchain-primary",
+        "onchainUsd": computed,
+        "debankTotalUsd": debank_total,
+        "computedUsd": computed,
+        "gapUsd": portfolio.get("coverageGapUsd") or 0,
+        "priority": ["onchain", "revert", "debank-ref"],
+    }
+    save_onchain_portfolio_cache(wallet, portfolio)
     return portfolio
 
 
@@ -860,6 +946,75 @@ def save_onchain_portfolio_cache(wallet: str, portfolio: dict) -> None:
     )
 
 
+def _rpc_portfolio_cache_path(wallet: str) -> Path:
+    return RPC_PORTFOLIO_CACHE_DIR / f"{wallet.lower()}.json"
+
+
+def load_rpc_portfolio_cache(wallet: str, *, allow_stale: bool = False) -> dict | None:
+    path = _rpc_portfolio_cache_path(wallet)
+    if not path.exists():
+        return None
+    try:
+        if not allow_stale and time.time() - path.stat().st_mtime > RPC_PORTFOLIO_TTL:
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_rpc_portfolio_cache(wallet: str, portfolio: dict) -> None:
+    RPC_PORTFOLIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    _rpc_portfolio_cache_path(wallet).write_text(
+        json.dumps(portfolio, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def run_rpc_portfolio(wallet: str, *, pancake_only: bool = True, lp_only: bool = False) -> dict:
+    """Портфель через JSON-RPC (Alchemy/public), без DeBank scrape."""
+    _guard_node_modules()
+    runner = ROOT / "scripts" / "run-rpc-portfolio.mjs"
+    env = {
+        **os.environ,
+        "PT_FAST_LP": os.environ.get("PT_FAST_LP", "1"),
+        "PT_RPC_ONLY_WALLET": os.environ.get("PT_RPC_ONLY_WALLET", "1"),
+        "PT_PANCAKE_ONLY": "1" if pancake_only else "0",
+        "PT_RPC_LP_ONLY": "1" if lp_only else "0",
+        "PT_RPC_LP_CHAINS": os.environ.get("PT_RPC_LP_CHAINS", "base"),
+    }
+    proc = subprocess.run(
+        [NODE_BIN, str(runner), wallet.lower()],
+        capture_output=True,
+        cwd=str(ROOT),
+        timeout=300,
+        env=env,
+    )
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace")[:500]
+        raise ValueError(f"RPC_PORTFOLIO_FAILED:{err}")
+    data = json.loads(proc.stdout.decode("utf-8"))
+    return data.get("portfolio") or data
+
+
+def fetch_rpc_portfolio(
+    wallet: str, *, refresh: bool, show_small: bool, quick: bool = False
+) -> dict:
+    del show_small  # RPC scan returns all positions above dust threshold
+    use_cache = not refresh and RPC_PORTFOLIO_TTL > 0
+    if use_cache:
+        cached = load_rpc_portfolio_cache(wallet)
+        if cached and (cached.get("totalUsd") or 0) > 0:
+            out = dict(cached)
+            out["fromCache"] = True
+            out["cacheNote"] = "repeat_visit"  # тот же адрес <90с назад — не новый холодный скан
+            return out
+    portfolio = run_rpc_portfolio(wallet, pancake_only=True, lp_only=quick)
+    portfolio["fromCache"] = False
+    portfolio["partial"] = bool(quick or portfolio.get("partial"))
+    if RPC_PORTFOLIO_TTL > 0:
+        save_rpc_portfolio_cache(wallet, portfolio)
+    return portfolio
+
+
 def run_onchain_portfolio(wallet: str, *, quick: bool = False) -> dict:
     _guard_node_modules()
     runner = ROOT / "scripts" / "run-onchain-portfolio.mjs"
@@ -870,7 +1025,7 @@ def run_onchain_portfolio(wallet: str, *, quick: bool = False) -> dict:
         [NODE_BIN, str(runner), wallet.lower()],
         capture_output=True,
         cwd=str(ROOT),
-        timeout=90 if quick else 300,
+        timeout=90 if quick else 720,
         env=env,
     )
     if proc.returncode != 0:
@@ -938,7 +1093,7 @@ def fetch_debank_portfolio_free(wallet: str, *, quick: bool, show_small: bool) -
 
 def fetch_debank_portfolio(wallet: str, *, quick: bool, refresh: bool, show_small: bool) -> dict:
     api_key = load_debank_access_key()
-    if api_key and os.environ.get("PT_USE_DEBANK_API", "").strip() in ("1", "true", "yes"):
+    if api_key:
         if not refresh:
             cached = load_portfolio_cache(wallet)
             if cached and cached.get("fromDebankApi"):
@@ -1043,6 +1198,50 @@ def fetch_debank_portfolio(wallet: str, *, quick: bool, refresh: bool, show_smal
     return portfolio
 
 
+def fetch_aggregator_portfolio(
+    wallet: str, *, quick: bool, refresh: bool, show_small: bool
+) -> dict:
+    """DeBank API → Jina scrape → кэш; Revert — диапазоны/APY (без onchain-primary)."""
+    if not refresh and not quick:
+        cached = load_portfolio_cache(wallet, allow_stale=True)
+        if cached and portfolio_cache_usable(cached):
+            out = dict(cached)
+            out["fromCache"] = True
+            out["partial"] = bool(cached.get("partial"))
+            meta = out.get("cacheMeta") or portfolio_cache_file_meta(wallet)
+            if meta:
+                out["cacheMeta"] = meta
+                out["cacheStale"] = bool(meta.get("stale"))
+            return out
+
+    portfolio = fetch_debank_portfolio(wallet, quick=quick, refresh=refresh, show_small=show_small)
+    primary = (
+        "debank-api" if portfolio.get("fromDebankApi") else portfolio.get("source") or "debank-free"
+    )
+
+    if not quick:
+        try:
+            portfolio = merge_portfolio_revert(wallet, portfolio, refresh=refresh)
+        except Exception as ex:
+            _api_log(f"aggregator revert: {ex!s}")
+        if portfolio_cache_usable(portfolio) and not portfolio.get("fromCache"):
+            save_portfolio_cache(wallet, portfolio)
+
+    portfolio["aggregator"] = True
+    portfolio["source"] = primary if primary != "debank" else "aggregator"
+    portfolio["hybridMeta"] = {
+        "mode": "api-aggregator",
+        "primary": primary,
+        "enrichment": ["revert"],
+    }
+    meta = portfolio_cache_file_meta(wallet)
+    if meta:
+        portfolio["cacheMeta"] = meta
+        portfolio["cacheStale"] = False
+    portfolio["fetchedAt"] = time.time()
+    return portfolio
+
+
 def run_onchain_enrich(wallet: str, positions: list | None = None) -> dict:
     """Скан NFT + slot0 через JSON-RPC; обогащает positions точными диапазонами."""
     _guard_node_modules()
@@ -1144,50 +1343,21 @@ class Handler(SimpleHTTPRequestHandler):
         show_small = (qs.get("dust") or ["0"])[0].lower() in ("1", "true", "yes")
         quick = (qs.get("quick") or ["0"])[0].lower() in ("1", "true", "yes")
         refresh = (qs.get("refresh") or ["0"])[0].lower() in ("1", "true", "yes")
-        source = (qs.get("source") or ["debank"])[0].lower()
-        use_hybrid = source in ("hybrid", "onchain", "rpc", "chain", "")
-        use_onchain_only = source in ("onchain", "rpc", "chain")
+        source = (qs.get("source") or ["auto"])[0].lower()
+        use_onchain_primary = source in ("onchain", "chain")
+        use_aggregator = source in ("auto", "aggregator", "debank", "hybrid", "")
         try:
-            if use_hybrid and not quick:
-                if not refresh:
-                    cached = load_portfolio_cache(wallet)
-                    if cached and cached.get("source") in ("hybrid", "onchain+debank"):
-                        cached = dict(cached)
-                        cached["fromCache"] = True
-                        body = json.dumps(
-                            {
-                                "ok": True,
-                                "portfolio": cached,
-                                "cached": True,
-                                "source": cached.get("source") or "hybrid",
-                            },
-                            ensure_ascii=False,
-                        ).encode("utf-8")
-                        self.send_response(200)
-                        self.send_header("Content-Type", "application/json; charset=utf-8")
-                        self.send_header("Cache-Control", "no-store")
-                        self.end_headers()
-                        self.wfile.write(body)
-                        return
-
-                force_onchain = (qs.get("refreshOnchain") or ["0"])[0].lower() in (
-                    "1",
-                    "true",
-                    "yes",
+            if source == "rpc":
+                portfolio = fetch_rpc_portfolio(
+                    wallet, refresh=refresh, show_small=show_small, quick=quick
                 )
-                portfolio = build_hybrid_portfolio(
-                    wallet,
-                    refresh=refresh,
-                    show_small=show_small,
-                    force_onchain=force_onchain,
-                )
-
                 body = json.dumps(
                     {
                         "ok": True,
                         "portfolio": portfolio,
-                        "cached": False,
-                        "source": "hybrid",
+                        "cached": bool(portfolio.get("fromCache")),
+                        "source": "rpc",
+                        "scanMs": portfolio.get("scanMs"),
                     },
                     ensure_ascii=False,
                 ).encode("utf-8")
@@ -1198,10 +1368,33 @@ class Handler(SimpleHTTPRequestHandler):
                 self.wfile.write(body)
                 return
 
-            if use_onchain_only:
-                if not refresh and not quick:
+            if use_aggregator:
+                portfolio = fetch_aggregator_portfolio(
+                    wallet, quick=quick, refresh=refresh, show_small=show_small
+                )
+                src = portfolio.get("source") or "aggregator"
+                body = json.dumps(
+                    {
+                        "ok": True,
+                        "portfolio": portfolio,
+                        "cached": bool(portfolio.get("fromCache")),
+                        "source": src,
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            if use_onchain_primary and not quick:
+                if not refresh:
                     cached = load_onchain_portfolio_cache(wallet)
                     if cached and (cached.get("totalUsd") or 0) > 0:
+                        cached = dict(cached)
+                        cached["fromCache"] = True
                         body = json.dumps(
                             {
                                 "ok": True,
@@ -1217,10 +1410,38 @@ class Handler(SimpleHTTPRequestHandler):
                         self.end_headers()
                         self.wfile.write(body)
                         return
+
+                force_onchain = refresh or (qs.get("refreshOnchain") or ["0"])[0].lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                )
+                portfolio = build_hybrid_portfolio(
+                    wallet,
+                    refresh=force_onchain,
+                    show_small=show_small,
+                    force_onchain=force_onchain,
+                )
+
+                body = json.dumps(
+                    {
+                        "ok": True,
+                        "portfolio": portfolio,
+                        "cached": False,
+                        "source": "onchain",
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            if use_onchain_primary and quick:
                 try:
-                    portfolio = run_onchain_portfolio(wallet, quick=quick)
-                    if not quick:
-                        save_onchain_portfolio_cache(wallet, portfolio)
+                    portfolio = run_onchain_portfolio(wallet, quick=True)
                     body = json.dumps(
                         {
                             "ok": True,

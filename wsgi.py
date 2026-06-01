@@ -78,14 +78,42 @@ def _handle_portfolio(qs: dict) -> Response:
     show_small = (qs.get("dust") or ["0"])[0].lower() in ("1", "true", "yes")
     quick = (qs.get("quick") or ["0"])[0].lower() in ("1", "true", "yes")
     refresh = (qs.get("refresh") or ["0"])[0].lower() in ("1", "true", "yes")
-    source = (qs.get("source") or ["hybrid"])[0].lower()
-    use_hybrid = source in ("hybrid", "onchain", "rpc", "chain", "")
-    use_onchain_only = source in ("onchain", "rpc", "chain")
+    source = (qs.get("source") or ["rpc"])[0].lower()
+    use_onchain_only = source in ("onchain", "chain")
+    use_aggregator = source in ("auto", "aggregator", "debank", "hybrid", "")
     try:
-        if use_hybrid and not quick:
+        if source == "rpc":
+            portfolio = srv.fetch_rpc_portfolio(
+                wallet, refresh=refresh, show_small=show_small, quick=quick
+            )
+            return _json_response(
+                {
+                    "ok": True,
+                    "portfolio": portfolio,
+                    "cached": bool(portfolio.get("fromCache")),
+                    "source": "rpc",
+                    "scanMs": portfolio.get("scanMs"),
+                }
+            )
+
+        if use_aggregator:
+            portfolio = srv.fetch_aggregator_portfolio(
+                wallet, quick=quick, refresh=refresh, show_small=show_small
+            )
+            src = portfolio.get("source") or "aggregator"
+            return _json_response(
+                {
+                    "ok": True,
+                    "portfolio": portfolio,
+                    "cached": bool(portfolio.get("fromCache")),
+                    "source": src,
+                }
+            )
+
+        if use_onchain_only and not quick:
             if not refresh:
-                cached = srv.load_portfolio_cache(wallet)
-                if cached and cached.get("source") in ("hybrid", "onchain+debank"):
+                cached = srv.load_onchain_portfolio_cache(wallet)
+                if cached and (cached.get("totalUsd") or 0) > 0:
                     cached = dict(cached)
                     cached["fromCache"] = True
                     return _json_response(
@@ -93,50 +121,38 @@ def _handle_portfolio(qs: dict) -> Response:
                             "ok": True,
                             "portfolio": cached,
                             "cached": True,
-                            "source": cached.get("source") or "hybrid",
+                            "source": "onchain",
                         }
                     )
-            force_onchain = (qs.get("refreshOnchain") or ["0"])[0].lower() in (
+            force_onchain = refresh or (qs.get("refreshOnchain") or ["0"])[0].lower() in (
                 "1",
                 "true",
                 "yes",
             )
             portfolio = srv.build_hybrid_portfolio(
                 wallet,
-                refresh=refresh,
+                refresh=force_onchain,
                 show_small=show_small,
                 force_onchain=force_onchain,
             )
             return _json_response(
-                {"ok": True, "portfolio": portfolio, "cached": False, "source": "hybrid"}
+                {"ok": True, "portfolio": portfolio, "cached": False, "source": "onchain"}
             )
 
-        if use_onchain_only:
-            if not refresh and not quick:
-                cached = srv.load_onchain_portfolio_cache(wallet)
-                if cached and (cached.get("totalUsd") or 0) > 0:
-                    cached = dict(cached)
-                    cached["fromCache"] = True
-                    return _json_response(
-                        {"ok": True, "portfolio": cached, "cached": True, "source": "onchain"}
-                    )
+        if quick and use_onchain_only:
             try:
-                portfolio = srv.run_onchain_portfolio(wallet, quick=quick)
-                if not quick:
-                    srv.save_onchain_portfolio_cache(wallet, portfolio)
+                portfolio = srv.run_onchain_portfolio(wallet, quick=True)
                 return _json_response(
                     {
                         "ok": True,
                         "portfolio": portfolio,
                         "cached": False,
                         "source": "onchain",
+                        "partial": True,
                     }
                 )
             except Exception as ex:
-                _api_log(f"onchain portfolio failed: {ex!s}")
-                return _json_response(
-                    {"ok": False, "error": "ONCHAIN_PORTFOLIO_FAILED"}, status=502
-                )
+                _api_log(f"onchain quick failed: {ex!s}")
 
         if source == "debank" and not refresh and not quick:
             cached = srv.load_portfolio_cache(wallet)
@@ -273,9 +289,28 @@ def portfolio_application(environ, start_response):  # noqa: N802
                 "node_ok": os.path.isfile(srv.NODE_BIN),
                 "config_ok": cfg.is_file(),
                 "debank_api": bool(srv.load_debank_access_key()),
-                "wsgi": "portfolio_v3",
+                "wsgi": "portfolio_v6_rpc",
+                "defaultSource": "rpc",
+                "schema": getattr(srv, "ONCHAIN_PORTFOLIO_SCHEMA", 13),
             }
         )(environ, start_response)
+
+    if path == "/api/cache/clear":
+        wallet = (qs.get("wallet") or [""])[0].strip().lower()
+        cleared = []
+        if re.fullmatch(r"0x[a-fA-F0-9]{40}", wallet):
+            for fn, label in [
+                (srv._cache_path(wallet), "portfolio"),
+                (srv._onchain_portfolio_cache_path(wallet), "onchain-portfolio"),
+                (srv._revert_cache_path(wallet), "revert"),
+            ]:
+                try:
+                    if fn.exists():
+                        fn.unlink()
+                        cleared.append(label)
+                except OSError:
+                    pass
+        return _json_response({"ok": True, "wallet": wallet, "cleared": cleared})
 
     if path == "/api/portfolio":
         return _handle_portfolio(qs)(environ, start_response)

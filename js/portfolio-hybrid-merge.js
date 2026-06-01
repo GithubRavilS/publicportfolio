@@ -1,20 +1,12 @@
 /**
- * Приоритет: 1) ончейн (RPC) заменяет совпадения  2) Revert (APY)  3) DeBank — база + пробелы.
- * Старт с DeBank → подмена совпавших позиций ончейн → добавление только ончейн-эксклюзивных.
+ * Приоритет: 1) ончейн (RPC/Etherscan) — истина  2) Revert (APY)  3) DeBank только сверка, без фантомов.
  */
 import { normalizeChain, poolPairKey } from "./revert-match.js";
 import { extractLpTokenId } from "./lp-onchain.js";
 import { recalcLiquidityTotals } from "./revert-portfolio-merge.js";
 import { saneLendingPosition, saneLiquidityPosition } from "./portfolio-sanity.js";
-import {
-  syncDisplayTotals,
-  rebuildChainBreakdown,
-} from "./portfolio-normalize.js";
-import {
-  fillCoverageFromProtocolTabs,
-  removeLegacyDebankGroups,
-  recalcAllProtocolUsd,
-} from "./portfolio-debank-fill.js";
+import { syncDisplayTotals, rebuildChainBreakdown } from "./portfolio-normalize.js";
+import { removeLegacyDebankGroups, recalcAllProtocolUsd } from "./portfolio-debank-fill.js";
 
 function clone(p) {
   return JSON.parse(JSON.stringify(p || {}));
@@ -50,11 +42,11 @@ function addKind(g, kind) {
   if (kind && !g.kinds.includes(kind)) g.kinds.push(kind);
 }
 
-/** Совпадение LP: NFT id (DeBank #…) или протокол + сеть + пара. */
+/** LP: по NFT id (сеть с DeBank может быть неверной). */
 function lpKey(protocol, p, chainHint) {
-  const ch = normalizeChain(p.chain || chainHint);
   const tid = extractLpTokenId(p);
-  if (tid) return `liq|tid|${ch}|${tid}`;
+  if (tid) return `liq|tid|${tid}`;
+  const ch = normalizeChain(p.chain || chainHint);
   return `liq|${protocol}|${ch}|${poolPairKey(p)}`;
 }
 
@@ -79,7 +71,7 @@ function lendKey(protocol, p, chainHint) {
 }
 
 function walletKey(t) {
-  return `wal|${normalizeChain(t.chain)}|${String(t.symbol || "").toUpperCase()}`;
+  return `wal|${normalizeChain(t.chain)}|${String(t.symbol || "").toUpperCase()}|${String(t.address || "").toLowerCase()}`;
 }
 
 function recomputeChainsAndTabs(portfolio) {
@@ -131,9 +123,9 @@ function recomputeTotals(portfolio) {
   const debank =
     portfolio.debankTotalUsd ?? portfolio.hybridMeta?.debankTotalUsd ?? portfolio.totalUsd;
   portfolio.debankTotalUsd = roundUsd(debank);
-  portfolio.totalUsd = portfolio.debankTotalUsd;
+  portfolio.totalUsd = computed;
   portfolio.coverageGapUsd = Math.max(0, roundUsd(debank - computed));
-  portfolio.partial = portfolio.coverageGapUsd > 0.5;
+  portfolio.partial = portfolio.coverageGapUsd > Math.max(5, debank * 0.03);
   recomputeChainsAndTabs(portfolio);
 }
 
@@ -157,12 +149,68 @@ function indexDebankLending(portfolio) {
   return map;
 }
 
-/** Убрать дубли LP/lend: приоритет onchain. */
+function collectOnchainTokenIds(oc) {
+  const ids = new Set();
+  for (const g of oc.protocolGroups || []) {
+    for (const p of g.liquidity || []) {
+      const tid = extractLpTokenId(p);
+      if (tid) ids.add(tid);
+    }
+  }
+  return ids;
+}
+
+/** Убрать DeBank LP с тем же NFT id, но неверной сетью / без ончейн-подтверждения. */
+function stripPhantomDebankLp(portfolio, onchainTids) {
+  if (!onchainTids.size) return;
+  for (const g of portfolio.protocolGroups || []) {
+    g.liquidity = (g.liquidity || []).filter((p) => {
+      if (p.onchain || p.source === "onchain") return true;
+      const tid = extractLpTokenId(p);
+      if (!tid || !onchainTids.has(tid)) return true;
+      return false;
+    });
+  }
+}
+
+function stripSyntheticFills(portfolio) {
+  for (const g of portfolio.protocolGroups || []) {
+    g.liquidity = (g.liquidity || []).filter((p) => !p.overviewFill && !p.debankFill);
+    g.lending = (g.lending || []).filter((p) => !p.overviewFill);
+  }
+}
+
+/** DeBank wallet на сетях, где ончейн уже сканировал — только если баланс подтверждён RPC/Etherscan. */
+function pruneUnverifiedWalletTokens(portfolio, oc) {
+  const verified = new Set((oc.walletTokens || []).map(walletKey));
+  const scanned = new Set(
+    (oc.stats?.scannedChains || oc.stats?.chains || []).map((c) => normalizeChain(c)),
+  );
+  if (!scanned.size) return;
+
+  portfolio.walletTokens = (portfolio.walletTokens || []).filter((t) => {
+    const ch = normalizeChain(t.chain);
+    if (!scanned.has(ch)) return true;
+    if (verified.has(walletKey(t))) return true;
+    return false;
+  });
+
+  const wg = (portfolio.protocolGroups || []).find((g) => g.protocol === "Wallet");
+  if (wg) {
+    wg.walletTokens = (wg.walletTokens || []).filter((t) => {
+      const ch = normalizeChain(t.chain);
+      if (!scanned.has(ch)) return true;
+      return verified.has(walletKey(t));
+    });
+  }
+}
+
 function dedupeGroups(portfolio) {
   for (const g of portfolio.protocolGroups || []) {
     const liqBy = new Map();
     for (const p of g.liquidity || []) {
-      const k = poolPairKey(p);
+      const tid = extractLpTokenId(p);
+      const k = tid ? `tid|${tid}` : poolPairKey(p);
       const prev = liqBy.get(k);
       if (!prev || p.onchain) liqBy.set(k, p);
     }
@@ -233,27 +281,16 @@ export function mergeHybridPortfolio(onchain, debank) {
   }
 
   const out = clone(db);
+  stripSyntheticFills(out);
   const liqMap = indexDebankLiquidity(out);
   const lendMap = indexDebankLending(out);
   let replacedCount = 0;
   let onchainOnlyCount = 0;
   const debankTotal = db.debankTotalUsd ?? db.totalUsd ?? 0;
-
-  const protocolLiqUsd = (groups, protocol) => {
-    let s = 0;
-    for (const g of groups || []) {
-      if (g.protocol !== protocol) continue;
-      for (const p of g.liquidity || []) s += p.positionUsd || 0;
-    }
-    return s;
-  };
+  const onchainTids = collectOnchainTokenIds(oc);
 
   for (const og of oc.protocolGroups || []) {
     if (og.protocol === "Wallet") continue;
-
-    const dbLiq = protocolLiqUsd(out.protocolGroups, og.protocol);
-    const ocLiq = (og.liquidity || []).reduce((s, p) => s + (p.positionUsd || 0), 0);
-    if (dbLiq > ocLiq * 1.08) continue;
 
     for (const p of og.liquidity || []) {
       if (!saneLiquidityPosition(p, debankTotal)) continue;
@@ -262,8 +299,10 @@ export function mergeHybridPortfolio(onchain, debank) {
       const enriched = {
         ...clone(p),
         protocol: og.protocol,
+        chain: normalizeChain(p.chain || og.chain),
         onchain: true,
         debankFill: false,
+        overviewFill: false,
         source: "onchain",
       };
       if (hit) {
@@ -271,10 +310,12 @@ export function mergeHybridPortfolio(onchain, debank) {
         hit.g.liquidity[hit.idx] = {
           ...prev,
           ...enriched,
+          chain: enriched.chain,
+          pair: enriched.pair || prev.pair,
+          pairKey: enriched.pairKey || prev.pairKey,
+          poolId: enriched.poolId || prev.poolId,
           positionUsd: Math.max(prev.positionUsd || 0, enriched.positionUsd || 0),
-          pair: prev.pair || enriched.pair,
-          poolId: prev.poolId || enriched.poolId,
-          inPool: (prev.inPool || []).length ? prev.inPool : enriched.inPool,
+          inPool: (enriched.inPool || []).length ? enriched.inPool : prev.inPool,
           rangeMin: enriched.rangeMin ?? prev.rangeMin,
           rangeMax: enriched.rangeMax ?? prev.rangeMax,
           rangeCurrent: enriched.rangeCurrent ?? prev.rangeCurrent,
@@ -283,9 +324,12 @@ export function mergeHybridPortfolio(onchain, debank) {
           onchainMetrics: !!(enriched.onchainMetrics || prev.onchainMetrics),
           revert: prev.revert || enriched.revert,
         };
+        if (normalizeChain(hit.g.chain) !== enriched.chain) {
+          hit.g.chain = enriched.chain;
+        }
         replacedCount += 1;
       } else {
-        const g = findOrCreateGroup(out, og.protocol, p.chain || og.chain);
+        const g = findOrCreateGroup(out, og.protocol, enriched.chain);
         g.liquidity.push(enriched);
         onchainOnlyCount += 1;
         addKind(g, p.kind || "Liquidity Pool");
@@ -315,6 +359,8 @@ export function mergeHybridPortfolio(onchain, debank) {
     }
   }
 
+  stripPhantomDebankLp(out, onchainTids);
+
   const walMap = new Map();
   for (const t of out.walletTokens || []) {
     walMap.set(walletKey(t), t);
@@ -336,10 +382,11 @@ export function mergeHybridPortfolio(onchain, debank) {
     }
   }
 
+  pruneUnverifiedWalletTokens(out, oc);
+
   dedupeGroups(out);
 
   recomputeTotals(out);
-  fillCoverageFromProtocolTabs(out);
   removeLegacyDebankGroups(out);
   recalcAllProtocolUsd(out);
   dedupeGroups(out);
@@ -347,44 +394,34 @@ export function mergeHybridPortfolio(onchain, debank) {
   rebuildChainBreakdown(out);
   const computedTotal = out.computedTotalUsd ?? 0;
 
-  const fillCount = (out.protocolGroups || []).reduce((n, g) => {
-    return (
-      n +
-      (g.liquidity || []).filter((p) => p.debankFill).length +
-      (g.lending || []).filter((p) => p.debankFill).length
-    );
-  }, 0);
-
   out.source = "hybrid";
   out.onchain = true;
   out.hybrid = true;
-  out.partial = !!db.partial;
-  out.totalUsd = roundUsd(debankTotal);
   out.debankTotalUsd = roundUsd(debankTotal);
   const gapUsd = roundUsd(Math.max(0, debankTotal - computedTotal));
   const coveragePct =
     debankTotal > 0 ? Math.min(100, Math.round((computedTotal / debankTotal) * 1000) / 10) : 100;
   out.hybridMeta = {
-    onchainUsd: roundUsd(oc.totalUsd || 0),
+    onchainUsd: roundUsd(oc.totalUsd || computedTotal),
     debankTotalUsd: roundUsd(debankTotal),
     computedUsd: roundUsd(computedTotal),
-    mergedTotalUsd: roundUsd(debankTotal),
+    mergedTotalUsd: roundUsd(computedTotal),
     gapUsd,
     coveragePct,
     onchainCoveragePct: coveragePct,
     replacedCount,
     onchainOnlyCount,
-    fillCount,
+    fillCount: 0,
     debankFillUsd: gapUsd,
-    scanChains: oc.stats?.chains ?? oc.stats?.chainCount,
+    scanChains: oc.stats?.scannedChains ?? oc.stats?.chains,
     priority: ["onchain", "revert", "debank"],
   };
   out.coverageGapUsd = gapUsd;
-  out.partial = gapUsd > Math.max(1, debankTotal * 0.02);
+  out.partial = gapUsd > Math.max(5, debankTotal * 0.05);
   out.stats = {
     ...(oc.stats || {}),
     ...(out.stats || {}),
-    debankFillCount: fillCount,
+    debankFillCount: 0,
     onchainReplaced: replacedCount,
     etherscan: oc.stats?.etherscan ?? out.stats?.etherscan,
     etherscanUsage: oc.stats?.etherscanUsage ?? out.stats?.etherscanUsage,

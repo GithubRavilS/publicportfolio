@@ -2,6 +2,8 @@ import { CHAINS, NATIVE_SYMBOL, SCAN_CHAINS } from "./onchain-registry.js";
 import { rpcForChain } from "./onchain-rpc.js";
 import { fetchPricesUsd, usdValue } from "./onchain-prices.js";
 import { fetchExplorerWalletTokens } from "./explorer-scrape.js";
+import { multicallBalances } from "./onchain-multicall.js";
+import { CORE_ERC20 } from "./onchain-core-tokens.js";
 import {
   chainSupported,
   etherscanEnabled,
@@ -26,6 +28,61 @@ async function rpcNativeOnly(chain, wallet) {
   return out;
 }
 
+async function rpcCoreErc20(chain, wallet) {
+  const list = CORE_ERC20[chain];
+  if (!list?.length || !CHAINS[chain]?.scan) return [];
+  const addrs = list.map((t) => t.address);
+  const bals = await multicallBalances(chain, wallet, addrs);
+  const out = [];
+  for (const t of list) {
+    const raw = bals.get(t.address.toLowerCase());
+    if (!raw || raw === 0n) continue;
+    const amount = Number(raw) / 10 ** t.decimals;
+    if (amount < 1e-12 || amount > 1e12) continue;
+    out.push({
+      address: t.address.toLowerCase(),
+      symbol: t.symbol,
+      amount,
+      chain,
+      source: "rpc-multicall",
+    });
+  }
+  return out;
+}
+
+function mergeTokenRows(a, b) {
+  const map = new Map();
+  for (const t of [...a, ...b]) {
+    const k = `${t.chain}|${(t.address || t.symbol || "").toLowerCase()}`;
+    const prev = map.get(k);
+    if (!prev || t.amount > prev.amount) map.set(k, t);
+  }
+  return [...map.values()];
+}
+
+async function verifyTokenRows(chain, wallet, rows) {
+  const w = wallet.toLowerCase();
+  const erc20 = rows.filter((t) => t.address && t.address !== "native");
+  const natives = rows.filter((t) => t.address === "native");
+  if (!erc20.length) return natives;
+
+  const meta = new Map();
+  for (const t of erc20) {
+    meta.set(t.address.toLowerCase(), t);
+  }
+  const bals = await multicallBalances(chain, w, [...meta.keys()]);
+  const out = [...natives];
+  for (const [addr, raw] of bals) {
+    if (!raw || raw === 0n) continue;
+    const t = meta.get(addr);
+    const dec = t?.decimals ?? 18;
+    const amount = Number(raw) / 10 ** dec;
+    if (amount < 1e-12 || amount > 1e12) continue;
+    out.push({ ...t, amount, chain, source: t.source || "rpc-verify" });
+  }
+  return out;
+}
+
 async function scanWalletOnChain(chain, wallet) {
   const w = wallet.toLowerCase();
 
@@ -37,10 +94,11 @@ async function scanWalletOnChain(chain, wallet) {
     }
   }
 
-  let out = await rpcNativeOnly(chain, w);
+  let out = mergeTokenRows(await rpcNativeOnly(chain, w), await rpcCoreErc20(chain, w));
   if (!out.length) {
     try {
-      out = await fetchExplorerWalletTokens(chain, w);
+      const scraped = await fetchExplorerWalletTokens(chain, w);
+      out = await verifyTokenRows(chain, w, scraped);
     } catch {
       /* */
     }
@@ -48,17 +106,30 @@ async function scanWalletOnChain(chain, wallet) {
   return out;
 }
 
-export async function scanWalletBalances(wallet, chains = SCAN_CHAINS) {
+async function supplementEtherscanWithRpc(chain, wallet, rows) {
+  const rpcRows = mergeTokenRows(
+    await rpcNativeOnly(chain, wallet),
+    await rpcCoreErc20(chain, wallet),
+  );
+  return mergeTokenRows(rows, rpcRows);
+}
+
+export async function scanWalletBalances(wallet, chains = SCAN_CHAINS, opts = {}) {
   const w = wallet.toLowerCase();
   const symbols = new Set();
+  const rpcOnly = opts.rpcOnly === true || process.env.PT_RPC_ONLY_WALLET === "1";
 
   // Etherscan: последовательно (глобальная очередь 3 rps), остальные сети — параллельно RPC/Jina
-  const esChains = chains.filter((c) => etherscanEnabled() && ETHERSCAN_FREE_CHAINS.has(c));
+  const esChains = rpcOnly
+    ? []
+    : chains.filter((c) => etherscanEnabled() && ETHERSCAN_FREE_CHAINS.has(c));
   const otherChains = chains.filter((c) => !esChains.includes(c));
 
   const esResults = [];
   for (const chain of esChains) {
-    esResults.push(await scanWalletOnChain(chain, w));
+    let rows = await scanWalletOnChain(chain, w);
+    rows = await supplementEtherscanWithRpc(chain, w, rows);
+    esResults.push(rows);
   }
   const otherResults = await Promise.all(otherChains.map((chain) => scanWalletOnChain(chain, w)));
 

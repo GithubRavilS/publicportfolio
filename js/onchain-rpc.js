@@ -116,6 +116,81 @@ export function rpcForChain(chain) {
   return new RpcClient(rpcUrlsForChain(chain));
 }
 
+const LOG_CHUNK_BLOCKS = 9_999n;
+
+function blockHex(n) {
+  if (n == null || n < 0n) return "0x0";
+  return `0x${n.toString(16)}`;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** eth_getLogs с перебором RPC; чанки ≤10k (лимит publicnode/drpc/base.org). */
+export async function getLogsRotate(chain, filter) {
+  const urls = rpcUrlsForChain(chain);
+  let lastErr;
+  for (const url of urls) {
+    const rpc = new RpcClient([url]);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return (await rpc.call("eth_getLogs", [filter])) || [];
+      } catch (e) {
+        lastErr = e;
+        if (attempt === 0) await sleep(120);
+      }
+    }
+  }
+  throw lastErr || new Error("GET_LOGS_FAILED");
+}
+
+/**
+ * @param {string} chain
+ * @param {{ address: string, topics: (string|null)[] }} spec
+ * @param {bigint} lookback blocks from head
+ */
+export async function scanLogsBack(chain, spec, lookback) {
+  const rpc = rpcForChain(chain);
+  let latest;
+  try {
+    latest = await rpc.blockNumber();
+  } catch {
+    return [];
+  }
+  const minBlock = latest > lookback ? latest - lookback : 0n;
+  const chunkSizes = [LOG_CHUNK_BLOCKS, 4_999n, 2_000n];
+  const logs = [];
+  let to = latest;
+  while (to > minBlock) {
+    let from = to > LOG_CHUNK_BLOCKS ? to - LOG_CHUNK_BLOCKS : minBlock;
+    if (from < minBlock) from = minBlock;
+    if (from >= to) break;
+    let part = null;
+    for (const chunk of chunkSizes) {
+      let f = to > chunk ? to - chunk : minBlock;
+      if (f < minBlock) f = minBlock;
+      if (f >= to) continue;
+      try {
+        part = await getLogsRotate(chain, {
+          fromBlock: blockHex(f),
+          toBlock: blockHex(to),
+          address: spec.address,
+          topics: spec.topics,
+        });
+        from = f;
+        break;
+      } catch {
+        /* try smaller chunk */
+      }
+    }
+    if (part?.length) logs.push(...part);
+    if (from <= minBlock) break;
+    to = from - 1n;
+  }
+  return logs;
+}
+
 /** eth_call с перебором публичных RPC (без API-ключей). */
 export async function ethCallRotate(chain, to, data) {
   const urls = rpcUrlsForChain(chain);

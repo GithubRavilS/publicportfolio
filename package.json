@@ -1,28 +1,13 @@
 {
-  "private": true,
   "type": "module",
+  "private": true,
   "scripts": {
-    "lint": "nano-staged --unstaged --quiet --bail",
     "bundle": "npx --yes esbuild@0.25.5 js/app.js --bundle --format=esm --outfile=js/app.bundle.js",
-    "verify": "PT_SKIP_NETWORK=1 node scripts/verify.mjs",
-    "verify:debank": "node scripts/compare-debank-10.mjs",
-    "verify:hybrid": "node scripts/compare-hybrid.mjs",
-    "verify:pa10": "node scripts/compare-pa-10.mjs",
-    "scan:onchain": "node scripts/run-onchain-portfolio.mjs",
-    "build:llama": "node scripts/build-llama-universe.mjs && node scripts/build-llama-yield-index.mjs",
-    "build:llama-index": "node scripts/build-llama-yield-index.mjs",
-    "benchmark:free": "node scripts/benchmark-free-sources.mjs",
     "deploy:pa": "node scripts/build-pa-upload.mjs",
     "deploy:remote": "node scripts/deploy-pa-remote.mjs",
-    "deploy:setup": "node scripts/pa-setup-autopull.mjs",
-    "prepare": "husky"
-  },
-  "devDependencies": {
-    "husky": "^9.1.7",
-    "nano-staged": "^1.0.2",
-    "oxfmt": "^0.52.0",
-    "oxlint": "^1.67.0",
-    "stylelint": "^17.12.0",
-    "stylelint-config-standard": "^40.0.0"
+    "verify": "node scripts/verify.mjs",
+    "verify:wallet": "node scripts/verify-wallet-quality.mjs",
+    "train:protocol": "node scripts/train-protocol.mjs",
+    "train:uniswap-v3": "node scripts/train-protocol.mjs uniswap-v3 --wallets scripts/training-wallets.txt"
   }
 }

@@ -1047,9 +1047,49 @@ function inferChainForSection(section, chains, chainProtocolIndex) {
   if (p.includes("gmx")) return "arb";
   if (p.includes("aerodrome")) return "base";
   if (p.includes("velodrome")) return "op";
+  if (p.includes("pancake")) {
+    const baseUsd = chains.find((c) => c.slug === "base")?.usd || 0;
+    const arbUsd = chains.find((c) => c.slug === "arb")?.usd || 0;
+    if (baseUsd >= arbUsd && baseUsd > 0) return "base";
+  }
   const key = `${section.protocol}:${Math.round(section.protocolUsd)}`;
   if (chainProtocolIndex[key]) return chainProtocolIndex[key];
   return "unknown";
+}
+
+/** NFT #id — одна позиция; Jina/chain-pages часто дублируют на arb/eth (ошибка scrape, не DeBank). */
+function liquidityTokenId(p) {
+  const raw = String(p.poolId || p.pair || "");
+  const m = raw.match(/#(\d{4,})/) || String(p.poolId || "").match(/^(\d{5,})$/);
+  return m ? m[1] : null;
+}
+
+export function dedupeLiquidityByTokenId(rows) {
+  const byTid = new Map();
+  const rest = [];
+  for (const p of rows) {
+    const tid = liquidityTokenId(p);
+    if (tid) {
+      p.tokenId = tid;
+      const prev = byTid.get(tid);
+      if (!prev || (p.positionUsd || 0) >= (prev.positionUsd || 0)) byTid.set(tid, p);
+      continue;
+    }
+    const proto = String(p.protocol || "").toLowerCase();
+    const pair = String(p.pair || p.poolId || "").toLowerCase();
+    const isOverview =
+      pair.includes(proto) && pair.length < 40 && !pair.includes("+") && byTid.size > 0;
+    if (!isOverview) rest.push(p);
+  }
+  const seen = new Set();
+  const outRest = [];
+  for (const p of rest) {
+    const k = `${p.chain}|${p.protocol}|${p.poolId}|${p.pair}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    outRest.push(p);
+  }
+  return [...byTid.values(), ...outRest];
 }
 
 /** Индекс протоколов с chain-страниц: protocol -> slug */
@@ -1252,7 +1292,8 @@ export function parseDebankProfileText(rawText, options = {}) {
     walletByChain[c].sort((a, b) => (b.usd || 0) - (a.usd || 0));
   }
 
-  const liquidityRows = liquidity
+  const liquidityDeduped = dedupeLiquidityByTokenId(liquidity);
+  const liquidityRows = liquidityDeduped
     .map((p) => {
       normalizeLiquidityRow(p, p.protocol);
       return p;

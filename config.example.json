@@ -1,5 +1,11 @@
 {
   "debank_access_key": "",
+  "covalent_api_key": "",
+  "cache": {
+    "portfolio_fresh_sec": 300,
+    "portfolio_stale_sec": 3600,
+    "portfolio_max_sec": 86400
+  },
   "debank_scraperapi_key": "",
   "krystal_cloud_api_key": "",
   "rpc_urls": {

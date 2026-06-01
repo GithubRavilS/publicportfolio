@@ -25,6 +25,7 @@ const SEL = {
 };
 
 import { CHAINS as REGISTRY_CHAINS, SCAN_CHAINS as REGISTRY_SCAN } from "./onchain-registry.js";
+import { scanLpPositions, readNfpmOwner, isLpOwnerForWallet } from "./onchain-lp.js";
 
 /** @deprecated use onchain-registry CHAINS */
 export const CHAIN_ONCHAIN = REGISTRY_CHAINS;
@@ -296,93 +297,35 @@ async function resolvePoolAddress(rpc, factory, token0, token1, fee) {
   }
 }
 
+/** Тот же скан, что и портфель: NFPM + Pancake farm (staked NFT). */
 export async function scanWalletLpOnchain(wallet, chains = ["eth", "base", "arb", "op"]) {
-  const w = wallet.toLowerCase();
-  const out = [];
-
-  for (const chain of chains) {
-    const chainCfg = CHAIN_ONCHAIN[chain];
-    if (!chainCfg) continue;
-    const rpc = rpcForChain(chain);
-
-    for (const nf of chainCfg.nfpm) {
-      if (!(await nfpmHasCode(rpc, nf.address))) continue;
-
-      const tokenIds = await enumerateTokenIds(rpc, nf.address, w);
-      for (const tokenIdStr of tokenIds) {
-        const tokenId = BigInt(tokenIdStr);
-        let pos;
-        try {
-          pos = await readPosition(rpc, nf.address, tokenId);
-        } catch {
-          continue;
-        }
-        if (!pos) continue;
-
-        let t0;
-        let t1;
-        try {
-          t0 = await readTokenMeta(rpc, pos.token0);
-          t1 = await readTokenMeta(rpc, pos.token1);
-        } catch {
-          continue;
-        }
-
-        const pairKey = normPair(`${t0.symbol}+${t1.symbol}`);
-        let poolAddress = await resolvePoolAddress(
-          rpc,
-          nf.factory,
-          pos.token0,
-          pos.token1,
-          pos.fee,
-        );
-        if (!poolAddress) poolAddress = null;
-
-        let tickCurrent = Math.round((pos.tickLower + pos.tickUpper) / 2);
-        if (poolAddress) {
-          try {
-            const slot = await readPoolSlot0(rpc, poolAddress);
-            if (slot) tickCurrent = slot.tick;
-          } catch {
-            /* pool read failed */
-          }
-        }
-
-        const range = displayRangeFromTicks(
-          pos.tickLower,
-          pos.tickUpper,
-          tickCurrent,
-          t0.decimals,
-          t1.decimals,
-          pairKey,
-        );
-
-        const feeTierPct = nf.protocol.includes("Aerodrome") ? pos.fee / 2000 : pos.fee / 10000;
-
-        out.push({
-          source: "onchain",
-          chain,
-          protocol: nf.protocol,
-          tokenId: tokenIdStr,
-          poolAddress,
-          nfpm: nf.address,
-          token0: t0,
-          token1: t1,
-          fee: pos.fee,
-          feeTierPct,
-          pair: `${t0.symbol}/${t1.symbol}`,
-          pairKey,
-          liquidity: pos.liquidity.toString(),
-          tickLower: pos.tickLower,
-          tickUpper: pos.tickUpper,
-          tickCurrent,
-          ...range,
-        });
-      }
-    }
-  }
-
-  return out;
+  const rows = await scanLpPositions(wallet, chains);
+  return rows.map((r) => {
+    const sym0 = r.inPool?.[0]?.symbol || r._sym0;
+    const sym1 = r.inPool?.[1]?.symbol || r._sym1;
+    const pairKey = r.pairKey || normPair(`${sym0}+${sym1}`);
+    return {
+      source: r.source || "onchain",
+      chain: r.chain,
+      protocol: r.protocol,
+      tokenId: r.tokenId,
+      poolAddress: r.poolAddress,
+      token0: sym0 ? { symbol: sym0 } : null,
+      token1: sym1 ? { symbol: sym1 } : null,
+      feeTierPct: r.feeTierPct,
+      pair: pairKey.replace("+", "/"),
+      pairKey,
+      liquidity: r.liquidity,
+      tickLower: r.tickLower,
+      tickUpper: r.tickUpper,
+      tickCurrent: r._tickCurrent ?? r.rangeCurrent,
+      rangeMin: r.rangeMin,
+      rangeMax: r.rangeMax,
+      rangeCurrent: r.rangeCurrent,
+      positionUsd: r.positionUsd,
+      inPool: r.inPool,
+    };
+  });
 }
 
 async function buildOnchainLpRecord(rpc, chain, nf, tokenIdStr, pos) {
@@ -439,12 +382,13 @@ async function buildOnchainLpRecord(rpc, chain, nf, tokenIdStr, pos) {
   };
 }
 
-/** DeBank даёт #NFT — читаем позицию напрямую (в т.ч. если NFT не в wallet scan). */
-export async function enrichPositionsByDebankTokenIds(positions) {
-  const chainTry = ["arb", "eth", "op", "base", "matic", "bsc"];
+/** NFT id → ончейн диапазон; только если owner = кошелёк или farm (не чужой NFT на другой сети). */
+export async function enrichPositionsByDebankTokenIds(positions, wallet = "") {
+  const w = String(wallet || "").toLowerCase();
+  const chainTry = ["base", "arb", "op", "eth", "matic", "bsc"];
   return Promise.all(
     (positions || []).map(async (p) => {
-      if (p.rangeMin != null && p.rangeMax != null) return p;
+      if (p.rangeMin != null && p.rangeMax != null && p.onchain) return p;
       const tid = extractLpTokenId(p);
       if (!tid) return p;
 
@@ -466,11 +410,17 @@ export async function enrichPositionsByDebankTokenIds(positions) {
             continue;
           }
           if (!pos || pos.liquidity === 0n) continue;
+          if (w) {
+            const owner = await readNfpmOwner(chain, nf.address, BigInt(tid));
+            if (!isLpOwnerForWallet(owner, w, chain)) continue;
+          }
           const record = await buildOnchainLpRecord(rpc, chain, nf, tid, pos);
           if (record?.rangeMin == null) continue;
           return {
             ...p,
             chain,
+            pair: record.pair || p.pair,
+            pairKey: record.pairKey || p.pairKey,
             poolAddress: p.poolAddress || record.poolAddress,
             rangeMin: record.rangeMin,
             rangeMax: record.rangeMax,
@@ -481,6 +431,7 @@ export async function enrichPositionsByDebankTokenIds(positions) {
             onchainTokenId: tid,
             tickLower: record.tickLower,
             tickUpper: record.tickUpper,
+            debankFill: false,
           };
         }
       }
@@ -669,7 +620,7 @@ export async function scanAndEnrich(wallet, positions, chains) {
   const scanChains = chains?.length ? chains : REGISTRY_SCAN;
   const onchain = await scanWalletLpOnchain(wallet, scanChains);
   let enriched = enrichPositionsWithOnchain(positions, onchain);
-  enriched = await enrichPositionsByDebankTokenIds(enriched);
+  enriched = await enrichPositionsByDebankTokenIds(enriched, wallet);
   if (!enriched.length && onchain.length) {
     enriched = onchainRowsAsRevertPositions(onchain);
   }

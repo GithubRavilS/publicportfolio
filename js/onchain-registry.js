@@ -141,7 +141,6 @@ export const CHAINS = {
       "https://base-rpc.publicnode.com",
       "https://mainnet.base.org",
       "https://base.drpc.org",
-      "https://1rpc.io/base",
     ],
     scan: true,
     multicall: MULTICALL3,

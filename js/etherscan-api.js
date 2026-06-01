@@ -17,7 +17,9 @@ const BASE = "https://api.etherscan.io/v2/api";
 /** Бесплатный multichain (~90%): проверено action=tokentx/balance. */
 export const ETHERSCAN_FREE_CHAINS = new Set([
   "eth",
+  "base",
   "arb",
+  "op",
   "matic",
   "linea",
   "blast",
@@ -33,6 +35,14 @@ const CORE_ERC20 = {
     { address: "0xdac17f958d2ee523a2206206994597c13d831ec7", symbol: "USDT", decimals: 6 },
     { address: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", symbol: "WETH", decimals: 18 },
     { address: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", symbol: "WSTETH", decimals: 18 },
+  ],
+  base: [
+    { address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", symbol: "USDC", decimals: 6 },
+    { address: "0x4200000000000000000000000000000000000006", symbol: "WETH", decimals: 18 },
+  ],
+  op: [
+    { address: "0x0b2c639c533813f4aa9d7837ca1a1d3c852c2a7", symbol: "USDC", decimals: 6 },
+    { address: "0x4200000000000000000000000000000000000006", symbol: "WETH", decimals: 18 },
   ],
   arb: [
     { address: "0xaf88d065e77c8cc2239328c0dfb60a416255c15", symbol: "USDC", decimals: 6 },
@@ -53,10 +63,7 @@ let queue = Promise.resolve();
 function apiKey() {
   const cfg = loadConfig();
   return (
-    cfg.etherscan_api_key ||
-    cfg.etherscan_keys?.default ||
-    process.env.ETHERSCAN_API_KEY ||
-    ""
+    cfg.etherscan_api_key || cfg.etherscan_keys?.default || process.env.ETHERSCAN_API_KEY || ""
   );
 }
 

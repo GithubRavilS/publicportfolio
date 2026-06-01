@@ -366,7 +366,9 @@ export function mergeRevertApyOnly(portfolio, revertPositions) {
     }
     return true;
   });
-  if (unmatched.length) injectAllRevertPools(portfolio, unmatched);
+  if (unmatched.length && !portfolio.onchainVerified && portfolio.source !== "onchain") {
+    injectAllRevertPools(portfolio, unmatched);
+  }
 
   recalcLiquidityTotals(portfolio);
 

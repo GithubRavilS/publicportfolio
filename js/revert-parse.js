@@ -332,6 +332,20 @@ function isSkippableRow(row) {
   );
 }
 
+/** Эвристика пары по ценам в диапазоне (ETH/USDC ~1k–5k). */
+export function inferPairFromRangeNums(rangeNums) {
+  const nums = (rangeNums || []).filter((n) => n > 50 && n < 500_000);
+  if (nums.length < 2) return { pair: "", pairKey: "" };
+  const mid = nums.length >= 3 ? nums[1] : (nums[0] + nums[1]) / 2;
+  if (mid >= 400 && mid <= 25_000) {
+    return { pair: "WETH/USDC", pairKey: "WETH+USDC" };
+  }
+  if (mid >= 50_000 && mid <= 200_000) {
+    return { pair: "WBTC/USDC", pairKey: "WBTC+USDC" };
+  }
+  return { pair: "", pairKey: "" };
+}
+
 /**
  * Jina без markdown-ссылок на пулы — блоки "range" + "pooled assets".
  * @param {string} text
@@ -355,14 +369,29 @@ export function parseRevertJinaPlainBlocks(text) {
     }
     let pooledUsd = 0;
     let feeApr = null;
+    let totalApr = null;
+    let uncollectedUsd = 0;
+    let totalPnlUsd = 0;
     for (; j < Math.min(i + 28, lines.length); j++) {
       const row = lines[j];
+      const prev = (lines[j - 1] || "").toLowerCase();
       if (row.toLowerCase() === "range") break;
       const u = parseUsd(row);
-      if (/^pooled assets$/i.test(lines[j - 1] || "") && u != null && u > 0) pooledUsd = u;
-      if (u != null && pooledUsd === 0 && row.startsWith("$") && u > 1) pooledUsd = u;
+      if (/^pooled assets$/i.test(prev) && u != null && u > 0) pooledUsd = u;
+      if (
+        u != null &&
+        pooledUsd === 0 &&
+        row.startsWith("$") &&
+        u > 1 &&
+        !/total pnl/i.test(prev)
+      ) {
+        pooledUsd = u;
+      }
+      if (/^uncollected fees$/i.test(prev) && u != null) uncollectedUsd = u;
+      if (/^total pnl$/i.test(prev) && u != null) totalPnlUsd = u;
       const p = parsePct(row);
-      if (p != null && /fee apr/i.test(lines[j - 1] || "")) feeApr = p;
+      if (p != null && /fee apr/i.test(prev)) feeApr = p;
+      if (p != null && /total apr/i.test(prev)) totalApr = p;
     }
     if (nums.length >= 2 && pooledUsd > 1) {
       blocks.push({
@@ -370,6 +399,9 @@ export function parseRevertJinaPlainBlocks(text) {
         largeNums: nums.filter((n) => n >= 100),
         pooledUsd,
         feeApr,
+        totalApr,
+        uncollectedUsd,
+        totalPnlUsd,
       });
     }
   }
@@ -380,12 +412,16 @@ export function parseRevertJinaPlainBlocks(text) {
     network: "",
     exchange: "",
     poolAddress: "",
-    positionId: `jina-block-${idx}`,
+    positionId: `revert-slot-${idx}`,
     pooledUsd: b.pooledUsd,
     feeApr: b.feeApr,
+    totalApr: b.totalApr,
+    uncollectedUsd: b.uncollectedUsd,
+    totalPnlUsd: b.totalPnlUsd,
     rangeNums: b.rangeNums,
     largeNums: b.largeNums?.length ? b.largeNums : b.rangeNums,
     jinaPlain: true,
+    metricsOnly: true,
     detailUrl: "",
   }));
 }
@@ -537,20 +573,7 @@ export function parseRevertAccountText(text) {
   const finalized = positions.map((p) => finalizeRevertPosition(p, { ...hints, ...hints2 }));
   if (finalized.length) return finalized;
 
-  const plain = parseRevertJinaPlainBlocks(text);
-  if (!plain.length) return [];
-  const hintsP = buildMarketHints(
-    plain.map((p) => ({
-      pairKey: p.pairKey || "WETH+USDC",
-      rangeCurrent: p.largeNums?.[1] ?? null,
-    })),
-  );
-  return plain.map((p) =>
-    finalizeRevertPosition(p, {
-      ...hintsP,
-      marketHints: hintsP,
-    }),
-  );
+  return parseRevertJinaPlainBlocks(text);
 }
 
 function sanitizeApr(v) {

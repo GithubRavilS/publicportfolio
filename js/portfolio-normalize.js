@@ -24,7 +24,7 @@ function inferChainFromProtocolName(protocol) {
   if (p.includes("gmx")) return "arb";
   if (p.includes("hyperliquid")) return "hyperliquid";
   if (p.includes("fluid") || p.includes("aave") || p.includes("compound")) return "eth";
-  if (p.includes("pancake")) return "arb";
+  if (p.includes("pancake")) return "base";
   if (p.includes("uniswap") || p.includes("sushi")) return "eth";
   return null;
 }
@@ -240,6 +240,37 @@ export function syncDisplayTotals(portfolio) {
     portfolio.coverageGapUsd = Math.max(0, gap);
     portfolio.overCountUsd = gap < 0 ? roundUsd(-gap) : 0;
     portfolio.partial = portfolio.coverageGapUsd > Math.max(1, debank * 0.02);
+    return portfolio;
+  }
+
+  if (portfolio.onchainVerified || portfolio.source === "onchain") {
+    portfolio.computedTotalUsd = roundUsd(
+      (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0),
+    );
+    portfolio.totalUsd = portfolio.computedTotalUsd;
+    const debankRef = portfolio.debankTotalUsd || 0;
+    if (debankRef > 0) {
+      portfolio.coverageGapUsd = Math.max(0, roundUsd(debankRef - portfolio.computedTotalUsd));
+      portfolio.partial = portfolio.coverageGapUsd > Math.max(5, debankRef * 0.03);
+    } else {
+      portfolio.coverageGapUsd = 0;
+      portfolio.partial = false;
+    }
+    for (const g of portfolio.protocolGroups || []) {
+      g.liquidity = (g.liquidity || []).filter(
+        (p) => !p.overviewFill && !String(p.poolId || "").includes("overview-"),
+      );
+    }
+    recalcLiquidityTotals(portfolio);
+    portfolio.liqUsd = roundUsd(
+      (portfolio.protocolGroups || []).reduce(
+        (s, g) => s + (g.liquidity || []).reduce((a, p) => a + (p.positionUsd || 0), 0),
+        0,
+      ),
+    );
+    portfolio.totalUsd = roundUsd(
+      (portfolio.walletUsd || 0) + (portfolio.liqUsd || 0) + (portfolio.lendUsd || 0),
+    );
     return portfolio;
   }
 

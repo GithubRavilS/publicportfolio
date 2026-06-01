@@ -4,9 +4,11 @@
 import { CHAINS, PANCAKE_V3_NFPM, UNI_V3_NFPM } from "./onchain-registry.js";
 import {
   alchemyEnabled,
+  alchemyChainSlugs,
   fetchAlchemyNfts,
   fetchAlchemyTokens,
   networkToChainSlug,
+  resolveAlchemyChains,
 } from "./alchemy-api.js";
 import {
   readPosition,
@@ -82,11 +84,15 @@ function tokenRowToWallet(t) {
     t.symbol ||
     t.tokenMetadata?.symbol ||
     (isNative ? "ETH" : addr.slice(2, 6).toUpperCase());
-  const priceUsd = Number(t.price ?? t.tokenPrices?.[0]?.value ?? 0);
-  const usd =
-    priceUsd > 0
-      ? amount * priceUsd
-      : Number(t.usdValue ?? t.value ?? 0);
+  const priceUsd = Number(
+    t.price ??
+      t.tokenPrices?.[0]?.value ??
+      t.tokenMetadata?.price?.value ??
+      t.tokenMetadata?.price ??
+      0,
+  );
+  let usd = Number(t.usdValue ?? t.value ?? t.balanceUsd ?? 0);
+  if (!usd && priceUsd > 0 && amount > 0) usd = amount * priceUsd;
   return {
     symbol,
     amount: amount.toFixed(amount < 1 ? 6 : 4),
@@ -116,6 +122,30 @@ function nftTokenId(nft) {
   } catch {
     return String(raw).replace(/\D/g, "") || null;
   }
+}
+
+function nftStubRow(nft, chain, nf) {
+  const tokenIdStr = nftTokenId(nft);
+  if (!tokenIdStr) return null;
+  const name = nft.name || nft.contract?.name || nf?.protocol || "LP NFT";
+  return {
+    protocol: nf?.protocol || name,
+    chain,
+    poolId: tokenIdStr,
+    tokenId: tokenIdStr,
+    onchainTokenId: tokenIdStr,
+    pair: name,
+    pairKey: name,
+    kind: "Liquidity Pool",
+    staked: false,
+    inPool: [],
+    positionUsd: Number(nft.estimatedValue?.usd ?? nft.floorPrice ?? 0) || 0,
+    claimable: [],
+    source: "alchemy-nft-stub",
+    onchain: false,
+    enrichmentPending: true,
+    partial: true,
+  };
 }
 
 async function nftToLiquidity(wallet, nft, chain, nf, symbols) {
@@ -193,13 +223,9 @@ async function nftToLiquidity(wallet, nft, chain, nf, symbols) {
 export async function buildAlchemyFastPortfolio(wallet, opts = {}) {
   const t0 = Date.now();
   const w = wallet.toLowerCase();
-  const chains = (
-    opts.chains ||
-    (process.env.PT_ALCHEMY_CHAINS || "base,eth,arb,op,matic")
-  )
-    .split(",")
-    .map((c) => c.trim())
-    .filter(Boolean);
+  const chains = resolveAlchemyChains(
+    opts.chains || process.env.PT_ALCHEMY_CHAINS || "all",
+  );
 
   if (!alchemyEnabled()) {
     return {
@@ -235,13 +261,24 @@ export async function buildAlchemyFastPortfolio(wallet, opts = {}) {
   for (const t of walletTokens) symbols.add(t.symbol);
 
   const liquidity = [];
-  const lpNfts = nftRows.slice(0, 40);
+  const lpNfts = nftRows.slice(0, 80);
+  const nftJobs = [];
   for (const nft of lpNfts) {
     const chain = networkToChainSlug(nft.network);
     const contract = nftContract(nft);
     const nf = NFPM_INDEX.get(`${chain}|${contract}`);
-    if (!nf) continue;
-    const row = await nftToLiquidity(w, nft, chain, nf, symbols);
+    if (nf) {
+      nftJobs.push(
+        nftToLiquidity(w, nft, chain, nf, symbols).then((row) => row || nftStubRow(nft, chain, nf)),
+      );
+    } else if (/uniswap|pancake|aerodrome|velodrome|sushi|curve|balancer|nft/i.test(
+        JSON.stringify(nft.contract || nft),
+      )) {
+      nftJobs.push(Promise.resolve(nftStubRow(nft, chain, null)));
+    }
+  }
+  const nftResults = await Promise.all(nftJobs);
+  for (const row of nftResults) {
     if (row) liquidity.push(row);
   }
 
@@ -282,6 +319,7 @@ export async function buildAlchemyFastPortfolio(wallet, opts = {}) {
     onchain: true,
     scanMs: Date.now() - t0,
     scannedChains: chains,
+    alchemyNetworks: chains.length,
     schemaVersion: ONCHAIN_PORTFOLIO_SCHEMA,
   };
 }

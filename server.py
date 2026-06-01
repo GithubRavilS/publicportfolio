@@ -983,7 +983,7 @@ def run_rpc_portfolio(wallet: str, *, pancake_only: bool = True, lp_only: bool =
         "PT_RPC_ONLY_WALLET": os.environ.get("PT_RPC_ONLY_WALLET", "1"),
         "PT_PANCAKE_ONLY": "1" if pancake_only else "0",
         "PT_RPC_LP_ONLY": "1" if lp_only else "0",
-        "PT_RPC_LP_CHAINS": os.environ.get("PT_RPC_LP_CHAINS", "base"),
+        "PT_RPC_LP_CHAINS": os.environ.get("PT_RPC_LP_CHAINS", "base,eth,arb,op,matic,bsc,avax"),
     }
     proc = subprocess.run(
         [NODE_BIN, str(runner), wallet.lower()],
@@ -1032,10 +1032,10 @@ def run_hybrid_fast(wallet: str) -> dict:
         [NODE_BIN, str(runner), wallet.lower()],
         capture_output=True,
         cwd=str(ROOT),
-        timeout=90,
+        timeout=120,
         env={
             **os.environ,
-            "PT_ALCHEMY_CHAINS": os.environ.get("PT_ALCHEMY_CHAINS", "base,eth,arb"),
+            "PT_ALCHEMY_CHAINS": os.environ.get("PT_ALCHEMY_CHAINS", "all"),
         },
     )
     if proc.returncode != 0:
@@ -1052,14 +1052,14 @@ def run_hybrid_enrich(wallet: str) -> dict:
         **os.environ,
         "PT_FAST_LP": os.environ.get("PT_FAST_LP", "1"),
         "PT_PANCAKE_ONLY": "1",
-        "PT_RPC_LP_CHAINS": os.environ.get("PT_RPC_LP_CHAINS", "base"),
+        "PT_RPC_LP_CHAINS": os.environ.get("PT_RPC_LP_CHAINS", "base,eth,arb,op,matic,bsc,avax"),
         "PT_RPC_ONLY_WALLET": "1",
     }
     proc = subprocess.run(
         [NODE_BIN, str(runner), wallet.lower()],
         capture_output=True,
         cwd=str(ROOT),
-        timeout=300,
+        timeout=360,
         env=env,
     )
     if proc.returncode != 0:

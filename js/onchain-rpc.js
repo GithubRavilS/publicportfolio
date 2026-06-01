@@ -10,12 +10,13 @@ let rpcConfig = null;
 
 export function loadConfig() {
   if (rpcConfig) return rpcConfig;
-  rpcConfig = { rpc_urls: {}, etherscan_keys: {} };
+  rpcConfig = { rpc_urls: {}, etherscan_keys: {}, alchemy_api_key: "" };
   const path = resolve(ROOT, "config.json");
   if (!existsSync(path)) return rpcConfig;
   try {
     const raw = JSON.parse(readFileSync(path, "utf8"));
     rpcConfig.rpc_urls = raw.rpc_urls || {};
+    rpcConfig.alchemy_api_key = raw.alchemy_api_key || "";
     const defaultKey = raw.etherscan_api_key || raw.etherscan_api_keys || "";
     rpcConfig.etherscan_api_key = defaultKey;
     rpcConfig.etherscan_keys = defaultKey

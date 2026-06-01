@@ -2885,9 +2885,17 @@ async function fetchWithTimeout(url, ms = FETCH_TIMEOUT_MS) {
     clearTimeout(timer);
   }
 }
-async function fetchPortfolio(wallet, { quick = false, refresh = false, source = "rpc", refreshOnchain = false, timeoutMs } = {}) {
+async function fetchPortfolio(wallet, {
+  quick = false,
+  refresh = false,
+  source = "hybrid",
+  enrich = false,
+  refreshOnchain = false,
+  timeoutMs
+} = {}) {
   const q = new URLSearchParams({ wallet, _: String(Date.now()) });
   if (quick) q.set("quick", "1");
+  if (enrich) q.set("enrich", "1");
   if (refresh) q.set("refresh", "1");
   if (refreshOnchain) q.set("refreshOnchain", "1");
   if (source) q.set("source", source);
@@ -3007,6 +3015,8 @@ function portfolioLooksComplete(p) {
   if (p.partial) return false;
   const defi = (p.liqUsd || 0) + (p.lendUsd || 0);
   const total = p.totalUsd || 0;
+  if (p.source === "hybrid" && p.phase === "enriched") return true;
+  if (p.source === "hybrid" && !p.enrichmentPending && defi > 500) return true;
   if (p.source === "rpc" && defi > 1e3) return true;
   if (defi > 30) return true;
   if ((p.fromDebankApi || p.aggregator || p.source === "debank-free" || p.source === "debank-api") && total > 1e3 && defi > 0.02) {
@@ -3028,10 +3038,10 @@ async function backgroundFullRefresh(wallet, { refresh = false } = {}) {
   try {
     setLoadStep("positions", "active");
     const p = await fetchPortfolio(wallet, {
-      source: "rpc",
-      quick: false,
+      source: "hybrid",
+      enrich: true,
       refresh,
-      timeoutMs: refresh ? FULL_SCAN_TIMEOUT_MS : 12e4
+      timeoutMs: refresh ? FULL_SCAN_TIMEOUT_MS : 3e5
     });
     applyPortfolio({ ...p, partial: !portfolioLooksComplete(p) }, wallet);
     if (portfolioLooksComplete(state.data)) {
@@ -4084,7 +4094,8 @@ function render() {
   })}` : "";
   const ageMin = d.cacheMeta?.ageSec != null ? Math.max(1, Math.round(d.cacheMeta.ageSec / 60)) : null;
   const ageNote = d.cacheStale && ageMin != null ? ` \xB7 ${t(lang, "cacheStaleNote", { min: String(ageMin) })}` : "";
-  const scanNote = d.scanMs != null && d.scanMs > 0 ? ` \xB7 RPC ${(d.scanMs / 1e3).toFixed(1)}s` : "";
+  const scanLabel = d.source === "hybrid" ? d.phase === "enriched" ? "hybrid" : "Alchemy" : d.source === "rpc" ? "RPC" : "";
+  const scanNote = d.scanMs != null && d.scanMs > 0 && scanLabel ? ` \xB7 ${scanLabel} ${(d.scanMs / 1e3).toFixed(1)}s` : "";
   $("updatedAt").textContent = `${t(lang, "updated")}: ${new Date(d.fetchedAt).toLocaleString(lang === "ru" ? "ru-RU" : "en-US")}${src ? ` \xB7 ${src}` : ""}${scanNote}${ageNote}${debankRef}`;
   const banner = $("partialBanner");
   if (banner) {
@@ -4092,6 +4103,8 @@ function render() {
     banner.hidden = !show;
     if (state.dataReadyFlash) banner.textContent = t(lang, "partialReady");
     else if (state.fullScanRunning) banner.textContent = t(lang, "scanningDeFi");
+    else if (d.enrichmentPending && state.fullScanRunning)
+      banner.textContent = t(lang, "scanningDeFi");
     else if (d.cacheStale && !state.fullScanRunning)
       banner.textContent = t(lang, "cacheRefreshing");
     else if (d.partial) banner.textContent = t(lang, "partialBanner");
@@ -4479,22 +4492,21 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
       if (!silent) {
         setLoadStep("positions", "active");
         try {
-          const lp = await fetchPortfolio(wallet, {
-            source: "rpc",
-            quick: true,
+          const fast = await fetchPortfolio(wallet, {
+            source: "hybrid",
             refresh: true,
-            timeoutMs: 2e5
+            timeoutMs: 9e4
           });
-          if ((lp.liqUsd || 0) > 0 || (lp.liquidity || []).length) {
-            applyPortfolio({ ...lp, partial: true }, wallet);
+          if ((fast.totalUsd || 0) > 0 || (fast.liquidity || []).length || fast.alchemy) {
+            applyPortfolio({ ...fast, partial: true, enrichmentPending: true }, wallet);
             setLoadStep("positions", "done");
             state.loadPct = 70;
             renderLoadProgress();
             render();
-            gotComplete = portfolioLooksComplete(lp);
+            gotComplete = portfolioLooksComplete(fast);
           }
         } catch (e) {
-          console.warn("rpc lp scan", e);
+          console.warn("hybrid fast", e);
         }
         if (!state.data) throw new Error("FETCH_FAILED");
         setLoadStep("debank", "active");

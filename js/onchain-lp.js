@@ -87,7 +87,7 @@ export function displayRangeFromTicks(
   };
 }
 
-async function readTokenMeta(chain, address) {
+export async function readTokenMeta(chain, address) {
   const decHex = await ethCallRotate(chain, address, SEL.decimals);
   const decimals = decHex && decHex !== "0x" ? parseInt(decHex, 16) : 18;
   let symbol = normToken(address.slice(0, 6));
@@ -162,7 +162,7 @@ export function isLpOwnerForWallet(owner, wallet, chain) {
   return Boolean(mc && o === mc.toLowerCase());
 }
 
-async function readPosition(chain, nfpm, tokenId) {
+export async function readPosition(chain, nfpm, tokenId) {
   const data = SEL.positions + encodeUint256(tokenId);
   const raw = await ethCallRotate(chain, nfpm, data);
   if (!raw || raw.length < 64 * 10) return null;

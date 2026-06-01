@@ -77,10 +77,18 @@ async function fetchWithTimeout(url, ms = FETCH_TIMEOUT_MS) {
 
 async function fetchPortfolio(
   wallet,
-  { quick = false, refresh = false, source = "rpc", refreshOnchain = false, timeoutMs } = {},
+  {
+    quick = false,
+    refresh = false,
+    source = "hybrid",
+    enrich = false,
+    refreshOnchain = false,
+    timeoutMs,
+  } = {},
 ) {
   const q = new URLSearchParams({ wallet, _: String(Date.now()) });
   if (quick) q.set("quick", "1");
+  if (enrich) q.set("enrich", "1");
   if (refresh) q.set("refresh", "1");
   if (refreshOnchain) q.set("refreshOnchain", "1");
   if (source) q.set("source", source);
@@ -212,6 +220,8 @@ function portfolioLooksComplete(p) {
   if (p.partial) return false;
   const defi = (p.liqUsd || 0) + (p.lendUsd || 0);
   const total = p.totalUsd || 0;
+  if (p.source === "hybrid" && p.phase === "enriched") return true;
+  if (p.source === "hybrid" && !p.enrichmentPending && defi > 500) return true;
   if (p.source === "rpc" && defi > 1000) return true;
   if (defi > 30) return true;
   if (
@@ -238,10 +248,10 @@ async function backgroundFullRefresh(wallet, { refresh = false } = {}) {
   try {
     setLoadStep("positions", "active");
     const p = await fetchPortfolio(wallet, {
-      source: "rpc",
-      quick: false,
+      source: "hybrid",
+      enrich: true,
       refresh,
-      timeoutMs: refresh ? FULL_SCAN_TIMEOUT_MS : 120000,
+      timeoutMs: refresh ? FULL_SCAN_TIMEOUT_MS : 300000,
     });
     applyPortfolio({ ...p, partial: !portfolioLooksComplete(p) }, wallet);
     if (portfolioLooksComplete(state.data)) {
@@ -1526,9 +1536,17 @@ function render() {
     d.cacheStale && ageMin != null
       ? ` · ${t(lang, "cacheStaleNote", { min: String(ageMin) })}`
       : "";
+  const scanLabel =
+    d.source === "hybrid"
+      ? d.phase === "enriched"
+        ? "hybrid"
+        : "Alchemy"
+      : d.source === "rpc"
+        ? "RPC"
+        : "";
   const scanNote =
-    d.scanMs != null && d.scanMs > 0
-      ? ` · RPC ${(d.scanMs / 1000).toFixed(1)}s`
+    d.scanMs != null && d.scanMs > 0 && scanLabel
+      ? ` · ${scanLabel} ${(d.scanMs / 1000).toFixed(1)}s`
       : "";
   $("updatedAt").textContent =
     `${t(lang, "updated")}: ${new Date(d.fetchedAt).toLocaleString(lang === "ru" ? "ru-RU" : "en-US")}${src ? ` · ${src}` : ""}${scanNote}${ageNote}${debankRef}`;
@@ -1545,6 +1563,8 @@ function render() {
     banner.hidden = !show;
     if (state.dataReadyFlash) banner.textContent = t(lang, "partialReady");
     else if (state.fullScanRunning) banner.textContent = t(lang, "scanningDeFi");
+    else if (d.enrichmentPending && state.fullScanRunning)
+      banner.textContent = t(lang, "scanningDeFi");
     else if (d.cacheStale && !state.fullScanRunning)
       banner.textContent = t(lang, "cacheRefreshing");
     else if (d.partial) banner.textContent = t(lang, "partialBanner");
@@ -2012,22 +2032,21 @@ async function loadPortfolio(wallet, { refresh = false, silent = false } = {}) {
       if (!silent) {
         setLoadStep("positions", "active");
         try {
-          const lp = await fetchPortfolio(wallet, {
-            source: "rpc",
-            quick: true,
+          const fast = await fetchPortfolio(wallet, {
+            source: "hybrid",
             refresh: true,
-            timeoutMs: 200000,
+            timeoutMs: 90000,
           });
-          if ((lp.liqUsd || 0) > 0 || (lp.liquidity || []).length) {
-            applyPortfolio({ ...lp, partial: true }, wallet);
+          if ((fast.totalUsd || 0) > 0 || (fast.liquidity || []).length || fast.alchemy) {
+            applyPortfolio({ ...fast, partial: true, enrichmentPending: true }, wallet);
             setLoadStep("positions", "done");
             state.loadPct = 70;
             renderLoadProgress();
             render();
-            gotComplete = portfolioLooksComplete(lp);
+            gotComplete = portfolioLooksComplete(fast);
           }
         } catch (e) {
-          console.warn("rpc lp scan", e);
+          console.warn("hybrid fast", e);
         }
 
         if (!state.data) throw new Error("FETCH_FAILED");

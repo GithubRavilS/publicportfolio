@@ -78,10 +78,26 @@ def _handle_portfolio(qs: dict) -> Response:
     show_small = (qs.get("dust") or ["0"])[0].lower() in ("1", "true", "yes")
     quick = (qs.get("quick") or ["0"])[0].lower() in ("1", "true", "yes")
     refresh = (qs.get("refresh") or ["0"])[0].lower() in ("1", "true", "yes")
-    source = (qs.get("source") or ["rpc"])[0].lower()
+    source = (qs.get("source") or ["hybrid"])[0].lower()
+    enrich = (qs.get("enrich") or ["0"])[0].lower() in ("1", "true", "yes")
     use_onchain_only = source in ("onchain", "chain")
-    use_aggregator = source in ("auto", "aggregator", "debank", "hybrid", "")
+    use_aggregator = source in ("auto", "aggregator", "debank", "")
     try:
+        if source in ("hybrid", "alchemy"):
+            portfolio = srv.fetch_hybrid_portfolio(
+                wallet, refresh=refresh, show_small=show_small, enrich=enrich
+            )
+            return _json_response(
+                {
+                    "ok": True,
+                    "portfolio": portfolio,
+                    "cached": bool(portfolio.get("fromCache")),
+                    "source": "hybrid",
+                    "phase": portfolio.get("phase"),
+                    "scanMs": portfolio.get("scanMs"),
+                }
+            )
+
         if source == "rpc":
             portfolio = srv.fetch_rpc_portfolio(
                 wallet, refresh=refresh, show_small=show_small, quick=quick
@@ -289,8 +305,8 @@ def portfolio_application(environ, start_response):  # noqa: N802
                 "node_ok": os.path.isfile(srv.NODE_BIN),
                 "config_ok": cfg.is_file(),
                 "debank_api": bool(srv.load_debank_access_key()),
-                "wsgi": "portfolio_v6_rpc",
-                "defaultSource": "rpc",
+                "wsgi": "portfolio_v7_hybrid",
+                "defaultSource": "hybrid",
                 "schema": getattr(srv, "ONCHAIN_PORTFOLIO_SCHEMA", 13),
             }
         )(environ, start_response)

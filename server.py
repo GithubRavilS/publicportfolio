@@ -52,8 +52,12 @@ REVERT_CACHE_DIR = ROOT / ".cache" / "revert"
 ONCHAIN_CACHE_DIR = ROOT / ".cache" / "onchain"
 ONCHAIN_PORTFOLIO_CACHE_DIR = ROOT / ".cache" / "onchain-portfolio"
 RPC_PORTFOLIO_CACHE_DIR = ROOT / ".cache" / "rpc-portfolio"
+HYBRID_FAST_CACHE_DIR = ROOT / ".cache" / "hybrid-fast"
+HYBRID_ENRICH_CACHE_DIR = ROOT / ".cache" / "hybrid-enriched"
 # RPC: короткий TTL только против двойного скана за секунды (не «15 минут данных»)
 RPC_PORTFOLIO_TTL = int(os.environ.get("PT_RPC_CACHE_SEC", "90"))
+HYBRID_FAST_TTL = int(os.environ.get("PT_HYBRID_FAST_CACHE_SEC", "120"))
+HYBRID_ENRICH_TTL = int(os.environ.get("PT_HYBRID_ENRICH_CACHE_SEC", "600"))
 CACHE_TTL = 600  # legacy default; overridden by config cache.portfolio_fresh_sec
 REVERT_CACHE_TTL = 900
 ONCHAIN_CACHE_TTL = 300
@@ -995,6 +999,118 @@ def run_rpc_portfolio(wallet: str, *, pancake_only: bool = True, lp_only: bool =
     return data.get("portfolio") or data
 
 
+def _hybrid_cache_path(wallet: str, enriched: bool) -> Path:
+    d = HYBRID_ENRICH_CACHE_DIR if enriched else HYBRID_FAST_CACHE_DIR
+    return d / f"{wallet.lower()}.json"
+
+
+def load_hybrid_cache(wallet: str, *, enriched: bool = False) -> dict | None:
+    path = _hybrid_cache_path(wallet, enriched)
+    if not path.is_file():
+        return None
+    ttl = HYBRID_ENRICH_TTL if enriched else HYBRID_FAST_TTL
+    if ttl > 0 and time.time() - path.stat().st_mtime > ttl:
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_hybrid_cache(wallet: str, portfolio: dict, *, enriched: bool = False) -> None:
+    d = HYBRID_ENRICH_CACHE_DIR if enriched else HYBRID_FAST_CACHE_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    _hybrid_cache_path(wallet, enriched).write_text(
+        json.dumps(portfolio, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def run_hybrid_fast(wallet: str) -> dict:
+    _guard_node_modules()
+    runner = ROOT / "scripts" / "run-hybrid-fast.mjs"
+    proc = subprocess.run(
+        [NODE_BIN, str(runner), wallet.lower()],
+        capture_output=True,
+        cwd=str(ROOT),
+        timeout=90,
+        env={
+            **os.environ,
+            "PT_ALCHEMY_CHAINS": os.environ.get("PT_ALCHEMY_CHAINS", "base,eth,arb"),
+        },
+    )
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace")[:500]
+        raise ValueError(f"HYBRID_FAST_FAILED:{err}")
+    data = json.loads(proc.stdout.decode("utf-8"))
+    return data.get("portfolio") or data
+
+
+def run_hybrid_enrich(wallet: str) -> dict:
+    _guard_node_modules()
+    runner = ROOT / "scripts" / "run-hybrid-enrich.mjs"
+    env = {
+        **os.environ,
+        "PT_FAST_LP": os.environ.get("PT_FAST_LP", "1"),
+        "PT_PANCAKE_ONLY": "1",
+        "PT_RPC_LP_CHAINS": os.environ.get("PT_RPC_LP_CHAINS", "base"),
+        "PT_RPC_ONLY_WALLET": "1",
+    }
+    proc = subprocess.run(
+        [NODE_BIN, str(runner), wallet.lower()],
+        capture_output=True,
+        cwd=str(ROOT),
+        timeout=300,
+        env=env,
+    )
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace")[:500]
+        raise ValueError(f"HYBRID_ENRICH_FAILED:{err}")
+    data = json.loads(proc.stdout.decode("utf-8"))
+    return data.get("portfolio") or data
+
+
+def fetch_hybrid_portfolio(
+    wallet: str,
+    *,
+    refresh: bool,
+    show_small: bool,
+    enrich: bool = False,
+) -> dict:
+    del show_small
+    if enrich:
+        if not refresh:
+            cached = load_hybrid_cache(wallet, enriched=True)
+            if cached and (cached.get("totalUsd") or 0) > 0:
+                out = dict(cached)
+                out["fromCache"] = True
+                return out
+        portfolio = run_hybrid_enrich(wallet)
+        portfolio["fromCache"] = False
+        portfolio["partial"] = False
+        if HYBRID_ENRICH_TTL > 0:
+            save_hybrid_cache(wallet, portfolio, enriched=True)
+        return portfolio
+
+    if not refresh and HYBRID_FAST_TTL > 0:
+        cached = load_hybrid_cache(wallet, enriched=False)
+        if cached:
+            out = dict(cached)
+            out["fromCache"] = True
+            return out
+    portfolio = run_hybrid_fast(wallet)
+    if portfolio.get("alchemyError") and not (portfolio.get("totalUsd") or 0):
+        portfolio = run_rpc_portfolio(wallet, pancake_only=True, lp_only=True)
+        portfolio["source"] = "hybrid"
+        portfolio["phase"] = "rpc-fallback"
+        portfolio["alchemyError"] = "ALCHEMY_API_KEY_MISSING"
+    portfolio["fromCache"] = False
+    portfolio["partial"] = True
+    portfolio["enrichmentPending"] = True
+    if HYBRID_FAST_TTL > 0:
+        save_hybrid_cache(wallet, portfolio, enriched=False)
+    return portfolio
+
+
 def fetch_rpc_portfolio(
     wallet: str, *, refresh: bool, show_small: bool, quick: bool = False
 ) -> dict:
@@ -1343,10 +1459,33 @@ class Handler(SimpleHTTPRequestHandler):
         show_small = (qs.get("dust") or ["0"])[0].lower() in ("1", "true", "yes")
         quick = (qs.get("quick") or ["0"])[0].lower() in ("1", "true", "yes")
         refresh = (qs.get("refresh") or ["0"])[0].lower() in ("1", "true", "yes")
-        source = (qs.get("source") or ["auto"])[0].lower()
+        source = (qs.get("source") or ["hybrid"])[0].lower()
+        enrich = (qs.get("enrich") or ["0"])[0].lower() in ("1", "true", "yes")
         use_onchain_primary = source in ("onchain", "chain")
-        use_aggregator = source in ("auto", "aggregator", "debank", "hybrid", "")
+        use_aggregator = source in ("auto", "aggregator", "debank", "")
         try:
+            if source in ("hybrid", "alchemy"):
+                portfolio = fetch_hybrid_portfolio(
+                    wallet, refresh=refresh, show_small=show_small, enrich=enrich
+                )
+                body = json.dumps(
+                    {
+                        "ok": True,
+                        "portfolio": portfolio,
+                        "cached": bool(portfolio.get("fromCache")),
+                        "source": "hybrid",
+                        "phase": portfolio.get("phase"),
+                        "scanMs": portfolio.get("scanMs"),
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
             if source == "rpc":
                 portfolio = fetch_rpc_portfolio(
                     wallet, refresh=refresh, show_small=show_small, quick=quick

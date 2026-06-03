@@ -81,17 +81,33 @@
       .header > div:last-child { width: 100%; justify-content: space-between; }
     }
     @media (max-width: 760px) {
-      .pool-card-head { flex-wrap: nowrap; align-items: flex-start; }
-      .pool-card-side { flex-direction: column; align-items: flex-end; min-width: 72px; }
+      .pool-card-head { align-items: flex-start; }
       .pool-apr-hero { font-size: 20px; width: auto; margin-top: 0; }
       .pool-meta-grid--3 { grid-template-columns: 1fr 1fr; }
       .pool-meta-grid--3 > div:last-child { grid-column: 1 / -1; }
       .pool-meta-grid--4 > div:nth-child(3),
       .pool-meta-grid--4 > div:nth-child(4) { grid-column: span 1; }
-      .range-bar-stage { padding-top: 18px; }
-      .range-lbl-pos { font-size: 9px; }
-      .range-lbl-cur { max-width: 48%; }
       .lend-card .pool-meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pool-card-head { flex-wrap: wrap; }
+      .pool-card-side {
+        flex-basis: 100%;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        min-width: 0;
+        width: 100%;
+      }
+      .pool-apr-hero { white-space: normal; }
+      .pool-meta-grid > div > div:last-child,
+      .pos-meta > div,
+      .lend-metric strong,
+      .lend-asset-usd,
+      .lend-asset-amt,
+      .lend-net strong,
+      .kpi p { overflow-wrap: anywhere; word-break: break-word; }
+      .lend-card-head { flex-direction: column; align-items: stretch; }
+      .lend-net { text-align: left; }
+      .lend-util-head { flex-wrap: wrap; gap: 6px; }
       .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
       .tabs::-webkit-scrollbar { display: none; }
       .btn { flex: 0 0 auto; }
@@ -177,6 +193,37 @@
     .range-bar-wrap { width: 100%; margin-top: 8px; }
     .range-bar-head { margin-bottom: 2px; }
     .range-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .range-bar-legend {
+      display: none;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+      gap: 4px 8px;
+      margin-bottom: 8px;
+    }
+    .range-legend-item { min-width: 0; }
+    .range-legend-k {
+      display: block;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      line-height: 1.2;
+      margin-bottom: 2px;
+    }
+    .range-legend-v {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .range-legend-min { text-align: left; }
+    .range-legend-cur { text-align: center; }
+    .range-legend-max { text-align: right; }
+    .range-legend-cur .range-legend-v { font-weight: 800; color: var(--text); }
+    .range-bar-wrap.out-range .range-legend-cur .range-legend-v { color: var(--red); }
     .range-bar-stage { position: relative; padding-top: 22px; }
     .range-bar-labels-pos {
       position: absolute; left: 0; right: 0; top: 0; height: 20px;
@@ -204,6 +251,17 @@
     }
     .range-bar-wrap.out-range .range-active { background: rgba(255,107,125,0.25); border-color: rgba(255,107,125,0.5); }
     .range-bar-wrap.out-range .range-marker { background: var(--red); box-shadow: 0 0 10px rgba(255,107,125,0.85); }
+    @media (max-width: 760px) {
+      .range-bar-legend { display: grid; }
+      .range-bar-labels-pos--desktop { display: none; }
+      .range-bar-stage { padding-top: 0; }
+      .range-legend-v { font-size: 10px; }
+    }
+    @media (max-width: 430px) {
+      .range-bar-legend { gap: 4px 6px; }
+      .range-legend-v { font-size: 9px; }
+      .range-legend-k { font-size: 8px; }
+    }
     .lend-list { display: flex; flex-direction: column; gap: 12px; }
     .lend-card { padding: 14px 16px; }
     .lend-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }

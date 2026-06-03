@@ -121,10 +121,26 @@
     let markerPct = ((cur - trackMin) / trackSpan) * 100;
     markerPct = Math.max(0.5, Math.min(99.5, markerPct));
     const curLbl = lang === "ru" ? "Цена" : "Price";
+    const minLbl = lang === "ru" ? "Мин" : "Min";
+    const maxLbl = lang === "ru" ? "Макс" : "Max";
     return `<div class="range-bar-wrap${inRange ? "" : " out-range"}">
       <div class="range-bar-head"><span class="range-lbl">${lang === "ru" ? "Диапазон цены" : "Price range"}</span></div>
+      <div class="range-bar-legend" aria-hidden="true">
+        <div class="range-legend-item range-legend-min">
+          <span class="range-legend-k">${minLbl}</span>
+          <span class="range-legend-v">${fmtRangeNum(min)}</span>
+        </div>
+        <div class="range-legend-item range-legend-cur${inRange ? "" : " out"}">
+          <span class="range-legend-k">${curLbl}</span>
+          <span class="range-legend-v">${fmtRangeNum(cur)}</span>
+        </div>
+        <div class="range-legend-item range-legend-max">
+          <span class="range-legend-k">${maxLbl}</span>
+          <span class="range-legend-v">${fmtRangeNum(max)}</span>
+        </div>
+      </div>
       <div class="range-bar-stage">
-        <div class="range-bar-labels-pos" aria-hidden="true">
+        <div class="range-bar-labels-pos range-bar-labels-pos--desktop" aria-hidden="true">
           <span class="range-lbl-pos range-lbl-min" style="left:${segLeft.toFixed(2)}%">${fmtRangeNum(min)}</span>
           <span class="range-lbl-pos range-lbl-max" style="left:${segRight.toFixed(2)}%">${fmtRangeNum(max)}</span>
           <span class="range-lbl-pos range-lbl-cur${inRange ? "" : " out"}" style="left:${markerPct.toFixed(2)}%">${curLbl}: ${fmtRangeNum(cur)}</span>

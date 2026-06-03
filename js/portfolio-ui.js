@@ -103,6 +103,26 @@
     return v.toLocaleString("en-US", { maximumFractionDigits: 6 });
   }
 
+  /** Rough label width as % of track (for overlap detection without DOM). */
+  function rangeLabelWidthPct(text, tight) {
+    const len = String(text).length;
+    const perChar = tight ? 2.15 : 1.35;
+    return Math.min(46, Math.max(9, len * perChar));
+  }
+
+  function rangeCurLabelPlacement(markerPct, segLeft, segRight, curText, minText, maxText, tight) {
+    const minW = rangeLabelWidthPct(minText, tight);
+    const maxW = rangeLabelWidthPct(maxText, tight);
+    const curW = rangeLabelWidthPct(curText, tight);
+    const gap = tight ? 4 : 2;
+    const collideMin = markerPct - curW / 2 < segLeft + minW + gap;
+    const collideMax = markerPct + curW / 2 > segRight - maxW - gap;
+    let anchor = "center";
+    if (markerPct <= 14) anchor = "start";
+    else if (markerPct >= 86) anchor = "end";
+    return { below: collideMin || collideMax, anchor };
+  }
+
   function renderRangeBar(r, lang) {
     const pos = applyLpRangeToPosition({ ...r });
     if (pos?.rangeMin == null || pos?.rangeMax == null) return "";
@@ -121,35 +141,33 @@
     let markerPct = ((cur - trackMin) / trackSpan) * 100;
     markerPct = Math.max(0.5, Math.min(99.5, markerPct));
     const curLbl = lang === "ru" ? "Цена" : "Price";
-    const minLbl = lang === "ru" ? "Мин" : "Min";
-    const maxLbl = lang === "ru" ? "Макс" : "Max";
+    const minText = fmtRangeNum(min);
+    const maxText = fmtRangeNum(max);
+    const curText = `${curLbl}: ${fmtRangeNum(cur)}`;
+    const curPlace = rangeCurLabelPlacement(
+      markerPct,
+      segLeft,
+      segRight,
+      curText,
+      minText,
+      maxText,
+      true
+    );
+    const curPos = curPlace.below ? "below" : "above";
+    const curAnchor = curPlace.anchor;
     return `<div class="range-bar-wrap${inRange ? "" : " out-range"}">
       <div class="range-bar-head"><span class="range-lbl">${lang === "ru" ? "Диапазон цены" : "Price range"}</span></div>
-      <div class="range-bar-legend" aria-hidden="true">
-        <div class="range-legend-item range-legend-min">
-          <span class="range-legend-k">${minLbl}</span>
-          <span class="range-legend-v">${fmtRangeNum(min)}</span>
-        </div>
-        <div class="range-legend-item range-legend-cur${inRange ? "" : " out"}">
-          <span class="range-legend-k">${curLbl}</span>
-          <span class="range-legend-v">${fmtRangeNum(cur)}</span>
-        </div>
-        <div class="range-legend-item range-legend-max">
-          <span class="range-legend-k">${maxLbl}</span>
-          <span class="range-legend-v">${fmtRangeNum(max)}</span>
-        </div>
-      </div>
-      <div class="range-bar-stage">
-        <div class="range-bar-labels-pos range-bar-labels-pos--desktop" aria-hidden="true">
-          <span class="range-lbl-pos range-lbl-min" style="left:${segLeft.toFixed(2)}%">${fmtRangeNum(min)}</span>
-          <span class="range-lbl-pos range-lbl-max" style="left:${segRight.toFixed(2)}%">${fmtRangeNum(max)}</span>
-          <span class="range-lbl-pos range-lbl-cur${inRange ? "" : " out"}" style="left:${markerPct.toFixed(2)}%">${curLbl}: ${fmtRangeNum(cur)}</span>
+      <div class="range-bar-stage${curPlace.below ? " has-cur-below" : ""}">
+        <div class="range-bar-labels-top" aria-hidden="true">
+          <span class="range-lbl-pos range-lbl-min" style="left:${segLeft.toFixed(2)}%">${minText}</span>
+          <span class="range-lbl-pos range-lbl-max" style="left:${segRight.toFixed(2)}%">${maxText}</span>
         </div>
         <div class="range-bar">
           <div class="range-track"></div>
           <div class="range-active" style="left:${segLeft.toFixed(2)}%;width:${segWidth.toFixed(2)}%"></div>
           <div class="range-marker" style="left:${markerPct.toFixed(2)}%"></div>
         </div>
+        <span class="range-lbl-pos range-lbl-cur range-lbl-cur--${curPos} range-lbl-cur--anchor-${curAnchor}${inRange ? "" : " out"}" style="left:${markerPct.toFixed(2)}%">${curText}</span>
       </div>
     </div>`;
   }

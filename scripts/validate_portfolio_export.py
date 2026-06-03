@@ -3,6 +3,7 @@
 Аудит экспорта portfolio-data.js (как audit-wallet.mjs в Portfolio Tracker).
 Запуск: python scripts/validate_portfolio_export.py [path/to/portfolio-data.js]
 """
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,7 @@ FLAT_APR_TOLERANCE = 0.02
 TAIL_DAYS = 7
 MAX_EQUITY_DROP_PCT = 18.0
 FORBIDDEN_FLAT_APR = {8.27, 8.270, 2.6, 0.33}
-MANUAL_VISUAL_ADJUSTMENT_USD = 2600.0
+MANUAL_VISUAL_ADJUSTMENT_USD = 2000.0
 MIN_CURRENT_CAPITAL_USD = 14900.0
 
 
@@ -108,9 +109,7 @@ def run_audit(data: dict) -> dict:
             if p.get("isActive", True)
         )
         if last_liq > 3000 and cum_sheet > 1 and last_fee <= 0:
-            msg = (
-                f"zero_daily_income_on_last_day: {last_day} fee=0 liq={last_liq:.0f} cum_lp={cum_sheet:.2f}"
-            )
+            msg = f"zero_daily_income_on_last_day: {last_day} fee=0 liq={last_liq:.0f} cum_lp={cum_sheet:.2f}"
             if store_days >= 2:
                 issues.append(msg)
             else:
@@ -136,7 +135,7 @@ def run_audit(data: dict) -> dict:
                 drop_pct = (e0 - e1) / e0 * 100.0
                 if drop_pct > MAX_EQUITY_DROP_PCT:
                     warnings.append(
-                        f"equity_cliff: {dates[j-1]}→{dates[j]} -{drop_pct:.1f}% "
+                        f"equity_cliff: {dates[j - 1]}→{dates[j]} -{drop_pct:.1f}% "
                         f"({e0:.0f}→{e1:.0f})"
                     )
 

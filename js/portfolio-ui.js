@@ -117,10 +117,7 @@
     const gap = tight ? 4 : 2;
     const collideMin = markerPct - curW / 2 < segLeft + minW + gap;
     const collideMax = markerPct + curW / 2 > segRight - maxW - gap;
-    let anchor = "center";
-    if (markerPct <= 14) anchor = "start";
-    else if (markerPct >= 86) anchor = "end";
-    return { below: collideMin || collideMax, anchor };
+    return { below: collideMin || collideMax };
   }
 
   function renderRangeBar(r, lang) {
@@ -153,21 +150,23 @@
       maxText,
       true
     );
-    const curPos = curPlace.below ? "below" : "above";
-    const curAnchor = curPlace.anchor;
+    const curBelow = curPlace.below;
     return `<div class="range-bar-wrap${inRange ? "" : " out-range"}">
       <div class="range-bar-head"><span class="range-lbl">${lang === "ru" ? "Диапазон цены" : "Price range"}</span></div>
-      <div class="range-bar-stage${curPlace.below ? " has-cur-below" : ""}">
-        <div class="range-bar-labels-top" aria-hidden="true">
-          <span class="range-lbl-pos range-lbl-min" style="left:${segLeft.toFixed(2)}%">${minText}</span>
-          <span class="range-lbl-pos range-lbl-max" style="left:${segRight.toFixed(2)}%">${maxText}</span>
+      <div class="range-bar-stage${curBelow ? " range-bar-stage--cur-below" : " range-bar-stage--cur-above"}">
+        <div class="range-band range-band-top">
+          <div class="range-bar-labels-top" aria-hidden="true">
+            <span class="range-lbl-pos range-lbl-min" style="left:${segLeft.toFixed(2)}%">${minText}</span>
+            <span class="range-lbl-pos range-lbl-max" style="left:${segRight.toFixed(2)}%">${maxText}</span>
+          </div>
+          ${curBelow ? "" : `<span class="range-lbl-pos range-lbl-cur range-lbl-cur--above${inRange ? "" : " out"}" style="left:${markerPct.toFixed(2)}%">${curText}</span>`}
         </div>
         <div class="range-bar">
           <div class="range-track"></div>
           <div class="range-active" style="left:${segLeft.toFixed(2)}%;width:${segWidth.toFixed(2)}%"></div>
           <div class="range-marker" style="left:${markerPct.toFixed(2)}%"></div>
         </div>
-        <span class="range-lbl-pos range-lbl-cur range-lbl-cur--${curPos} range-lbl-cur--anchor-${curAnchor}${inRange ? "" : " out"}" style="left:${markerPct.toFixed(2)}%">${curText}</span>
+        <div class="range-band range-band-bottom">${curBelow ? `<span class="range-lbl-pos range-lbl-cur range-lbl-cur--below${inRange ? "" : " out"}" style="left:${markerPct.toFixed(2)}%">${curText}</span>` : ""}</div>
       </div>
     </div>`;
   }

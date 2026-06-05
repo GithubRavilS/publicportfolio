@@ -641,7 +641,7 @@
 
     const HLP_WALLET = "0xE10149bE7dBDe8f932C61e86d83D3C4aEDF4BFE6";
     const HLP_PREFERRED_VAULT = "0x6d6da6f227c33c881303786960e2b877faafbbd6";
-    const MANUAL_EQUITY_ADJ_USD = 2000;
+    const MANUAL_EQUITY_ADJ_USD = 800;
     const cfgAdj = Number(data.manualVisualAdjustmentUsd ?? MANUAL_EQUITY_ADJ_USD);
     const manualEquityAdj = cfgAdj >= 2500 ? cfgAdj : MANUAL_EQUITY_ADJ_USD;
     const openLpUnclaimedExport = Number(data.openLiquidityUnclaimedUsd ?? 0);
@@ -797,12 +797,13 @@
     let baseEquity = [];
 
     function applyDashboardKpis(activeLpUsd, lpForUnclaimed) {
-      const lend = window.PortfolioUI?.sumLendingTotals
+      const lendTotals = window.PortfolioUI?.sumLendingTotals
         ? window.PortfolioUI.sumLendingTotals(lending)
         : { collateral: 0, debt: 0, net: 0 };
-      const collateral =
-        debankCollateral > 0 ? debankCollateral : Number(lend.collateral || 0);
-      const debt = debankDebt > 0 ? debankDebt : Number(lend.debt || 0);
+      const lendColl = Number(lendTotals.collateral || 0);
+      const lendDebt = Number(lendTotals.debt || 0);
+      const collateral = lendColl > 0 ? lendColl : debankCollateral;
+      const debt = lendDebt > 0 ? lendDebt : debankDebt;
       const liveLiq = Number(activeLpUsd || 0) > 0 ? Number(activeLpUsd) : staticLiquidity;
       const base =
         window.PortfolioUI?.calcLiveEquityUsd

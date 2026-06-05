@@ -216,7 +216,7 @@ EQUITY_CHART_START_DAY = "2026-01-01"
 EQUITY_CHART_START_USD = 15100.0
 EQUITY_CAPITAL_INJECT_DAY = "2026-02-15"
 EQUITY_CAPITAL_INJECT_USD = 200.0
-MANUAL_VISUAL_ADJUSTMENT_USD = 2000.0
+MANUAL_VISUAL_ADJUSTMENT_USD = 800.0
 BTC_EQUITY_BETA = 1.3
 JAN_EQUITY_SHAPAN_END_DAY = "2026-01-14"
 EQUITY_BTC_BACKWARD_FROM_DAY = "2026-01-15"
@@ -720,7 +720,7 @@ def build_market_equity_snapshots_calendar(
     frozen_by_day: dict[str, dict] | None = None,
     start_day: str = EQUITY_CHART_START_DAY,
     start_equity_usd: float = EQUITY_CHART_START_USD,
-    adjustment_usd: float = 2000.0,
+    adjustment_usd: float = 800.0,
     use_frozen_history: bool = True,
 ) -> list[dict]:
     """

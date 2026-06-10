@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PythonAnywhere: Scheduled task (hourly). Обновляет БД + пушит на GitHub → Vercel.
-# PA_HOURLY_SCRIPT_VERSION=2026-05-25-market-equity-v5
+# PA_HOURLY_SCRIPT_VERSION=2026-06-10-enrich-tail-v6
 set -euo pipefail
 cd ~/Public_portfolio
-echo "[OK] pa_hourly_update.sh version 2026-05-25-market-equity-v5"
+echo "[OK] pa_hourly_update.sh version 2026-06-10-enrich-tail-v6"
 source .venv/bin/activate
 export TMPDIR="${TMPDIR:-$HOME/tmp}"
 mkdir -p "$TMPDIR"
@@ -79,6 +79,7 @@ if ! grep -q "liquidity_usd=[5-9]" /tmp/etl_last.log && ! grep -q "liquidity_usd
 fi
 
 python python/export_static_data.py
+python scripts/enrich_portfolio_tail.py || echo "[WARN] enrich_portfolio_tail.py failed"
 python scripts/validate_portfolio_export.py data/portfolio-data.js
 
 echo "=== PUSH TO GITHUB (v3) ==="

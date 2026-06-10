@@ -568,10 +568,10 @@
       const ref = yieldByDay || {};
       const out = (snaps || []).map((s, i) => {
         const d = (s.timestamp || "").slice(0, 10);
+        const refApr = Number(ref[d] || 0);
+        if (refApr > 0.01 && refApr < maxApr - 0.5) return cap(refApr);
         const exported = Number(rawSeries?.[i] || 0);
         if (exported > 0.01 && exported < maxApr - 0.5) return cap(exported);
-        const refApr = Number(ref[d] || 0);
-        if (refApr > 0.5 && refApr < maxApr - 0.5) return cap(refApr);
         return 0;
       });
       for (let i = 0; i < out.length; i++) {

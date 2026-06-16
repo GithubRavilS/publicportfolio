@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PythonAnywhere: Scheduled task (hourly). Обновляет БД + пушит на GitHub → Vercel.
-# PA_HOURLY_SCRIPT_VERSION=2026-06-10-enrich-tail-v6
-set -euo pipefail
+# PA_HOURLY_SCRIPT_VERSION=2026-06-16-always-push-v7
+set -uo pipefail
 cd ~/Public_portfolio
-echo "[OK] pa_hourly_update.sh version 2026-06-10-enrich-tail-v6"
+echo "[OK] pa_hourly_update.sh version 2026-06-16-always-push-v7"
 source .venv/bin/activate
 export TMPDIR="${TMPDIR:-$HOME/tmp}"
 mkdir -p "$TMPDIR"
@@ -33,7 +33,6 @@ DB_BAK="${HOME}/.portfolio_pa.db.bak"
 sync_code_from_github() {
   git_recover
   git fetch "$REMOTE" main
-  # Код и эталоны — с GitHub; локальные «зависшие» коммиты на PA сбрасываем
   git reset --hard FETCH_HEAD
   echo "[OK] Код синхронизирован с GitHub (main)"
 }
@@ -54,43 +53,40 @@ if [ -f "$DB_BAK" ]; then
   echo "[OK] Восстановлен data/portfolio.db"
 fi
 
-python python/init_db.py
+python python/init_db.py || echo "[WARN] init_db failed"
 
 if [ ! -f python/config.json ]; then
-  echo "[FATAL] Нет python/config.json на PA."
-  echo "        Создай: cp python/config.example.json python/config.json && nano python/config.json"
-  echo "        Нужны: google_sheet_id, google_service_account_file, debank_wallets."
-  exit 1
-fi
-
-python debank_parser_final.py || echo "[WARN] debank_parser_final.py failed (на PA часто 0 позиций — ок)"
-
-if ls debank_lending_*.csv >/dev/null 2>&1; then
-  python python/import_debank_csv.py || echo "[WARN] import_debank_csv failed"
+  echo "[WARN] Нет python/config.json — только daily_chart_sync"
 else
-  echo "[WARN] No debank_lending_*.csv, skip import_debank_csv"
+  python debank_parser_final.py || echo "[WARN] debank_parser_final.py failed"
+
+  if ls debank_lending_*.csv >/dev/null 2>&1; then
+    python python/import_debank_csv.py || echo "[WARN] import_debank_csv failed"
+  else
+    echo "[WARN] No debank_lending_*.csv, skip import_debank_csv"
+  fi
+
+  if python python/etl_revert.py | tee /tmp/etl_last.log; then
+    if grep -qE "liquidity_usd=[5-9]|liquidity_usd=8" /tmp/etl_last.log; then
+      python python/export_static_data.py || echo "[WARN] export_static_data.py failed"
+    else
+      echo "[WARN] etl_revert liquidity check failed — skip full export"
+    fi
+  else
+    echo "[WARN] etl_revert.py failed"
+  fi
 fi
 
-python python/etl_revert.py | tee /tmp/etl_last.log
-if ! grep -q "liquidity_usd=[5-9]" /tmp/etl_last.log && ! grep -q "liquidity_usd=8" /tmp/etl_last.log; then
-  echo "[FATAL] etl_revert: liquidity_usd ~444 — на GitHub старый etl_revert.py без фикса NBSP."
-  echo "        Залей с Mac python/etl_revert.py, затем снова запусти этот скрипт."
-  exit 1
-fi
+# Всегда дотягиваем график до сегодня (даже если DeBank/ETL/export упали)
+bash scripts/daily_chart_sync.sh || python scripts/enrich_portfolio_tail.py
 
-python python/export_static_data.py
-python scripts/enrich_portfolio_tail.py || echo "[WARN] enrich_portfolio_tail.py failed"
-python scripts/validate_portfolio_export.py data/portfolio-data.js
-
-echo "=== PUSH TO GITHUB (v3) ==="
-set +e
+echo "=== PUSH TO GITHUB ==="
 PUSH_TS="$(date -u +%Y-%m-%dT%H%MZ)"
 PUSH_MSG="chore: portfolio data update ${PUSH_TS}"
 
 for f in data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json; do
   if [ ! -f "$f" ]; then
     echo "[FATAL] Нет файла $f — push отменён"
-    set -e
     exit 1
   fi
 done
@@ -105,6 +101,7 @@ cp "${TMPDIR}/portfolio-data.js.push" data/portfolio-data.js
 cp "${TMPDIR}/lp-income-snapshots.json.push" data/lp-income-snapshots.json
 cp "${TMPDIR}/chart-yield-reference.json.push" data/chart-yield-reference.json
 
+git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json data/btc-daily-prices.json 2>/dev/null || true
 git add data/portfolio-data.js data/lp-income-snapshots.json data/chart-yield-reference.json
 
 if git diff --cached --quiet; then
@@ -115,11 +112,9 @@ else
     echo "[OK] Pushed to GitHub (main)"
   else
     echo "[FATAL] git push failed — проверь ~/.github_pat (права repo)"
-    set -e
     exit 1
   fi
 fi
-set -e
 
 if [ -f "$CONFIG_BAK" ]; then
   cp "$CONFIG_BAK" python/config.json

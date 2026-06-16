@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -40,13 +41,42 @@ def fetch_btc_binance(start_day: str, end_day: str) -> dict[str, float]:
         "https://api.binance.com/api/v3/klines"
         f"?symbol=BTCUSDT&interval=1d&startTime={start_ms}&endTime={end_ms}&limit=1000"
     )
-    with urllib.request.urlopen(url, timeout=45) as res:
+    with urllib.request.urlopen(url, timeout=20) as res:
         rows = json.loads(res.read().decode())
     out: dict[str, float] = {}
     for row in rows:
         day = datetime.fromtimestamp(int(row[0]) / 1000, tz=timezone.utc).date().isoformat()
         out[day] = float(row[4])
     return out
+
+
+def load_btc_prices(start_day: str, end_day: str) -> dict[str, float]:
+    btc: dict[str, float] = {}
+    if BTC_CACHE.exists():
+        try:
+            cached = json.loads(BTC_CACHE.read_text(encoding="utf-8"))
+            btc = dict(cached.get("byDay") or cached)
+        except Exception:
+            pass
+    try:
+        btc.update(fetch_btc_binance(start_day, end_day))
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        print(f"[WARN] BTC fetch failed ({e}) — using cache / flat carry", file=sys.stderr)
+    if btc:
+        try:
+            cache_doc = (
+                json.loads(BTC_CACHE.read_text(encoding="utf-8"))
+                if BTC_CACHE.exists()
+                else {"byDay": {}}
+            )
+            if "byDay" in cache_doc:
+                cache_doc["byDay"].update(btc)
+            else:
+                cache_doc = {"byDay": {**cache_doc, **btc}}
+            BTC_CACHE.write_text(json.dumps(cache_doc, separators=(",", ":")), encoding="utf-8")
+        except Exception:
+            pass
+    return btc
 
 
 def btc_return(btc: dict[str, float], d0: str, d1: str) -> float:
@@ -139,19 +169,8 @@ def extend_equity_tail(snaps: list[dict], today: str) -> list[dict]:
     if last_day >= today:
         return snaps
 
-    btc: dict[str, float] = {}
-    if BTC_CACHE.exists():
-        cached = json.loads(BTC_CACHE.read_text(encoding="utf-8"))
-        btc = dict(cached.get("byDay") or cached)
     fetch_start = (datetime.fromisoformat(last_day) - timedelta(days=2)).date().isoformat()
-    btc.update(fetch_btc_binance(fetch_start, today))
-    if BTC_CACHE.exists():
-        cache_doc = json.loads(BTC_CACHE.read_text(encoding="utf-8"))
-        if "byDay" in cache_doc:
-            cache_doc["byDay"].update(btc)
-        else:
-            cache_doc = {"byDay": {**cache_doc, **btc}}
-        BTC_CACHE.write_text(json.dumps(cache_doc, separators=(",", ":")), encoding="utf-8")
+    btc = load_btc_prices(fetch_start, today)
 
     anchor = dict(by_day[last_day])
     prev_day = last_day

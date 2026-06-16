@@ -229,6 +229,25 @@ def apply_main_chart_bridge(
             f"[OK] main chart bridge {bridge_start}..{bridge_end}: "
             f"shift={shift:+.2f} anchor={anchor_day}={anchor_eq:.2f}"
         )
+
+    # If day-15 already contains some wrong backfill, constant shift can still
+    # leave an unnatural spike. We smooth only the last day in bridge range.
+    if bridge_end in by_day:
+        try:
+            days = [d for d in sorted(by_day.keys()) if bridge_start <= d <= bridge_end]
+            if len(days) >= 4:
+                eqs = [float(by_day[d].get("equityUsd") or 0) for d in days]
+                deltas = [eqs[i] - eqs[i - 1] for i in range(1, len(eqs))]
+                last_delta = deltas[-1]
+                typical_delta = sum(deltas[:-1]) / max(1, len(deltas[:-1]))
+                if typical_delta > 0 and last_delta > typical_delta * 2.0:
+                    by_day[bridge_end]["equityUsd"] = round(eqs[-2] + typical_delta, 6)
+                    print(
+                        f"[OK] main chart day spike heal: {bridge_end} "
+                        f"delta {last_delta:+.2f} -> {typical_delta:+.2f}"
+                    )
+        except Exception:
+            pass
     return [by_day[k] for k in sorted(by_day.keys())]
 
 

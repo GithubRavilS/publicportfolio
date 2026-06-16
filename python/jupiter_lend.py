@@ -161,21 +161,24 @@ def apply_jupiter_chart_patch(
     snapshots: list[dict],
     *,
     backfill_net_usd: float,
-    live_from_day: str = JUPITER_LIVE_FROM_DAY,
+    applied_days: set[str] | None = None,
     backfill_start: str = JUPITER_BACKFILL_START,
     backfill_end: str = JUPITER_BACKFILL_END,
-) -> list[dict]:
-    """Jun 10–15: +фикс. net; с live_from_day: equity уже пересчитан в patch_live_capital."""
+) -> tuple[list[dict], set[str]]:
+    """Jun 10–15: +фикс. net один раз (идемпотентно по applied_days)."""
+    applied = set(applied_days or [])
     if not snapshots or backfill_net_usd <= 0:
-        return snapshots
+        return snapshots, applied
     out = []
     for s in snapshots:
         row = dict(s)
         d = str(row.get("timestamp", ""))[:10]
         if backfill_start <= d <= backfill_end:
-            row["equityUsd"] = round(float(row.get("equityUsd") or 0) + backfill_net_usd, 6)
+            if d not in applied:
+                row["equityUsd"] = round(float(row.get("equityUsd") or 0) + backfill_net_usd, 6)
+                applied.add(d)
         out.append(row)
-    return out
+    return out, applied
 
 
 def patch_live_capital_with_lending(
@@ -229,12 +232,29 @@ def apply_jupiter_to_portfolio(payload: dict, config: dict | None = None) -> dic
         backfill = live_net
         payload["jupiterBackfillNetUsd"] = round(backfill, 2)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    snaps = apply_jupiter_chart_patch(
+    applied_days = set(payload.get("jupiterBackfillAppliedDays") or [])
+    # heal legacy double backfill (Jun 10–15)
+    if backfill > 0 and not applied_days:
+        healed: list[dict] = []
+        for s in payload.get("snapshots") or []:
+            row = dict(s)
+            d = str(row.get("timestamp", ""))[:10]
+            if JUPITER_BACKFILL_START <= d <= JUPITER_BACKFILL_END:
+                eq = float(row.get("equityUsd") or 0)
+                if eq > 15000:
+                    row["equityUsd"] = round(eq - backfill, 6)
+                    applied_days.add(d)
+            healed.append(row)
+        payload["snapshots"] = healed
+
+    snaps, applied_days = apply_jupiter_chart_patch(
         payload.get("snapshots") or [],
         backfill_net_usd=backfill,
+        applied_days=applied_days,
     )
     payload["snapshots"] = snaps
+    payload["jupiterBackfillAppliedDays"] = sorted(applied_days)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     payload = patch_live_capital_with_lending(payload, merged, today)
     payload["equityHistoryByDay"] = _equity_history_from_snapshots(payload.get("snapshots") or [])
     payload["jupiterLendSyncedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

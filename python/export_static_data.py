@@ -3462,8 +3462,13 @@ def main() -> None:
             open_lp_unclaimed_usd=open_lp_unclaimed,
         )
     )
+    jupiter_applied_days: list[str] = []
     if jupiter_backfill_net > 0:
-        snapshots = apply_jupiter_chart_patch(snapshots, backfill_net_usd=jupiter_backfill_net)
+        applied: set[str] = set()
+        snapshots, applied = apply_jupiter_chart_patch(
+            snapshots, backfill_net_usd=jupiter_backfill_net, applied_days=applied
+        )
+        jupiter_applied_days = sorted(applied)
     if current_capital_usd > 0:
         print(
             f"[OK] currentCapitalUsd={current_capital_usd:.2f} "
@@ -3705,6 +3710,7 @@ def main() -> None:
         "lendingPositions": lending_positions,
         "solanaWallets": solana_wallets_from_config(config),
         "jupiterBackfillNetUsd": round(jupiter_backfill_net, 2) if jupiter_backfill_net > 0 else 0,
+        "jupiterBackfillAppliedDays": jupiter_applied_days,
         "jupiterLendSyncedAt": exported_at,
         "transactions": transactions,
         "strategyOne": strategy_one,

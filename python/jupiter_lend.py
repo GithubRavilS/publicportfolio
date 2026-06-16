@@ -15,8 +15,9 @@ ROOT = Path(__file__).resolve().parent
 
 JUPITER_PORTFOLIO_API = "https://api.jup.ag/portfolio/v1/positions/{wallet}"
 DEFAULT_SOLANA_WALLET = "9Q4mAN4QTxC39CRn3SmFqEaxhEJjNd7UTYoeqUZ1pf5o"
-JUPITER_BACKFILL_START = "2026-06-10"
-JUPITER_BACKFILL_END = "2026-06-15"
+CHART_BRIDGE_ANCHOR_DAY = "2026-06-09"
+CHART_BRIDGE_START = "2026-06-10"
+CHART_BRIDGE_END = "2026-06-15"
 JUPITER_LIVE_FROM_DAY = "2026-06-16"
 JUPITER_LTV_FOR_HF = 0.95
 
@@ -148,37 +149,87 @@ def is_jupiter_position(p: dict) -> bool:
     return chain == "solana" or "jupiter" in proto or "jup.ag/lend" in link
 
 
-def merge_lending_with_jupiter(existing: list[dict], jupiter: list[dict]) -> list[dict]:
-    kept = [p for p in (existing or []) if not is_jupiter_position(p)]
-    return kept + list(jupiter or [])
+def jupiter_has_btc_collateral(jupiter: list[dict]) -> bool:
+    for p in jupiter:
+        coll = str(p.get("collateralAsset") or "").upper()
+        if coll in ("CBBTC", "WBTC", "BTC") and float(p.get("collateralUsd") or 0) > 500:
+            return True
+    return False
 
 
-def jupiter_net_usd(positions: list[dict]) -> float:
-    return sum(float(p.get("netUsd") or 0) for p in positions if is_jupiter_position(p))
+def filter_phantom_evm_lending(evm: list[dict], jupiter: list[dict]) -> list[dict]:
+    """Убираем закрытые/переехавшие EVM-позиции (cbBTC Base → Jupiter Solana)."""
+    migrated_btc = jupiter_has_btc_collateral(jupiter)
+    out: list[dict] = []
+    for p in evm or []:
+        if is_jupiter_position(p):
+            continue
+        coll = str(p.get("collateralAsset") or "").upper()
+        chain = str(p.get("chain") or "").lower()
+        proto = str(p.get("protocol") or "").lower()
+        coll_usd = float(p.get("collateralUsd") or 0)
+        bor_usd = float(p.get("borrowUsd") or 0)
+        if coll_usd < 5 and bor_usd < 5:
+            continue
+        if migrated_btc and coll == "CBBTC" and chain == "base":
+            print(f"[OK] drop phantom lending: {proto} {chain} {coll} (migrated to Jupiter)")
+            continue
+        out.append(p)
+    return out
 
 
-def apply_jupiter_chart_patch(
+def merge_live_lending(jupiter: list[dict], evm: list[dict]) -> list[dict]:
+    return list(jupiter or []) + filter_phantom_evm_lending(evm or [], jupiter or [])
+
+
+def legacy_backfill_strip_amount(snapshots: list[dict], payload: dict) -> float:
+    explicit = float(payload.get("jupiterBackfillNetUsd") or 0)
+    if explicit > 0:
+        return explicit
+    by_day = {str(s.get("timestamp", ""))[:10]: s for s in snapshots}
+    eq9 = float((by_day.get(CHART_BRIDGE_ANCHOR_DAY) or {}).get("equityUsd") or 0)
+    eq10 = float((by_day.get(CHART_BRIDGE_START) or {}).get("equityUsd") or 0)
+    if eq9 > 0 and eq10 - eq9 > 1500:
+        return eq10 - eq9
+    return 0.0
+
+
+def apply_main_chart_bridge(
     snapshots: list[dict],
     *,
-    backfill_net_usd: float,
-    applied_days: set[str] | None = None,
-    backfill_start: str = JUPITER_BACKFILL_START,
-    backfill_end: str = JUPITER_BACKFILL_END,
-) -> tuple[list[dict], set[str]]:
-    """Jun 10–15: +фикс. net один раз (идемпотентно по applied_days)."""
-    applied = set(applied_days or [])
-    if not snapshots or backfill_net_usd <= 0:
-        return snapshots, applied
-    out = []
-    for s in snapshots:
-        row = dict(s)
-        d = str(row.get("timestamp", ""))[:10]
-        if backfill_start <= d <= backfill_end:
-            if d not in applied:
-                row["equityUsd"] = round(float(row.get("equityUsd") or 0) + backfill_net_usd, 6)
-                applied.add(d)
-        out.append(row)
-    return out, applied
+    anchor_day: str = CHART_BRIDGE_ANCHOR_DAY,
+    bridge_start: str = CHART_BRIDGE_START,
+    bridge_end: str = CHART_BRIDGE_END,
+    backfill_to_strip: float = 0.0,
+) -> list[dict]:
+    """
+    Главный график: 10–15 июня выровнять по 9-му (без скачка).
+    Сначала снимаем старый Jupiter backfill, потом сдвигаем мост к anchor.
+    """
+    if not snapshots:
+        return snapshots
+    by_day = {str(s.get("timestamp", ""))[:10]: dict(s) for s in snapshots}
+    if anchor_day not in by_day or bridge_start not in by_day:
+        return snapshots
+
+    if backfill_to_strip > 0:
+        for d in sorted(by_day):
+            if bridge_start <= d <= bridge_end:
+                by_day[d]["equityUsd"] = round(
+                    float(by_day[d].get("equityUsd") or 0) - backfill_to_strip, 6
+                )
+
+    anchor_eq = float(by_day[anchor_day].get("equityUsd") or 0)
+    shift = anchor_eq - float(by_day[bridge_start].get("equityUsd") or 0)
+    if abs(shift) > 0.01:
+        for d in sorted(by_day):
+            if bridge_start <= d <= bridge_end:
+                by_day[d]["equityUsd"] = round(float(by_day[d].get("equityUsd") or 0) + shift, 6)
+        print(
+            f"[OK] main chart bridge {bridge_start}..{bridge_end}: "
+            f"shift={shift:+.2f} anchor={anchor_day}={anchor_eq:.2f}"
+        )
+    return [by_day[k] for k in sorted(by_day.keys())]
 
 
 def patch_live_capital_with_lending(
@@ -186,7 +237,7 @@ def patch_live_capital_with_lending(
     lending_positions: list[dict],
     today: str,
 ) -> dict:
-    """Сегодня: coll/debt из всех lending (EVM + Jupiter), equity = base + adj + fees."""
+    """Сегодня: coll/debt из актуального lending, equity = base + adj + fees."""
     snaps = [dict(s) for s in (payload.get("snapshots") or [])]
     if not snaps:
         return payload
@@ -217,61 +268,51 @@ def patch_live_capital_with_lending(
     return payload
 
 
-def apply_jupiter_to_portfolio(payload: dict, config: dict | None = None) -> dict:
+def apply_jupiter_to_portfolio(
+    payload: dict,
+    config: dict | None = None,
+    *,
+    evm_lending: list[dict] | None = None,
+) -> dict:
+    config = config or load_config()
     jupiter = fetch_jupiter_lending_positions(config)
-    existing = payload.get("lendingPositions") or []
-    merged = merge_lending_with_jupiter(existing, jupiter)
+
+    stale_evm = evm_lending
+    if stale_evm is None:
+        stale_evm = [
+            p for p in (payload.get("lendingPositions") or []) if not is_jupiter_position(p)
+        ]
+
+    merged = merge_live_lending(jupiter, stale_evm)
     payload["lendingPositions"] = merged
 
-    live_net = jupiter_net_usd(jupiter)
-    if live_net <= 0:
-        return payload
-
-    backfill = float(payload.get("jupiterBackfillNetUsd") or 0)
-    if backfill <= 0:
-        backfill = live_net
-        payload["jupiterBackfillNetUsd"] = round(backfill, 2)
-
-    applied_days = set(payload.get("jupiterBackfillAppliedDays") or [])
-    # heal legacy double backfill (Jun 10–15)
-    if backfill > 0 and not applied_days:
-        healed: list[dict] = []
-        for s in payload.get("snapshots") or []:
-            row = dict(s)
-            d = str(row.get("timestamp", ""))[:10]
-            if JUPITER_BACKFILL_START <= d <= JUPITER_BACKFILL_END:
-                eq = float(row.get("equityUsd") or 0)
-                if eq > 15000:
-                    row["equityUsd"] = round(eq - backfill, 6)
-                    applied_days.add(d)
-            healed.append(row)
-        payload["snapshots"] = healed
-
-    snaps, applied_days = apply_jupiter_chart_patch(
+    strip = legacy_backfill_strip_amount(payload.get("snapshots") or [], payload)
+    snaps = apply_main_chart_bridge(
         payload.get("snapshots") or [],
-        backfill_net_usd=backfill,
-        applied_days=applied_days,
+        backfill_to_strip=strip,
     )
     payload["snapshots"] = snaps
-    payload["jupiterBackfillAppliedDays"] = sorted(applied_days)
+    payload.pop("jupiterBackfillNetUsd", None)
+    payload.pop("jupiterBackfillAppliedDays", None)
+
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     payload = patch_live_capital_with_lending(payload, merged, today)
-    payload["equityHistoryByDay"] = _equity_history_from_snapshots(payload.get("snapshots") or [])
+
+    # equityHistoryByDay — только для главного графика; APR не трогаем
+    hist = payload.get("equityHistoryByDay") or {}
+    if isinstance(hist, dict):
+        for s in snaps:
+            d = str(s.get("timestamp", ""))[:10]
+            if not d or d < CHART_BRIDGE_START:
+                continue
+            hist[d] = {
+                "equityUsd": float(s.get("equityUsd") or 0),
+                "collateralUsd": float(s.get("collateralUsd") or 0),
+                "debtUsd": float(s.get("debtUsd") or 0),
+                "liquidityUsd": float(s.get("liquidityUsd") or 0),
+                "dailyFeeIncomeUsd": float(s.get("dailyFeeIncomeUsd") or 0),
+            }
+        payload["equityHistoryByDay"] = hist
+
     payload["jupiterLendSyncedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return payload
-
-
-def _equity_history_from_snapshots(snapshots: list[dict]) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    for s in snapshots:
-        d = str(s.get("timestamp", ""))[:10]
-        if not d:
-            continue
-        out[d] = {
-            "equityUsd": float(s.get("equityUsd") or 0),
-            "collateralUsd": float(s.get("collateralUsd") or 0),
-            "debtUsd": float(s.get("debtUsd") or 0),
-            "liquidityUsd": float(s.get("liquidityUsd") or 0),
-            "dailyFeeIncomeUsd": float(s.get("dailyFeeIncomeUsd") or 0),
-        }
-    return out

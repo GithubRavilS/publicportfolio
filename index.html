@@ -440,7 +440,9 @@
       const yN = Object.keys(data.chartYieldByDay || {}).length;
       if (eqN < 50) {
         try {
-          const r = await fetch(`./data/equity-history-reference.json?r=${encodeURIComponent(bust)}`);
+          const r = await fetch(`./data/equity-history-reference.json?r=${encodeURIComponent(bust)}`, {
+            cache: "no-store"
+          });
           if (r.ok) {
             const j = await r.json();
             data.equityHistoryByDay = j.byDay || j;
@@ -451,7 +453,9 @@
       }
       if (yN < 50) {
         try {
-          const r = await fetch(`./data/chart-yield-reference.json?r=${encodeURIComponent(bust)}`);
+          const r = await fetch(`./data/chart-yield-reference.json?r=${encodeURIComponent(bust)}`, {
+            cache: "no-store"
+          });
           if (r.ok) {
             const j = await r.json();
             data.chartYieldByDay = j.byDay || j;
@@ -463,12 +467,19 @@
       return data;
     };
 
-    (function () {
+    (async function loadPortfolioDataScript() {
       const qs = new URLSearchParams(window.location.search);
       const bust = qs.get("r") || String(Date.now());
-      const s = document.createElement("script");
-      s.src = `./data/portfolio-data.js?r=${encodeURIComponent(bust)}`;
-      s.onload = async function () {
+      try {
+        const res = await fetch(`./data/portfolio-data.js?r=${encodeURIComponent(bust)}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        const eq = text.indexOf("=");
+        if (eq < 0) throw new Error("bad portfolio-data.js format");
+        window.PORTFOLIO_DATA = JSON.parse(text.slice(eq + 1).trim().replace(/;\s*$/, ""));
         window.__portfolioDataLoaded = true;
         if (window.PORTFOLIO_DATA) {
           await window.enrichPortfolioHistoryReferences(window.PORTFOLIO_DATA);
@@ -476,11 +487,9 @@
         if (typeof window.__initPortfolioApp === "function" && window.__vipAuthOk) {
           window.__initPortfolioApp();
         }
-      };
-      s.onerror = function () {
-        console.error("Failed to load portfolio-data.js");
-      };
-      document.head.appendChild(s);
+      } catch (e) {
+        console.error("Failed to load portfolio-data.js", e);
+      }
     })();
   </script>
   <script>
@@ -1475,10 +1484,14 @@
       langBtn.textContent = en ? "RU" : "EN";
       renderPositions();
       if (s1Grid) renderS1Positions();
-      const day = (data.exportedAt && String(data.exportedAt).slice(0, 10))
-        || (latest.timestamp && latest.timestamp.slice(0, 10))
-        || "";
-      document.getElementById("updatedAt").textContent = day ? (`${t("updated")}: ${day}`) : t("noData");
+      const lastDay = snapshots.length
+        ? (snapshots[snapshots.length - 1].timestamp || "").slice(0, 10)
+        : "";
+      const expDay = (data.exportedAt && String(data.exportedAt).slice(0, 10)) || "";
+      const chartDay = lastDay || expDay;
+      document.getElementById("updatedAt").textContent = chartDay
+        ? (`${t("updated")}: ${chartDay}${snapshots.length ? ` · ${snapshots.length}d` : ""}`)
+        : t("noData");
     };
     if (langBtn) {
       langBtn.addEventListener("click", () => { lang = (lang === "ru" ? "en" : "ru"); applyLang(); });

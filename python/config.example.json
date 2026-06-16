@@ -2,6 +2,7 @@
   "db_path": "data/portfolio.db",
   "manual_visual_adjustment_usd": 800,
   "debank_wallets": ["0xYOUR_WALLET"],
+  "solana_wallets": ["9Q4mAN4QTxC39CRn3SmFqEaxhEJjNd7UTYoeqUZ1pf5o"],
   "strategy_one_wallet": "0xYOUR_STRATEGY_WALLET",
   "strategy_one_initial_usd": 30,
   "hyperliquid_wallet": "0xYOUR_STRATEGY_WALLET",

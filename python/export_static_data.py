@@ -11,6 +11,13 @@ from io import StringIO
 from pathlib import Path
 
 import requests
+from jupiter_lend import (
+    apply_jupiter_chart_patch,
+    fetch_jupiter_lending_positions,
+    jupiter_net_usd,
+    merge_lending_with_jupiter,
+    solana_wallets_from_config,
+)
 from lp_income_snapshots import apr_from_snapshot_row, fill_daily_income_on_snapshots
 
 
@@ -3397,7 +3404,12 @@ def main() -> None:
     except Exception as exc:
         print(f"[WARN] coingecko prices (yield/equity share one fetch): {exc}")
 
-    lending_positions = dedupe_lending_positions(load_latest_debank_lending_csv(config))
+    jupiter_lending = fetch_jupiter_lending_positions(config)
+    debank_lending = load_latest_debank_lending_csv(config)
+    lending_positions = dedupe_lending_positions(
+        merge_lending_with_jupiter(debank_lending, jupiter_lending)
+    )
+    jupiter_backfill_net = jupiter_net_usd(jupiter_lending)
     sheet_lp_usd = sum(
         max(0.0, float(p.get("valueUsd") or 0.0))
         for p in load_liquidity_positions_from_sheet(config)
@@ -3450,6 +3462,8 @@ def main() -> None:
             open_lp_unclaimed_usd=open_lp_unclaimed,
         )
     )
+    if jupiter_backfill_net > 0:
+        snapshots = apply_jupiter_chart_patch(snapshots, backfill_net_usd=jupiter_backfill_net)
     if current_capital_usd > 0:
         print(
             f"[OK] currentCapitalUsd={current_capital_usd:.2f} "
@@ -3689,6 +3703,9 @@ def main() -> None:
         "incomeByDay": {k: round(float(v), 6) for k, v in sorted(income_by_day.items())},
         "liquidityPositions": liquidity_positions,
         "lendingPositions": lending_positions,
+        "solanaWallets": solana_wallets_from_config(config),
+        "jupiterBackfillNetUsd": round(jupiter_backfill_net, 2) if jupiter_backfill_net > 0 else 0,
+        "jupiterLendSyncedAt": exported_at,
         "transactions": transactions,
         "strategyOne": strategy_one,
         "strategyOneInitialUsd": float(config.get("strategy_one_initial_usd", 30) or 30),

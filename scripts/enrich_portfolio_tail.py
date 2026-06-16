@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "python") not in sys.path:
     sys.path.insert(0, str(ROOT / "python"))
 
+from jupiter_lend import apply_jupiter_to_portfolio, load_config as load_portfolio_config  # noqa: E402
 from lp_income_snapshots import (  # noqa: E402
     apr_from_snapshot_row,
     delta_income_between_snapshots,
@@ -248,7 +249,6 @@ def enrich_tail(payload: dict, today: str) -> dict:
     payload["chartYieldByDay"] = chart_yield
     payload["dailyYieldSeries"] = daily_yield_series
     payload["exportedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    payload["currentCapitalUsd"] = round(float(snaps[-1]["equityUsd"]), 2)
     payload["manualVisualAdjustmentUsd"] = float(payload.get("manualVisualAdjustmentUsd") or 800.0)
 
     save_yield_ref(ref_out)
@@ -260,11 +260,15 @@ def main() -> None:
     payload = load_portfolio()
     before = len(payload.get("snapshots") or [])
     enrich_tail(payload, today)
+    apply_jupiter_to_portfolio(payload, load_portfolio_config())
     after = len(payload.get("snapshots") or [])
     y26 = (payload.get("chartYieldByDay") or {}).get(YIELD_CUT_DAY, 0)
+    jup = len(payload.get("lendingPositions") or [])
     print(
         f"[OK] portfolio tail enriched: snapshots {before}->{after}, "
         f"last={payload['snapshots'][-1]['timestamp'][:10]}, "
+        f"capital={payload.get('currentCapitalUsd', 0):.0f}, "
+        f"lending={jup}, "
         f"jan1={payload['snapshots'][0]['equityUsd']:.0f}, "
         f"adj={payload['manualVisualAdjustmentUsd']:.0f}, "
         f"apr[{YIELD_CUT_DAY}]={y26:.2f}%"

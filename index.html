@@ -1065,10 +1065,10 @@
       lendEl.innerHTML = lending.map((p) => window.PortfolioUI.renderLendingCard(p, cardCtx())).join("") || `<div class="muted">${lang === "ru" ? "Нет данных по лендинг-позициям" : "No lending positions"}</div>`;
     };
 
-    const lpFallback = data.liquidityPositions || [];
+    const lpFallback = [];
     const syncLp = window.PortfolioUI?.syncLiquidityPositionsFromSheet || window.PortfolioUI?.enrichLpRangesFromSheet;
     const finishLpLoad = (list) => {
-      lp.splice(0, lp.length, ...(Array.isArray(list) && list.length ? list : lpFallback));
+      lp.splice(0, lp.length, ...(Array.isArray(list) ? list : []));
       if (window.PortfolioUI?.applyLpRangeToPosition) lp.forEach((p) => window.PortfolioUI.applyLpRangeToPosition(p));
       const activeLpUsd = window.PortfolioUI?.sumActiveLpValueUsd
         ? window.PortfolioUI.sumActiveLpValueUsd(lp)
@@ -1082,16 +1082,18 @@
             sheetId: GOOGLE_SHEET_ID,
             sheetName: PUBLIC_SHEET_NAME,
             walletAddress: PORTFOLIO_WALLET,
-            fallback: lpFallback,
           })
         : () => window.PortfolioUI.enrichLpRangesFromSheet([], {
             sheetId: GOOGLE_SHEET_ID,
             sheetName: PUBLIC_SHEET_NAME,
             walletAddress: PORTFOLIO_WALLET,
           });
-      run().then(finishLpLoad).catch(() => finishLpLoad(lpFallback));
+      run().then(finishLpLoad).catch((err) => {
+        console.error("LP sheet sync failed", err);
+        finishLpLoad([]);
+      });
     } else {
-      finishLpLoad(lpFallback);
+      finishLpLoad([]);
     }
 
     document.querySelectorAll(".btn[data-tab]").forEach((btn) => {

@@ -11,6 +11,7 @@ from io import StringIO
 from pathlib import Path
 
 import requests
+from google_sheets_client import load_sheet_values_as_row_dicts
 from jupiter_lend import (
     apply_jupiter_to_portfolio,
     fetch_jupiter_lending_positions,
@@ -18,6 +19,13 @@ from jupiter_lend import (
     solana_wallets_from_config,
 )
 from lp_income_snapshots import apr_from_snapshot_row, fill_daily_income_on_snapshots
+from lp_metadata import (
+    LP_SHEET_FALLBACK_NAMES,
+    incentive_token_for_platform,
+    normalize_platform_label,
+    resolve_lp_platform,
+    sheet_headers_look_like_lp,
+)
 
 
 def parse_pct(value: str) -> float:
@@ -46,7 +54,11 @@ def parse_float(value: str) -> float:
         else:
             s = s.replace(",", "")
     elif "," in s and "." not in s:
-        s = s.replace(",", ".")
+        parts = s.split(",")
+        if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit() and len(parts[0]) <= 4:
+            s = parts[0] + parts[1]
+        else:
+            s = s.replace(",", ".")
     try:
         return float(s)
     except ValueError:
@@ -1129,11 +1141,13 @@ def liquidity_is_active_from_row(row: dict[str, str]) -> bool:
 
 
 def build_revert_link_from_row(row: dict[str, str]) -> str:
-    chain = (row_get(row, "Сеть", "network", "BH") or "").strip().lower()
+    chain = (row_get(row, "network", "Сеть", "network", "BH") or "").strip().lower()
     platform = (
-        (row_get(row, "Платформа (DEX)", "Платформа", "exchange", "BI") or "").strip().lower()
+        (row_get(row, "Exchange", "Платформа (DEX)", "Платформа", "exchange", "BI") or "")
+        .strip()
+        .lower()
     )
-    token_id = re.sub(r"\D", "", row_get(row, "NFT tokenId", "nft_id", "I", "BT") or "")
+    token_id = re.sub(r"\D", "", row_get(row, "NFT_ID", "NFT tokenId", "nft_id", "I", "BT") or "")
     if not chain or not token_id:
         return ""
     route = "uniswap-position"
@@ -1192,30 +1206,16 @@ def active_apr_from_public_row(row: dict[str, str]) -> float:
 
 
 def fees_usd_public_row(row: dict[str, str]) -> float:
-    for key in ("Заработано комиссий всего, USD", "Заработано комиссий итого", "fees_value", "AG"):
-        v = parse_float(row_get(row, key))
-        if v > 0:
-            return v
-    pending = parse_float(row_get(row, "Комиссии pending, USD", "R"))
-    claimed = parse_float(row_get(row, "Комиссии claimed, USD", "S"))
-    return pending + claimed
+    return parse_float(row_get(row, "G", "Ком. доход (ИТОГО $)", "Ком. доход"))
 
 
 def incentives_usd_public_row(row: dict[str, str]) -> tuple[float, str]:
-    pending = parse_float(row_get(row, "Инцентив: pending, USD"))
-    claimed = parse_float(row_get(row, "Инцентив: claimed, USD"))
-    total = pending + claimed
+    total = parse_float(row_get(row, "Q", "Incentives, $", "Incentives, USD"))
     if total <= 0:
         return 0.0, ""
-    token = str(row_get(row, "Инцентив: токен")).strip()
-    low = token.lower()
-    if "cake" in low:
-        label = "Cake"
-    elif "aira" in low:
-        label = "Aira"
-    else:
-        label = token or "Incentive"
-    return total, label
+    platform = row_get(row, "Exchange", "Платформа (DEX)", "Платформа", "exchange", "F")
+    token = incentive_token_for_platform(platform)
+    return total, token
 
 
 def days_held_since_open(opened_at: str, as_of: date) -> float:
@@ -1771,37 +1771,15 @@ def parse_fee_tier_cell(raw: str) -> float:
 
 
 def fee_tier_public_row(row: dict[str, str]) -> float:
-    for key in ("Fee tier (%)", "Fee tier", "fee_tier", "BJ", "V"):
-        v = parse_fee_tier_cell(row.get(key, "") or "")
+    for key in ("N", "fee_tier", "Fee tier (%)", "Fee tier", "BJ", "V"):
+        v = parse_fee_tier_cell(row_get(row, key))
         if v > 0:
             return v
     return 0.0
 
 
 def live_value_usd_public_row(row: dict[str, str]) -> float:
-    keys = (
-        "Стоимость позиции, USD",
-        "К hold, USD",
-        "Внесено, USD",
-        "Инвестировано ВСЕГО (сейчас)",
-        "underlying_value",
-    )
-    for k in keys:
-        v = parse_float(row.get(k, ""))
-        if v > 0:
-            return v
-    t0usd = parse_float(row.get("Сейчас токен0, USD", ""))
-    t1usd = parse_float(row.get("Сейчас токен1, USD", ""))
-    if t0usd + t1usd > 0:
-        return t0usd + t1usd
-    token0 = (row.get("token0") or row.get("AK") or "").strip().upper()
-    token1 = (row.get("token1") or row.get("AL") or "").strip().upper()
-    stable_symbols = {"USDC", "USDT", "DAI", "USDE", "FDUSD", "TUSD", "USD"}
-    amt0 = parse_float(row.get("AU", "")) or parse_float(row.get("current_amount0", ""))
-    amt1 = parse_float(row.get("AV", "")) or parse_float(row.get("current_amount1", ""))
-    if token0 in stable_symbols or token1 in stable_symbols:
-        return max(0.0, amt0) + max(0.0, amt1)
-    return 0.0
+    return parse_float(row_get(row, "O", "Стоимость позиции, USD"))
 
 
 def closed_position_apr(row: dict[str, str]) -> float:
@@ -2281,16 +2259,53 @@ def row_get(row: dict[str, str], *keys: str) -> str:
 
 
 def dex_from_revert_link(link: str) -> str:
-    s = (link or "").lower()
-    if "aerodrome" in s:
-        return "Aerodrome V3"
-    if "pancake" in s:
-        return "PancakeSwap V3"
-    if "velodrome" in s:
-        return "Velodrome"
-    if "uniswap" in s:
-        return "Uniswap V3"
-    return "DEX"
+    return resolve_lp_platform("", link)
+
+
+def row_looks_like_lp(row: dict[str, str]) -> bool:
+    if row_get(row, "Токен 0", "token0", "AK") or row_get(row, "Токен 1", "token1", "AL"):
+        return True
+    if row_get(row, "NFT_ID", "NFT tokenId", "I", "BT"):
+        return True
+    if (
+        row_get(row, "Exchange", "Платформа (DEX)", "Платформа", "exchange")
+        and parse_float(row_get(row, "Min price", "Min Price", "price_lower")) > 0
+    ):
+        return True
+    return False
+
+
+def default_lp_pair_from_row(row: dict[str, str]) -> str:
+    token0 = row_get(row, "Токен 0", "token0", "AK")
+    token1 = row_get(row, "Токен 1", "token1", "AL")
+    if token0 or token1:
+        return f"{token0} / {token1}".strip(" /")
+    if parse_float(row_get(row, "Min price", "Min Price")) > 50:
+        return "ETH / USDC"
+    return "Pool"
+
+
+def load_lp_sheet_rows(config: dict) -> list[dict[str, str]]:
+    sheet_id = config.get("google_sheet_id", "")
+    if not sheet_id:
+        return []
+    names: list[str] = []
+    for n in [
+        config.get("public_portfolio_sheet_name"),
+        config.get("revert_pools_sheet_name"),
+        *LP_SHEET_FALLBACK_NAMES,
+    ]:
+        s = str(n or "").strip()
+        if s and s not in names:
+            names.append(s)
+    for name in names:
+        api_rows = load_sheet_values_as_row_dicts(sheet_id, name, config)
+        if not api_rows:
+            continue
+        sample = list(api_rows[0].keys())
+        if sheet_headers_look_like_lp(sample) or any(row_looks_like_lp(r) for r in api_rows[:12]):
+            return api_rows
+    return []
 
 
 RANGE_FLIP_THRESHOLD = 0.5
@@ -2323,6 +2338,8 @@ def normalize_lp_range(
 def parse_position_range(row: dict[str, str]) -> dict[str, float | None]:
     """Диапазон цены из Revert-таблицы: price_lower/upper + рыночная цена."""
     keys_lower = (
+        "D",
+        "Min price",
         "Мин. цена диапазона",
         "price_lower",
         "BE",
@@ -2331,6 +2348,8 @@ def parse_position_range(row: dict[str, str]) -> dict[str, float | None]:
         "Min Price",
     )
     keys_upper = (
+        "E",
+        "Max price",
         "Макс. цена диапазона",
         "price_upper",
         "BD",
@@ -2350,7 +2369,7 @@ def parse_position_range(row: dict[str, str]) -> dict[str, float | None]:
 
     def pick(keys: tuple[str, ...]) -> float | None:
         for k in keys:
-            v = parse_float(row.get(k, ""))
+            v = parse_float(row_get(row, k))
             if v > 0:
                 return v
         return None
@@ -2886,36 +2905,32 @@ def load_latest_debank_lending_csv(config: dict) -> list[dict]:
 
 
 def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
-    sheet_id = config.get("google_sheet_id", "")
-    rows = load_google_sheet_rows_by_name(
-        sheet_id, config.get("public_portfolio_sheet_name", "Public portfolio")
-    )
+    rows = load_lp_sheet_rows(config)
     if not rows:
-        rows = load_google_sheet_rows(sheet_id, str(config.get("revert_pools_gid", "")).strip())
+        print("[WARN] LP Google Sheet: нет строк (проверь service account и доступ к таблице)")
+        return []
     out = []
     for r in rows:
-        token0 = row_get(r, "Токен 0", "token0", "AK")
-        token1 = row_get(r, "Токен 1", "token1", "AL")
-        if not token0 and not token1:
+        if not row_looks_like_lp(r):
             continue
         is_active = liquidity_is_active_from_row(r)
         closed_at = closed_display_from_row(r, is_active)
         apr = fee_apy_percent_from_public_row(r)
         fee_tier = fee_tier_public_row(r)
         link = row_get(r, "Ссылка на позицию", "I") or build_revert_link_from_row(r)
-        platform_raw = row_get(r, "Платформа (DEX)", "Платформа", "exchange", "BI")
-        dex = dex_from_revert_link(link) if link else (platform_raw or "DEX")
+        platform_raw = row_get(r, "Exchange", "Платформа (DEX)", "Платформа", "exchange", "BI")
+        dex = normalize_platform_label(platform_raw) or platform_raw or "DEX"
         pos_id = revert_position_id(link) or re.sub(
-            r"\D", "", row_get(r, "NFT tokenId", "I", "BT") or ""
+            r"\D", "", row_get(r, "NFT_ID", "NFT tokenId", "I", "BT") or ""
         )
         val_usd = live_value_usd_public_row(r)
         inv_usd = invested_usd_public_row(r)
         inc_usd, inc_token = incentives_usd_public_row(r)
         item = {
             "platform": dex,
-            "dataSource": "Revert Finance",
-            "chain": row_get(r, "Сеть", "network", "BH"),
-            "pair": f"{token0} / {token1}".strip(" /"),
+            "dataSource": "Google Sheet",
+            "chain": row_get(r, "network", "Сеть", "network", "BH"),
+            "pair": default_lp_pair_from_row(r),
             "feesUsd": fees_usd_public_row(r),
             "incentivesUsd": round(inc_usd, 4) if inc_usd > 0 else 0.0,
             "incentiveToken": inc_token,
@@ -2930,15 +2945,17 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
             "investedUsd": round(inv_usd, 2) if inv_usd > 0 else 0.0,
         }
         item.update(parse_position_range(r))
-        calc_apr = position_apr_from_item(item)
-        item["apr"] = round(calc_apr, 4) if calc_apr > 0 else round(apr, 4) if apr > 0 else 0.0
+        item["apr"] = round(apr, 4) if apr > 0 else 0.0
         item["displayApr"] = item["apr"]
         out.append(item)
     by_key: dict[str, dict] = {}
     for item in out:
         key = (item.get("positionId") or "").strip() or (item.get("link") or "").strip()
         if not key:
-            key = f"{item.get('chain')}|{item.get('pair')}|{len(by_key)}"
+            key = (
+                f"{item.get('chain')}|{item.get('platform')}|"
+                f"{item.get('rangeMin')}|{item.get('rangeMax')}|{len(by_key)}"
+            )
         by_key[key] = item
 
     def sort_key(it: dict) -> tuple:
@@ -2951,18 +2968,18 @@ def load_liquidity_positions_from_sheet(config: dict) -> list[dict]:
 
 
 def strategy_lp_positions(config: dict) -> list[dict]:
-    sheet_id = config.get("google_sheet_id", "")
-    sheet_name = config.get("public_portfolio_sheet_name", "Public portfolio")
     wallet = (config.get("strategy_one_wallet") or "").strip().lower()
     s1_position_ids = {"1091768", "5458419"}
-    rows = load_google_sheet_rows_by_name(sheet_id, sheet_name)
+    rows = load_lp_sheet_rows(config)
     out: list[dict] = []
     for r in rows:
+        if not row_looks_like_lp(r):
+            continue
         link = str(row_get(r, "Ссылка на позицию", "position_url", "I", "link")).strip()
         if not link:
             link = build_revert_link_from_row(r)
         pos_id = revert_position_id(link) or re.sub(
-            r"\D", "", row_get(r, "NFT tokenId", "I", "BT") or ""
+            r"\D", "", row_get(r, "NFT_ID", "NFT tokenId", "I", "BT") or ""
         )
         w = str(row_get(r, "Кошелёк", "Кошелек", "wallet", "owner_wallet")).strip().lower()
         token0 = str(row_get(r, "Токен 0", "token0", "AK")).strip().upper()
@@ -2970,9 +2987,8 @@ def strategy_lp_positions(config: dict) -> list[dict]:
         stable_s1 = {"USDC", "USDT", "USDC.E", "USDCE"} & {token0, token1}
         if wallet and wallet not in w and pos_id not in s1_position_ids and len(stable_s1) < 2:
             continue
-        if not token0 and not token1:
-            continue
-        pair = f"{token0} / {token1}".strip(" /")
+        pair = default_lp_pair_from_row(r)
+        platform_raw = row_get(r, "Exchange", "Платформа (DEX)", "Платформа", "exchange", "BI")
         value_usd = live_value_usd_public_row(r)
         fees_usd = fees_usd_public_row(r)
         is_active = liquidity_is_active_from_row(r)
@@ -2982,10 +2998,10 @@ def strategy_lp_positions(config: dict) -> list[dict]:
         inc_usd, inc_token = incentives_usd_public_row(r)
         item = {
             "instrument": "LP",
-            "platform": dex_from_revert_link(link),
-            "dataSource": "Revert Finance",
+            "platform": normalize_platform_label(platform_raw) or platform_raw or "DEX",
+            "dataSource": "Google Sheet",
             "pair": pair or "Pool",
-            "chain": str(row_get(r, "Сеть", "network", "BH")).strip(),
+            "chain": str(row_get(r, "network", "Сеть", "network", "BH")).strip(),
             "feesUsd": fees_usd,
             "incentivesUsd": round(inc_usd, 4) if inc_usd > 0 else 0.0,
             "incentiveToken": inc_token,

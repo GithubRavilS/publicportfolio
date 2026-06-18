@@ -11,6 +11,7 @@
   "revert_source": "google_sheets",
   "google_sheet_id": "1yq5nbZ-fws8o9C0PCZWjlZjxUqZs60E4hfPiI7L0GD8",
   "google_service_account_file": "python/google-service-account.json",
+  "_vercel_env_note": "Set GOOGLE_SERVICE_ACCOUNT_JSON to the full service account JSON for /api/lp-sheet (reads formula values). Share the spreadsheet with the service account email.",
   "revert_pools_sheet_name": "Public portfolio",
   "revert_fees_sheet_name": "",
   "public_portfolio_sheet_name": "Public portfolio",

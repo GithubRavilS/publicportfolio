@@ -2276,11 +2276,16 @@ def row_looks_like_lp(row: dict[str, str]) -> bool:
 
 
 def default_lp_pair_from_row(row: dict[str, str]) -> str:
-    token0 = row_get(row, "Токен 0", "token0", "AK")
-    token1 = row_get(row, "Токен 1", "token1", "AL")
+    pair = str(row_get(row, "Пара", "pair", "Pair", "R")).strip()
+    if pair and not re.fullmatch(r"0x[a-fA-F0-9]{40}", pair):
+        return pair
+    token0 = row_get(row, "Токен 0", "token0")
+    token1 = row_get(row, "Токен 1", "token1")
     if token0 or token1:
-        return f"{token0} / {token1}".strip(" /")
-    if parse_float(row_get(row, "Min price", "Min Price")) > 50:
+        joined = f"{token0} / {token1}".strip(" /")
+        if not re.search(r"0x[a-fA-F0-9]{40}", joined):
+            return joined
+    if parse_float(row_get(row, "Min price", "Min Price", "D")) > 50:
         return "ETH / USDC"
     return "Pool"
 

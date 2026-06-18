@@ -483,6 +483,13 @@
     return `rng:${chain}|${platform}|${rmin}|${rmax}`;
   }
 
+  function looksLikeWalletOrHex(s) {
+    const t = String(s || "").trim();
+    if (/^0x[a-fA-F0-9]{40}$/.test(t)) return true;
+    if (/\/\s*0x[a-fA-F0-9]{40}/.test(t)) return true;
+    return false;
+  }
+
   function sheetColIndex(headers, ...names) {
     for (const n of names) {
       const i = headers.indexOf(n);
@@ -491,6 +498,8 @@
     for (const n of names) {
       const needle = String(n || "").trim().toLowerCase();
       if (!needle || needle.length < 2) continue;
+      // Буквы колонок Excel (AL, AN…) не ищем по подстроке — иначе AL → owner_wALlet.
+      if (/^[a-z]{1,3}$/.test(needle)) continue;
       for (let i = 0; i < headers.length; i++) {
         const h = String(headers[i] || "").trim().toLowerCase();
         if (h === needle || h.startsWith(needle) || h.includes(needle)) return i;
@@ -597,10 +606,12 @@
   }
 
   function defaultLpPair(headers, row, minPrice) {
-    const col = (...names) => sheetColIndex(headers, ...names);
+    const col = (...names) => sheetCol(headers, ...names);
     const cell = (i) => (i >= 0 ? String(row[i] ?? "").trim() : "");
-    const pair = pairKeyFromRow(cell(col("Токен 0", "token0", "AK")), cell(col("Токен 1", "token1", "AL")));
-    if (pair) return pair;
+    const fromSheet = cell(col("Пара", "pair", "Pair", "R", 17));
+    if (fromSheet && !looksLikeWalletOrHex(fromSheet)) return fromSheet;
+    const pair = pairKeyFromRow(cell(col("Токен 0", "token0")), cell(col("Токен 1", "token1")));
+    if (pair && !looksLikeWalletOrHex(pair)) return pair;
     if (Number(minPrice) > 50) return "ETH / USDC";
     return "Pool";
   }
@@ -730,8 +741,8 @@
     let link = cell(col("Ссылка на позицию", "position_url", "position_link", "link", "url", "revert_link"));
     if (!link) link = buildRevertLink(chain, platformRaw, nftId);
     const posId = revertPositionId(link) || String(nftId || "").replace(/\D/g, "");
-    const t0 = cell(col("Токен 0", "token0", "AK", "AM"));
-    const t1 = cell(col("Токен 1", "token1", "AL", "AN"));
+    const t0 = cell(col("Токен 0", "token0"));
+    const t1 = cell(col("Токен 1", "token1"));
     const iLowerProbe = col("Min price", "Мин. цена диапазона", "price_lower", "D", "BE", 3);
     const minProbe = iLowerProbe >= 0 ? parseMoneyCell(row[iLowerProbe]) : 0;
     if (!posId && !t0 && !t1 && !minProbe && !platformRaw) return null;

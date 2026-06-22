@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -22,6 +23,8 @@ from lp_income_snapshots import (  # noqa: E402
     apr_from_snapshot_row,
     delta_income_between_snapshots,
     load_income_store,
+    save_income_store,
+    snapshot_from_positions,
 )
 
 DATA_JS = ROOT / "data" / "portfolio-data.js"
@@ -157,11 +160,139 @@ def income_by_day_from_store(store: dict, through_day: str) -> dict[str, float]:
     return income
 
 
-def last_ref_apr_before(ref: dict[str, float], day: str) -> float:
-    vals = [float(ref[d]) for d in sorted(ref) if d < day and float(ref[d]) > 0.5]
-    if not vals:
-        return 10.0
-    return sum(vals[-7:]) / min(7, len(vals[-7:]))
+LP_SHEETS_API = (
+    "https://defilabsvipnavigator.vercel.app/api/public-portfolio-lp"
+    "?sheetId={sheet_id}&sheetName={sheet_name}"
+)
+DEFAULT_SHEET_ID = "1yq5nbZ-fws8o9C0PCZWjlZjxUqZs60E4hfPiI7L0GD8"
+DEFAULT_WALLET = "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355"
+
+
+def _parse_money(raw) -> float:
+    if isinstance(raw, (int, float)) and raw == raw:
+        return float(raw)
+    s = str(raw or "").strip().replace("\u00a0", "").replace(" ", "")
+    if not s:
+        return 0.0
+    if s.count(",") == 1 and s.count(".") == 0:
+        s = s.replace(",", ".")
+    elif s.count(",") and s.count("."):
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _col_index(headers: list[str], *names: str) -> int:
+    for n in names:
+        if n in headers:
+            return headers.index(n)
+    low_names = [str(n).lower() for n in names if n]
+    for i, h in enumerate(headers):
+        hl = str(h or "").strip().lower()
+        if hl in low_names:
+            return i
+    return -1
+
+
+def fetch_active_lp_positions(payload: dict) -> list[dict]:
+    sheet_id = str(payload.get("googleSheetId") or DEFAULT_SHEET_ID).strip()
+    sheet_name = str(payload.get("publicPortfolioSheetName") or "Public portfolio").strip()
+    wallet = str(payload.get("portfolioWallet") or DEFAULT_WALLET).strip().lower()
+    url = LP_SHEETS_API.format(
+        sheet_id=urllib.parse.quote(sheet_id, safe=""),
+        sheet_name=urllib.parse.quote(sheet_name, safe=""),
+    )
+    with urllib.request.urlopen(url, timeout=45) as res:
+        body = json.loads(res.read().decode())
+    headers = [str(h or "").strip() for h in body.get("headers") or []]
+    if not headers:
+        return []
+
+    def col_idx(*names: str) -> int:
+        return _col_index(headers, *names)
+
+    out: list[dict] = []
+    for row in body.get("rows") or []:
+        cells = row.get("cells") or []
+
+        def cell_at(i: int) -> str:
+            return str(cells[i] if 0 <= i < len(cells) else "").strip()
+
+        wi = col_idx("owner_wallet", "H")
+        if wi >= 0:
+            w = cell_at(wi).lower()
+            if wallet and wallet not in w:
+                continue
+
+        closed = cell_at(col_idx("Дата закрытия", "J"))
+        if closed and closed.lower() not in ("", "null", "none", "-"):
+            continue
+
+        g_idx = col_idx("Ком. доход (ИТОГО $)", "G")
+        q_idx = col_idx("Incentives, $", "Q")
+        o_idx = col_idx("Стоимость позиции, USD", "O")
+        fees = _parse_money(cells[g_idx] if g_idx >= 0 else 0)
+        inc = _parse_money(cells[q_idx] if q_idx >= 0 else 0)
+        val = _parse_money(cells[o_idx] if o_idx >= 0 else 0)
+        nft = cell_at(col_idx("NFT_ID", "C"))
+        out.append(
+            {
+                "platform": cell_at(col_idx("Exchange", "F")),
+                "chain": cell_at(col_idx("network", "M")),
+                "pair": cell_at(col_idx("Пара", "R")),
+                "positionId": nft,
+                "feesUsd": fees,
+                "incentivesUsd": inc,
+                "valueUsd": val,
+                "openedAt": cell_at(col_idx("Дата открытия", "I")),
+                "isActive": True,
+            }
+        )
+    return out
+
+
+def refresh_income_snapshot_from_sheet(today: str, payload: dict) -> bool:
+    """Сохраняет снимок cumulative LP-дохода (комиссии + incentives) на сегодня."""
+    try:
+        positions = fetch_active_lp_positions(payload)
+        if not positions:
+            return False
+        store = load_income_store()
+        snap = snapshot_from_positions(positions)
+        store.setdefault("byDay", {})[today] = {
+            "positions": snap,
+            "totalCumulativeUsd": round(sum(r["cumulativeUsd"] for r in snap.values()), 4),
+            "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        save_income_store(store)
+        print(f"[OK] LP income snapshot {today}: {len(snap)} positions", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(f"[WARN] LP income snapshot refresh skipped: {e}", file=sys.stderr)
+        try:
+            from export_static_data import load_liquidity_positions_from_sheet
+
+            config = load_portfolio_config()
+            positions = load_liquidity_positions_from_sheet(config)
+            if not positions:
+                return False
+            store = load_income_store()
+            snap = snapshot_from_positions(positions)
+            store.setdefault("byDay", {})[today] = {
+                "positions": snap,
+                "totalCumulativeUsd": round(sum(r["cumulativeUsd"] for r in snap.values()), 4),
+                "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+            save_income_store(store)
+            return True
+        except Exception as e2:
+            print(f"[WARN] local sheet fallback failed: {e2}", file=sys.stderr)
+            return False
 
 
 def extend_equity_tail(snaps: list[dict], today: str) -> list[dict]:
@@ -204,6 +335,8 @@ def enrich_tail(payload: dict, today: str) -> dict:
     if not snaps:
         raise SystemExit("No snapshots")
 
+    refresh_income_snapshot_from_sheet(today, payload)
+
     for s in snaps:
         d = str(s.get("timestamp", ""))[:10]
         if d in (CHART_START_DAY, "2026-01-02"):
@@ -213,7 +346,6 @@ def enrich_tail(payload: dict, today: str) -> dict:
     ref_old = load_yield_ref()
     income_store = load_income_store()
     income_by_day = income_by_day_from_store(income_store, today)
-    carry_apr = last_ref_apr_before(ref_old, YIELD_CUT_DAY)
 
     chart_yield: dict[str, float] = {d: v for d, v in ref_old.items() if d < YIELD_CUT_DAY}
     ref_out = dict(ref_old)
@@ -227,15 +359,9 @@ def enrich_tail(payload: dict, today: str) -> dict:
         if d < YIELD_CUT_DAY:
             continue
         apr = apr_from_snapshot_row(s, max_apr=MAX_CHART_APR)
-        if apr <= 0.01:
-            liq = float(s.get("liquidityUsd") or 0)
-            if liq > 0 and carry_apr > 0:
-                s["dailyFeeIncomeUsd"] = round((carry_apr / 100.0) * liq / 365.0, 6)
-                apr = carry_apr
         if apr > 0.01:
             chart_yield[d] = round(apr, 6)
             ref_out[d] = round(apr, 6)
-            carry_apr = apr
 
     daily_yield_series = [
         round(

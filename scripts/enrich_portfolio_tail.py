@@ -330,6 +330,45 @@ def extend_equity_tail(snaps: list[dict], today: str) -> list[dict]:
     return out
 
 
+def rescale_trailing_flat_tail(snaps: list[dict]) -> list[dict]:
+    """Если PA скопировал одинаковую liquidity на хвост — пересчитать по β×BTC."""
+    if len(snaps) < 2:
+        return snaps
+
+    def liq_val(s: dict) -> float:
+        return round(float(s.get("liquidityUsd") or 0.0), 2)
+
+    out = [dict(s) for s in snaps]
+    tail_start = len(out) - 1
+    base_liq = liq_val(out[-1])
+    while tail_start > 0 and liq_val(out[tail_start - 1]) == base_liq:
+        tail_start -= 1
+    if len(out) - tail_start < 2:
+        return snaps
+
+    anchor_idx = max(tail_start - 1, 0)
+    anchor = out[anchor_idx]
+    anchor_day = str(anchor["timestamp"])[:10]
+    last_day = str(out[-1]["timestamp"])[:10]
+    fetch_start = (datetime.fromisoformat(anchor_day) - timedelta(days=2)).date().isoformat()
+    btc = load_btc_prices(fetch_start, last_day)
+
+    prev_day = anchor_day
+    prev_eq = float(anchor.get("equityUsd") or 0.0)
+    prev_row = dict(anchor)
+    for i in range(anchor_idx + 1, len(out)):
+        ds = str(out[i]["timestamp"])[:10]
+        r = btc_return(btc, prev_day, ds)
+        eq = prev_eq * (1.0 + BTC_BETA * r)
+        step = eq / prev_eq if prev_eq > 0 else 1.0
+        out[i]["collateralUsd"] = round(float(prev_row.get("collateralUsd") or 0) * step, 6)
+        out[i]["debtUsd"] = round(float(prev_row.get("debtUsd") or 0) * step, 6)
+        out[i]["liquidityUsd"] = round(float(prev_row.get("liquidityUsd") or 0) * step, 6)
+        out[i]["equityUsd"] = round(eq, 6)
+        prev_day, prev_eq, prev_row = ds, eq, out[i]
+    return out
+
+
 def enrich_tail(payload: dict, today: str) -> dict:
     snaps = payload.get("snapshots") or []
     if not snaps:
@@ -343,6 +382,7 @@ def enrich_tail(payload: dict, today: str) -> dict:
             s["equityUsd"] = CHART_START_EQUITY
 
     snaps = extend_equity_tail(snaps, today)
+    snaps = rescale_trailing_flat_tail(snaps)
     ref_old = load_yield_ref()
     income_store = load_income_store()
     income_by_day = income_by_day_from_store(income_store, today)

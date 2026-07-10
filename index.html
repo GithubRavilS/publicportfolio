@@ -342,14 +342,7 @@
 
     <div class="charts">
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <strong id="equityTitle">Динамика портфеля</strong>
-          <div class="toolbar">
-            <button class="btn active" data-unit="USD">USD</button>
-            <button class="btn" data-unit="BTC">BTC</button>
-            <button class="btn" data-unit="ETH">ETH</button>
-          </div>
-        </div>
+        <strong id="equityTitle">Динамика портфеля</strong>
         <div class="chart-box"><canvas id="equityChart"></canvas></div>
       </div>
       <div class="card">
@@ -897,20 +890,13 @@
       CHART_MAX_APR
     );
 
-    let unit = "USD";
-    const toUnit = (usd) => {
-      if (unit === "BTC") return prices.BTC ? usd / prices.BTC : 0;
-      if (unit === "ETH") return prices.ETH ? usd / prices.ETH : 0;
-      return usd;
-    };
-
     equityChartRef = new Chart(document.getElementById("equityChart"), {
       type: "line",
       data: {
         labels,
         datasets: [{
           label: "Equity",
-          data: baseEquity.map(toUnit),
+          data: baseEquity,
           borderColor: "#4ea1ff",
           backgroundColor: "rgba(78,161,255,0.2)",
           fill: true,
@@ -940,8 +926,7 @@
               },
               label(item) {
                 const v = Number(item.parsed.y || 0);
-                if (unit === "USD") return `Капитал: $${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-                return `Капитал: ${v.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${unit}`;
+                return `Капитал: $${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
               }
             }
           }
@@ -1030,16 +1015,6 @@
           }
         }
       }
-    });
-
-    document.querySelectorAll(".btn[data-unit]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        unit = btn.dataset.unit || "USD";
-        document.querySelectorAll(".btn[data-unit]").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        equityChartRef.data.datasets[0].data = baseEquity.map(toUnit);
-        equityChartRef.update();
-      });
     });
 
     let lp = [];

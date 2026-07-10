@@ -821,7 +821,7 @@
         snapshots[snapshots.length - 1].equityUsd = equity;
         if (baseEquity.length) baseEquity[baseEquity.length - 1] = equity;
         if (equityChartRef) {
-          equityChartRef.data.datasets[0].data = baseEquity.map(toUnit);
+          equityChartRef.data.datasets[0].data = baseEquity;
           equityChartRef.update("none");
         }
       }

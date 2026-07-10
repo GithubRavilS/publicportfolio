@@ -11,6 +11,11 @@ from io import StringIO
 from pathlib import Path
 
 import requests
+from chart_frozen_history import (
+    daily_yield_series_from_map,
+    merge_append_only_equity_rows,
+    merge_append_only_yield,
+)
 from google_sheets_client import load_sheet_values_as_row_dicts
 from jupiter_lend import (
     apply_jupiter_to_portfolio,
@@ -3671,6 +3676,47 @@ def main() -> None:
 
     chart_yield_by_day = load_yield_reference_by_day()
 
+    prev_portfolio_path = Path("data/portfolio-data.js")
+    prev_snaps: list[dict] = []
+    prev_chart_yield: dict[str, float] = {}
+    if prev_portfolio_path.exists():
+        try:
+            raw_prev = prev_portfolio_path.read_text(encoding="utf-8")
+            m_prev = re.search(r"window\.PORTFOLIO_DATA\s*=\s*(\{.*\})\s*;?\s*$", raw_prev, re.S)
+            if m_prev:
+                prev_payload = json.loads(m_prev.group(1))
+                prev_snaps = prev_payload.get("snapshots") or []
+                prev_chart_yield = prev_payload.get("chartYieldByDay") or {}
+        except Exception as e:
+            print(f"[WARN] prev portfolio-data merge skipped: {e}")
+
+    if prev_snaps:
+        snapshots = merge_append_only_equity_rows(prev_snaps, snapshots, today)
+        print(
+            f"[OK] equity snapshots append-only merge "
+            f"({len(prev_snaps)} prev -> {len(snapshots)} days)"
+        )
+
+    new_yield_from_fees: dict[str, float] = {}
+    for s in snapshots:
+        d = str(s.get("timestamp", ""))[:10]
+        if not d or d < "2026-05-26":
+            continue
+        new_yield_from_fees[d] = round(apr_from_snapshot_row(s, max_apr=MAX_CHART_DAILY_APR_PCT), 6)
+
+    chart_yield_by_day = merge_append_only_yield(
+        {**chart_yield_by_day, **prev_chart_yield},
+        new_yield_from_fees,
+        today,
+    )
+    daily_yield_series = daily_yield_series_from_map(
+        snapshots, chart_yield_by_day, max_apr=MAX_CHART_DAILY_APR_PCT
+    )
+    Path("data/chart-yield-reference.json").write_text(
+        json.dumps({"byDay": dict(sorted(chart_yield_by_day.items()))}, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
     gaps = 0
     if len(snapshots) >= 2:
         for j in range(1, len(snapshots)):
@@ -3731,6 +3777,14 @@ def main() -> None:
         payload,
         config,
         evm_lending=debank_lending,
+        apply_chart_bridge=False,
+        equity_history_mode="today",
+    )
+    payload["equityHistoryByDay"] = equity_history_payload_from_snapshots(payload["snapshots"])
+    payload["dailyYieldSeries"] = daily_yield_series_from_map(
+        payload["snapshots"],
+        chart_yield_by_day,
+        max_apr=MAX_CHART_DAILY_APR_PCT,
     )
 
     out = Path("data/portfolio-data.js")

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PythonAnywhere: Scheduled task (hourly). Обновляет БД + пушит на GitHub → Vercel.
-# PA_HOURLY_SCRIPT_VERSION=2026-06-16-jupiter-v8
+# PA_HOURLY_SCRIPT_VERSION=2026-07-10-append-only-v1
 set -uo pipefail
 cd ~/Public_portfolio
-echo "[OK] pa_hourly_update.sh version 2026-06-16-jupiter-v8"
+echo "[OK] pa_hourly_update.sh version 2026-07-10-append-only-v1"
 source .venv/bin/activate
 export TMPDIR="${TMPDIR:-$HOME/tmp}"
 mkdir -p "$TMPDIR"

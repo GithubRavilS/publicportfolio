@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ежедневное дотягивание графиков до сегодня (β×BTC + APR-хвост). Без Google/DeBank.
+# Ежедневное дотягивание графиков до сегодня (append-only equity + yield). Без DeBank.
 # Запуск: GitHub Actions cron и PythonAnywhere (всегда, даже если полный export упал).
 set -uo pipefail
 cd "$(dirname "$0")/.."

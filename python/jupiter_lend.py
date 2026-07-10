@@ -292,7 +292,15 @@ def apply_jupiter_to_portfolio(
     config: dict | None = None,
     *,
     evm_lending: list[dict] | None = None,
+    apply_chart_bridge: bool = True,
+    equity_history_mode: str = "all",
 ) -> dict:
+    """
+    equity_history_mode:
+      - "all" — перезаписать equityHistoryByDay с CHART_BRIDGE_START (полный export)
+      - "today" — только сегодня (ежедневный append-only sync)
+      - "none" — не трогать equityHistoryByDay
+    """
     config = config or load_config()
     jupiter = fetch_jupiter_lending_positions(config)
 
@@ -305,24 +313,29 @@ def apply_jupiter_to_portfolio(
     merged = merge_live_lending(jupiter, stale_evm)
     payload["lendingPositions"] = merged
 
-    strip = legacy_backfill_strip_amount(payload.get("snapshots") or [], payload)
-    snaps = apply_main_chart_bridge(
-        payload.get("snapshots") or [],
-        backfill_to_strip=strip,
-    )
+    snaps = list(payload.get("snapshots") or [])
+    if apply_chart_bridge:
+        strip = legacy_backfill_strip_amount(snaps, payload)
+        snaps = apply_main_chart_bridge(
+            snaps,
+            backfill_to_strip=strip,
+        )
+        payload.pop("jupiterBackfillNetUsd", None)
+        payload.pop("jupiterBackfillAppliedDays", None)
     payload["snapshots"] = snaps
-    payload.pop("jupiterBackfillNetUsd", None)
-    payload.pop("jupiterBackfillAppliedDays", None)
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     payload = patch_live_capital_with_lending(payload, merged, today)
 
-    # equityHistoryByDay — только для главного графика; APR не трогаем
     hist = payload.get("equityHistoryByDay") or {}
-    if isinstance(hist, dict):
+    if isinstance(hist, dict) and equity_history_mode != "none":
         for s in snaps:
             d = str(s.get("timestamp", ""))[:10]
-            if not d or d < CHART_BRIDGE_START:
+            if not d:
+                continue
+            if equity_history_mode == "today" and d != today:
+                continue
+            if equity_history_mode == "all" and d < CHART_BRIDGE_START:
                 continue
             hist[d] = {
                 "equityUsd": float(s.get("equityUsd") or 0),

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """QA левого графика: якоря, хвост без скачков, корреляция с β×BTC с 15.01."""
+
 from __future__ import annotations
 
 import json
@@ -57,12 +58,13 @@ def main() -> int:
         if ch > 12:
             issues.append(f"tail jump {d0}->{d1}: {ch:.1f}% (${eq[d0]:.0f}->${eq[d1]:.0f})")
 
-    # С 15.01: дневной % ≈ β×BTC%
+    # С 15.01 до Jupiter live: дневной % ≈ β×BTC%
     mism = 0
     checked = 0
+    jupiter_live_from = "2026-06-16"
     for i in range(1, len(days)):
         d0, d1 = days[i - 1], days[i]
-        if d1 < EQUITY_BTC_BACKWARD_FROM_DAY or d1 == today:
+        if d1 < EQUITY_BTC_BACKWARD_FROM_DAY or d1 == today or d1 >= jupiter_live_from:
             continue
         r_btc = _btc_forward_return(btc, d0, d1) * 100
         r_eq = (eq[d1] / eq[d0] - 1.0) * 100 if eq[d0] > 0 else 0
@@ -71,15 +73,17 @@ def main() -> int:
         if abs(r_eq - r_exp) > 1.5:
             mism += 1
     if checked and mism / checked > 0.15:
-        issues.append(f"BTC β mismatch on {mism}/{checked} days after {EQUITY_BTC_BACKWARD_FROM_DAY}")
+        issues.append(
+            f"BTC β mismatch on {mism}/{checked} days after {EQUITY_BTC_BACKWARD_FROM_DAY}"
+        )
 
     # Стык 14→15 января (допустим ручную подгонку; хвост важнее)
     if JAN_EQUITY_SHAPAN_END_DAY in eq and EQUITY_BTC_BACKWARD_FROM_DAY in eq:
-        jch = abs(
-            eq[EQUITY_BTC_BACKWARD_FROM_DAY] / eq[JAN_EQUITY_SHAPAN_END_DAY] - 1.0
-        ) * 100
+        jch = abs(eq[EQUITY_BTC_BACKWARD_FROM_DAY] / eq[JAN_EQUITY_SHAPAN_END_DAY] - 1.0) * 100
         if jch > 35:
-            issues.append(f"jan stitch {JAN_EQUITY_SHAPAN_END_DAY}->{EQUITY_BTC_BACKWARD_FROM_DAY}: {jch:.1f}%")
+            issues.append(
+                f"jan stitch {JAN_EQUITY_SHAPAN_END_DAY}->{EQUITY_BTC_BACKWARD_FROM_DAY}: {jch:.1f}%"
+            )
 
     print(f"[INFO] Jan1={start:.2f} today={eq[today]:.2f} live={live:.2f}")
     for d in days[-5:]:

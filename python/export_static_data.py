@@ -12,9 +12,11 @@ from pathlib import Path
 
 import requests
 from chart_frozen_history import (
+    JUPITER_ERA_START,
     daily_yield_series_from_map,
     merge_append_only_equity_rows,
     merge_append_only_yield,
+    rebuild_jupiter_era_snapshots,
 )
 from google_sheets_client import load_sheet_values_as_row_dicts
 from jupiter_lend import (
@@ -3696,6 +3698,22 @@ def main() -> None:
             f"[OK] equity snapshots append-only merge "
             f"({len(prev_snaps)} prev -> {len(snapshots)} days)"
         )
+
+    btc_tail = load_or_fetch_btc_by_day(JUPITER_ERA_START, today)
+    income_store_path = Path("data/lp-income-snapshots.json")
+    income_store = (
+        json.loads(income_store_path.read_text(encoding="utf-8"))
+        if income_store_path.exists()
+        else {"byDay": {}}
+    )
+    snapshots = rebuild_jupiter_era_snapshots(
+        snapshots,
+        income_store=income_store,
+        lending_positions=lending_positions,
+        btc=btc_tail,
+        today=today,
+        adjustment_usd=current_adjustment,
+    )
 
     new_yield_from_fees: dict[str, float] = {}
     for s in snapshots:

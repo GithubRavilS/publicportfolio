@@ -21,10 +21,10 @@ if str(ROOT / "python") not in sys.path:
 from chart_frozen_history import (  # noqa: E402
     daily_yield_series_from_map,
     equity_history_from_snapshots,
-    fill_equity_gap_with_interpolation,
+    fetch_btc_by_day,
     merge_append_only_equity_rows,
     merge_append_only_yield,
-    repair_flat_equity_plateau,
+    rebuild_jupiter_era_snapshots,
 )
 from jupiter_lend import (  # noqa: E402
     fetch_jupiter_lending_positions,
@@ -41,6 +41,7 @@ from lp_income_snapshots import (  # noqa: E402
 
 DATA_JS = ROOT / "data" / "portfolio-data.js"
 YIELD_REF_PATH = ROOT / "data/chart-yield-reference.json"
+BTC_CACHE = ROOT / "data/btc-daily-prices.json"
 PREFIX = "window.PORTFOLIO_DATA = "
 YIELD_CUT_DAY = "2026-05-26"
 MAX_CHART_APR = 55.0
@@ -300,10 +301,21 @@ def enrich_tail(payload: dict, today: str) -> dict:
 
     today_row = compute_today_snapshot(payload, lending, lp_positions, today, income_by_day)
 
+    adj = float(payload.get("manualVisualAdjustmentUsd") or 800.0)
+    btc = fetch_btc_by_day("2026-06-14", today, BTC_CACHE)
+
+    # One-time heal: Jun 16+ broken rows (Jupiter dip / fake linear ramp) → hybrid model
+    healed = rebuild_jupiter_era_snapshots(
+        prev_snaps,
+        income_store=income_store,
+        lending_positions=lending,
+        btc=btc,
+        today=today,
+        adjustment_usd=adj,
+    )
+
     # Append-only: freeze all past days, only update today
-    merged = merge_append_only_equity_rows(prev_snaps, [today_row], today)
-    merged = fill_equity_gap_with_interpolation(merged, today, today_row)
-    merged = repair_flat_equity_plateau(merged, today)
+    merged = merge_append_only_equity_rows(healed, [today_row], today)
 
     # Daily fee income on frozen days (does not change equityUsd)
     for s in merged:

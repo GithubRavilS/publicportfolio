@@ -240,14 +240,17 @@ def merge_append_only_yield(
     prev: dict[str, float],
     new: dict[str, float],
     today: str,
+    *,
+    backfill_days: set[str] | None = None,
 ) -> dict[str, float]:
-    """Past yield days are frozen; only append missing days or refresh today."""
+    """Past yield frozen; append missing, refresh today, overwrite stale-gap backfill days."""
     out = {str(k)[:10]: float(v) for k, v in prev.items()}
+    backfill = backfill_days or set()
     for d, v in new.items():
         ds = str(d)[:10]
         if ds > today:
             continue
-        if ds not in out or ds == today:
+        if ds not in out or ds == today or ds in backfill:
             out[ds] = float(v)
     return dict(sorted(out.items()))
 

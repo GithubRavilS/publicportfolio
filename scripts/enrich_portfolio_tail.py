@@ -33,10 +33,9 @@ from jupiter_lend import (  # noqa: E402
 )
 from lp_income_snapshots import (  # noqa: E402
     apr_from_snapshot_row,
-    delta_income_between_snapshots,
+    income_by_day_from_store,
     load_income_store,
-    save_income_store,
-    snapshot_from_positions,
+    refresh_income_store_and_backfill_gap,
 )
 
 DATA_JS = ROOT / "data" / "portfolio-data.js"
@@ -52,6 +51,23 @@ LP_SHEETS_API = (
 )
 DEFAULT_SHEET_ID = "1yq5nbZ-fws8o9C0PCZWjlZjxUqZs60E4hfPiI7L0GD8"
 DEFAULT_WALLET = "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355"
+
+
+def _earliest_open_day_from_positions(positions: list[dict]) -> str:
+    days: list[str] = []
+    for p in positions:
+        raw = str(p.get("openedAt") or "").strip()
+        for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+            try:
+                days.append(
+                    datetime.strptime(raw[:10] if fmt == "%Y-%m-%d" else raw, fmt)
+                    .date()
+                    .isoformat()
+                )
+                break
+            except ValueError:
+                continue
+    return min(days) if days else ""
 
 
 def load_portfolio() -> dict:
@@ -171,71 +187,6 @@ def fetch_active_lp_positions(payload: dict) -> list[dict]:
     return out
 
 
-def refresh_income_snapshot_from_sheet(today: str, payload: dict) -> bool:
-    """Сохраняет снимок cumulative LP-дохода (комиссии + incentives) на сегодня."""
-    try:
-        positions = fetch_active_lp_positions(payload)
-        if not positions:
-            return False
-        store = load_income_store()
-        snap = snapshot_from_positions(positions)
-        store.setdefault("byDay", {})[today] = {
-            "positions": snap,
-            "totalCumulativeUsd": round(sum(r["cumulativeUsd"] for r in snap.values()), 4),
-            "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        }
-        save_income_store(store)
-        print(f"[OK] LP income snapshot {today}: {len(snap)} positions", file=sys.stderr)
-        return True
-    except Exception as e:
-        print(f"[WARN] LP income snapshot refresh skipped: {e}", file=sys.stderr)
-        try:
-            from export_static_data import load_liquidity_positions_from_sheet
-
-            config = load_portfolio_config()
-            positions = load_liquidity_positions_from_sheet(config)
-            if not positions:
-                return False
-            store = load_income_store()
-            snap = snapshot_from_positions(positions)
-            store.setdefault("byDay", {})[today] = {
-                "positions": snap,
-                "totalCumulativeUsd": round(sum(r["cumulativeUsd"] for r in snap.values()), 4),
-                "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            }
-            save_income_store(store)
-            return True
-        except Exception as e2:
-            print(f"[WARN] local sheet fallback failed: {e2}", file=sys.stderr)
-            return False
-
-
-def income_by_day_from_store(store: dict, through_day: str) -> dict[str, float]:
-    from datetime import date, timedelta
-
-    by_day_store: dict[str, dict] = store.get("byDay") or {}
-    known = sorted(d for d in by_day_store if d <= through_day)
-    income: dict[str, float] = {}
-    for k in range(1, len(known)):
-        d0, d1 = known[k - 1], known[k]
-        snap0 = by_day_store[d0].get("positions") or {}
-        snap1 = by_day_store[d1].get("positions") or {}
-        try:
-            gap = max((date.fromisoformat(d1) - date.fromisoformat(d0)).days, 1)
-        except ValueError:
-            gap = 1
-        period_income, _ = delta_income_between_snapshots(
-            snap0, snap1, as_of_day=d1, calendar_days=gap
-        )
-        per_day = period_income / gap if gap else 0.0
-        d_cur = date.fromisoformat(d0) + timedelta(days=1)
-        d_end = date.fromisoformat(d1)
-        while d_cur <= d_end:
-            income[d_cur.isoformat()] = income.get(d_cur.isoformat(), 0.0) + per_day
-            d_cur += timedelta(days=1)
-    return income
-
-
 def compute_today_snapshot(
     payload: dict,
     lending_positions: list[dict],
@@ -283,8 +234,6 @@ def enrich_tail(payload: dict, today: str) -> dict:
     if not prev_snaps:
         raise SystemExit("No snapshots")
 
-    refresh_income_snapshot_from_sheet(today, payload)
-
     config = load_portfolio_config()
     jupiter = fetch_jupiter_lending_positions(config)
     stale_evm = [
@@ -297,7 +246,17 @@ def enrich_tail(payload: dict, today: str) -> dict:
 
     lp_positions = fetch_active_lp_positions(payload)
     income_store = load_income_store()
-    income_by_day = income_by_day_from_store(income_store, today)
+    income_by_day, yield_backfill_days = refresh_income_store_and_backfill_gap(
+        income_store,
+        lp_positions,
+        through_day=today,
+    )
+    # Дополнить income_by_day обычной цепочкой (дни до stale-пропуска)
+    for d, v in income_by_day_from_store(income_store, today).items():
+        if d in yield_backfill_days:
+            continue
+        if d not in income_by_day or (income_by_day.get(d, 0) <= 0 and v > 0):
+            income_by_day[d] = v
 
     today_row = compute_today_snapshot(payload, lending, lp_positions, today, income_by_day)
 
@@ -317,11 +276,14 @@ def enrich_tail(payload: dict, today: str) -> dict:
     # Append-only: freeze all past days, only update today
     merged = merge_append_only_equity_rows(healed, [today_row], today)
 
-    # Daily fee income on frozen days (does not change equityUsd)
+    # Daily fee income + liquidity refresh on backfilled gap days
+    live_liq = sum(float(p.get("valueUsd") or 0) for p in lp_positions)
     for s in merged:
         d = str(s.get("timestamp", ""))[:10]
         if d in income_by_day and income_by_day[d] > 0:
             s["dailyFeeIncomeUsd"] = round(income_by_day[d], 6)
+        if d in yield_backfill_days and d >= _earliest_open_day_from_positions(lp_positions):
+            s["liquidityUsd"] = round(live_liq, 6)
 
     # Yield: append-only reference
     ref_old = load_yield_ref()
@@ -333,7 +295,9 @@ def enrich_tail(payload: dict, today: str) -> dict:
         apr = build_yield_for_day(d, s, income_by_day)
         new_yield[d] = apr
 
-    chart_yield = merge_append_only_yield(ref_old, new_yield, today)
+    chart_yield = merge_append_only_yield(
+        ref_old, new_yield, today, backfill_days=yield_backfill_days
+    )
     # Pre-cut days from legacy ref only
     chart_yield = {d: v for d, v in chart_yield.items() if d >= YIELD_CUT_DAY or d in ref_old}
     for d, v in ref_old.items():
@@ -346,6 +310,7 @@ def enrich_tail(payload: dict, today: str) -> dict:
     payload["equityHistoryByDay"] = equity_history_from_snapshots(merged)
     payload["chartYieldByDay"] = chart_yield
     payload["dailyYieldSeries"] = daily_yield_series
+    payload["incomeByDay"] = {k: round(float(v), 6) for k, v in sorted(income_by_day.items())}
     payload["exportedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload["manualVisualAdjustmentUsd"] = float(payload.get("manualVisualAdjustmentUsd") or 800.0)
     payload["jupiterLendSyncedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

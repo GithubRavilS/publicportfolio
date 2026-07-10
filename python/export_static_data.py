@@ -2343,7 +2343,7 @@ def normalize_lp_range(
         return {}
     rmin, rmax = min(a, b), max(a, b)
     if c is None:
-        c = (rmin + rmax) / 2.0
+        return {"rangeMin": rmin, "rangeMax": rmax}
     return {"rangeMin": rmin, "rangeMax": rmax, "rangeCurrent": c}
 
 

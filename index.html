@@ -1082,11 +1082,13 @@
             sheetId: GOOGLE_SHEET_ID,
             sheetName: PUBLIC_SHEET_NAME,
             walletAddress: PORTFOLIO_WALLET,
+            fallbackPrices: prices,
           })
         : () => window.PortfolioUI.enrichLpRangesFromSheet([], {
             sheetId: GOOGLE_SHEET_ID,
             sheetName: PUBLIC_SHEET_NAME,
             walletAddress: PORTFOLIO_WALLET,
+            fallbackPrices: prices,
           });
       run().then(finishLpLoad).catch((err) => {
         console.error("LP sheet sync failed", err);

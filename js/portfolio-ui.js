@@ -135,12 +135,60 @@
   function normalizeLpRangePrices(lower, upper, current) {
     const a = flipPoolPrice(lower);
     const b = flipPoolPrice(upper);
-    const cRaw = current != null && current !== "" ? flipPoolPrice(current) : null;
+    const hasCur = current != null && current !== "" && Number(current) > 0;
+    const cRaw = hasCur ? flipPoolPrice(current) : null;
     if (a == null || b == null) return null;
     const rangeMin = Math.min(a, b);
     const rangeMax = Math.max(a, b);
-    const rangeCurrent = cRaw != null ? cRaw : (rangeMin + rangeMax) / 2;
-    return { rangeMin, rangeMax, rangeCurrent };
+    const out = { rangeMin, rangeMax };
+    if (cRaw != null) out.rangeCurrent = cRaw;
+    return out;
+  }
+
+  function quoteSpotUsdFromPair(pair, spotPrices) {
+    const p = String(pair || "")
+      .toUpperCase()
+      .replace(/\s+/g, " ");
+    const ethLike = /\b(WETH|ETH|STETH)\b/.test(p);
+    const btcLike = /\b(WBTC|CBBTC|BTC)\b/.test(p);
+    const stable = /\b(USDC|USDT|DAI|USD|USDBC)\b/.test(p);
+    if (ethLike && stable && Number(spotPrices?.ETH) > 0) return Number(spotPrices.ETH);
+    if (btcLike && stable && Number(spotPrices?.BTC) > 0) return Number(spotPrices.BTC);
+    if (ethLike && Number(spotPrices?.ETH) > 0) return Number(spotPrices.ETH);
+    if (btcLike && Number(spotPrices?.BTC) > 0) return Number(spotPrices.BTC);
+    return 0;
+  }
+
+  async function fetchLiveSpotPrices(fallback) {
+    const out = {
+      ETH: Number(fallback?.ETH) || 0,
+      BTC: Number(fallback?.BTC) || 0,
+    };
+    try {
+      const res = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin&vs_currencies=usd",
+        { cache: "no-store" }
+      );
+      if (res.ok) {
+        const j = await res.json();
+        if (j.ethereum?.usd) out.ETH = Number(j.ethereum.usd);
+        if (j.bitcoin?.usd) out.BTC = Number(j.bitcoin.usd);
+      }
+    } catch (e) {
+      console.warn("fetchLiveSpotPrices", e);
+    }
+    return out;
+  }
+
+  function applyUnifiedLpMarketPrices(positions, spotPrices) {
+    for (const p of positions || []) {
+      if (p.rangeMin == null || p.rangeMax == null) continue;
+      const spot = quoteSpotUsdFromPair(p.pair, spotPrices);
+      if (spot <= 0) continue;
+      const norm = normalizeLpRangePrices(p.rangeMin, p.rangeMax, spot);
+      if (norm) Object.assign(p, norm);
+    }
+    return positions;
   }
 
   function applyLpRangeToPosition(p) {
@@ -180,7 +228,22 @@
     if (pos?.rangeMin == null || pos?.rangeMax == null) return "";
     const min = Number(pos.rangeMin);
     const max = Number(pos.rangeMax);
-    const cur = Number(pos.rangeCurrent ?? (min + max) / 2);
+    const curRaw = Number(pos.rangeCurrent);
+    if (!Number.isFinite(curRaw) || curRaw <= 0) {
+      return `<div class="range-bar-wrap range-bar-wrap--no-price">
+      <div class="range-bar-head"><span class="range-lbl">${lang === "ru" ? "Диапазон цены" : "Price range"}</span></div>
+      <div class="range-bar-stage">
+        <div class="range-band range-band-top">
+          <div class="range-bar-labels-top" aria-hidden="true">
+            <span class="range-lbl-pos range-lbl-min" style="left:12%">${fmtRangeNum(min)}</span>
+            <span class="range-lbl-pos range-lbl-max" style="left:88%">${fmtRangeNum(max)}</span>
+          </div>
+        </div>
+        <div class="range-bar"><div class="range-track"></div><div class="range-active" style="left:12%;width:76%"></div></div>
+      </div>
+    </div>`;
+    }
+    const cur = curRaw;
     const inRange = cur >= min && cur <= max;
     const span = max - min || Math.max(Math.abs(max), 1) * 0.01;
     const pad = Math.max(span * 0.12, Math.max(0, cur - max, min - cur) * 0.35);
@@ -804,10 +867,9 @@
     if (iLower >= 0 && iUpper >= 0) {
       const lower = parseMoneyCell(row[iLower]);
       const upper = parseMoneyCell(row[iUpper]);
-      let cur = iMkt >= 0 ? parseMoneyCell(row[iMkt]) : 0;
-      if (!cur && lower > 0 && upper > 0) cur = (lower + upper) / 2;
+      const curFromSheet = iMkt >= 0 ? parseMoneyCell(row[iMkt]) : 0;
       if (lower && upper) {
-        const norm = normalizeLpRangePrices(lower, upper, cur > 0 ? cur : null);
+        const norm = normalizeLpRangePrices(lower, upper, curFromSheet > 0 ? curFromSheet : null);
         if (norm) Object.assign(item, norm);
       }
     }
@@ -852,6 +914,8 @@
       byKey.set(key, item);
     }
     const list = [...byKey.values()];
+    const spotPrices = await fetchLiveSpotPrices(opts?.fallbackPrices);
+    applyUnifiedLpMarketPrices(list, spotPrices);
     list.sort((a, b) => {
       const ra = a.isActive ? 0 : 1;
       const rb = b.isActive ? 0 : 1;
@@ -866,6 +930,7 @@
       sheetId: opts?.sheetId,
       sheetName: opts?.sheetName,
       walletAddress: opts?.walletAddress,
+      fallbackPrices: opts?.fallbackPrices,
     });
     positions.splice(0, positions.length, ...fresh);
     return positions;
@@ -939,6 +1004,9 @@
     displayPlatform,
     normalizeLpRangePrices,
     applyLpRangeToPosition,
+    fetchLiveSpotPrices,
+    applyUnifiedLpMarketPrices,
+    quoteSpotUsdFromPair,
     renderLpCard,
     renderLendingCard,
     renderS1Card,

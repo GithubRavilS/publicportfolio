@@ -956,36 +956,36 @@
     "2026-07-23": {
       "positions": {
         "2281276": {
-          "feesUsd": 13.189914,
-          "incentivesUsd": 13.189914,
-          "cumulativeUsd": 26.379827,
-          "valueUsd": 3880.4761,
+          "feesUsd": 13.139536,
+          "incentivesUsd": 13.139536,
+          "cumulativeUsd": 26.279072,
+          "valueUsd": 3877.9754,
           "openedAt": "08.07.2026"
         },
         "2281317": {
-          "feesUsd": 14.719474,
-          "incentivesUsd": 14.719474,
-          "cumulativeUsd": 29.438948,
-          "valueUsd": 2414.0914,
+          "feesUsd": 14.663255,
+          "incentivesUsd": 14.663255,
+          "cumulativeUsd": 29.326511,
+          "valueUsd": 2412.8926,
           "openedAt": "08.07.2026"
         },
         "2281356": {
-          "feesUsd": 4.458834,
-          "incentivesUsd": 4.458834,
-          "cumulativeUsd": 8.917668,
-          "valueUsd": 1013.5369,
+          "feesUsd": 4.441805,
+          "incentivesUsd": 4.441805,
+          "cumulativeUsd": 8.88361,
+          "valueUsd": 1013.069,
           "openedAt": "08.07.2026"
         },
         "2281441": {
-          "feesUsd": 2.736582,
-          "incentivesUsd": 2.736582,
-          "cumulativeUsd": 5.473165,
-          "valueUsd": 445.5595,
+          "feesUsd": 2.726131,
+          "incentivesUsd": 2.726131,
+          "cumulativeUsd": 5.452262,
+          "valueUsd": 445.3393,
           "openedAt": "08.07.2026"
         }
       },
-      "totalCumulativeUsd": 70.2096,
-      "savedAt": "2026-07-23T10:01:55Z"
+      "totalCumulativeUsd": 69.9415,
+      "savedAt": "2026-07-23T10:59:27Z"
     }
   }
 }

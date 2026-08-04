@@ -1062,6 +1062,34 @@
 
   <script>
     (function () {
+      var lock = document.getElementById("vip-lock");
+      var modal = document.getElementById("paywall-modal");
+      if (!lock || !modal) return;
+
+      function openPaywall(e) {
+        if (e) e.preventDefault();
+        modal.classList.add("open");
+        document.body.classList.add("paywall-lock");
+      }
+
+      function closePaywall(e) {
+        if (e && e.target !== modal) return;
+        modal.classList.remove("open");
+        document.body.classList.remove("paywall-lock");
+      }
+
+      document.querySelectorAll('[data-paywall="1"]').forEach(function (el) {
+        el.addEventListener("click", openPaywall);
+      });
+
+      modal.addEventListener("click", closePaywall);
+
+      if (location.hash === "#create" || location.hash === "#send" || location.hash === "#safety") {
+        openPaywall();
+      }
+    })();
+
+    (function () {
       var slug = "safe-teaser";
       var params = new URLSearchParams(location.search || "");
       var campaign = params.get("c") || params.get("campaign") || "";
@@ -1080,7 +1108,6 @@
         img.src = url + "&_=" + Date.now();
       } catch (e) {}
     })();
-
   </script>
 </body>
 </html>

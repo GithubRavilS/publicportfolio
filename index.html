@@ -1253,5 +1253,27 @@
       </p>
     </footer>
   </div>
+  <script>
+    (function () {
+      var slug = "safe-full";
+      var params = new URLSearchParams(location.search || "");
+      var campaign = params.get("c") || params.get("campaign") || "";
+      if (!campaign && location.hash) {
+        var hp = new URLSearchParams(String(location.hash).replace(/^#/, ""));
+        campaign = hp.get("c") || hp.get("campaign") || "";
+        if (!campaign && /^c=/.test(location.hash.slice(1))) {
+          campaign = decodeURIComponent(location.hash.slice(3));
+        }
+      }
+      var url = "https://cry-maden008.pythonanywhere.com/t/beacon?slug=" + encodeURIComponent(slug);
+      if (campaign) url += "&c=" + encodeURIComponent(campaign);
+      try {
+        var img = new Image();
+        img.referrerPolicy = "no-referrer-when-downgrade";
+        img.src = url + "&_=" + Date.now();
+      } catch (e) {}
+    })();
+
+  </script>
 </body>
 </html>

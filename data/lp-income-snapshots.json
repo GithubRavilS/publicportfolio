@@ -1564,6 +1564,40 @@
       },
       "totalCumulativeUsd": 2.6741,
       "savedAt": "2026-08-11T22:59:22Z"
+    },
+    "2026-08-12": {
+      "positions": {
+        "538299": {
+          "feesUsd": 1.006958,
+          "incentivesUsd": 0.0,
+          "cumulativeUsd": 1.006958,
+          "valueUsd": 3820.1301,
+          "openedAt": "07.08.2026"
+        },
+        "538313": {
+          "feesUsd": 1.140182,
+          "incentivesUsd": 0.0,
+          "cumulativeUsd": 1.140182,
+          "valueUsd": 2407.9511,
+          "openedAt": "07.08.2026"
+        },
+        "538339": {
+          "feesUsd": 0.340588,
+          "incentivesUsd": 0.0,
+          "cumulativeUsd": 0.340588,
+          "valueUsd": 1002.1191,
+          "openedAt": "07.08.2026"
+        },
+        "538349": {
+          "feesUsd": 0.186414,
+          "incentivesUsd": 0.0,
+          "cumulativeUsd": 0.186414,
+          "valueUsd": 391.8612,
+          "openedAt": "07.08.2026"
+        }
+      },
+      "totalCumulativeUsd": 2.6741,
+      "savedAt": "2026-08-12T00:01:43Z"
     }
   }
 }

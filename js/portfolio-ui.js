@@ -1021,36 +1021,68 @@
   }
 
   /**
-   * Доходность DeFi: Σ(fees+incentives) по всем LP кошелька / фиксированный капитал в LP,
-   * годовых: × (365 / дней с 01.01).
-   * Делитель — сколько изначально завели в пулы (не весь стартовый капитал портфеля).
+   * Доходность DeFi:
+   * - доход = Σ(fees+incentives) по всем LP;
+   * - делитель = средневзвешенный investedUsd по календарным дням с 01.01
+   *   (сумма invested открытых в день позиций / число дней периода);
+   * - APR% = (доход / avgDeployed) × (365 / дни) × 100.
    */
   function computeDefiYieldFromLp(positions, opts) {
     const list = positions || [];
-    const deployed = Math.max(
-      Number(opts?.lpDeployedUsd ?? opts?.initialCapitalUsd ?? 10700),
-      1
-    );
     const startDay = String(opts?.periodStart || "2026-01-01").slice(0, 10);
     const asOf = String(opts?.asOfDay || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const fallbackDeployed = Math.max(Number(opts?.lpDeployedUsd || 10700), 1);
+
     let earned = 0;
     let stables = 0;
+    const legs = [];
     for (const p of list) {
       const income = Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
       if (income > 0) earned += income;
       const st = Number(p.stablesEarnedUsd || 0);
       if (st > 0) stables += st;
+      const inv = Number(p.investedUsd || 0);
+      if (!(inv > 0)) continue;
+      const opened = parseOpenedIso(p.openedAt);
+      if (!opened) continue;
+      const closed = p.isActive === false || String(p.closedAt || "").trim()
+        ? parseOpenedIso(p.closedAt)
+        : "";
+      legs.push({ inv, opened, closed });
     }
+
     let periodDays = 1;
+    let t0 = 0;
+    let t1 = 0;
     try {
-      const t0 = Date.parse(`${startDay}T00:00:00Z`);
-      const t1 = Date.parse(`${asOf}T00:00:00Z`);
+      t0 = Date.parse(`${startDay}T00:00:00Z`);
+      t1 = Date.parse(`${asOf}T00:00:00Z`);
       if (Number.isFinite(t0) && Number.isFinite(t1) && t1 >= t0) {
         periodDays = Math.max(Math.round((t1 - t0) / 86400000), 1);
       }
     } catch (_) {
       periodDays = 1;
     }
+
+    let deployed = fallbackDeployed;
+    if (legs.length && Number.isFinite(t0) && Number.isFinite(t1) && t1 >= t0) {
+      let sum = 0;
+      for (let i = 0; i <= periodDays; i++) {
+        const dayMs = t0 + i * 86400000;
+        const day = new Date(dayMs).toISOString().slice(0, 10);
+        let daySum = 0;
+        for (const leg of legs) {
+          if (leg.opened > day) continue;
+          if (leg.closed && leg.closed <= day) continue;
+          daySum += leg.inv;
+        }
+        sum += daySum;
+      }
+      const n = periodDays + 1;
+      deployed = n > 0 ? sum / n : fallbackDeployed;
+      if (!(deployed > 0)) deployed = fallbackDeployed;
+    }
+
     const aprPct = Math.min((earned / deployed) * (365 / periodDays) * 100, 500);
     return {
       portfolioEarnedIncomeUsd: Math.round(earned * 100) / 100,

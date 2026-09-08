@@ -319,7 +319,6 @@
         <div class="tabs">
           <button class="btn active" data-tab="dashboard" id="tabDashboardBtn">Дашборд</button>
           <button class="btn" data-tab="positions" id="tabPositionsBtn">Позиции</button>
-          <button class="btn" data-tab="transactions" id="tabTransactionsBtn">Транзакции</button>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
@@ -370,22 +369,6 @@
         <div id="lpPositions" class="pos-grid" style="margin-top:10px;"></div>
         <div id="lendingPositions" class="pos-grid" style="margin-top:10px;"></div>
       </div>
-    </section>
-
-    <section id="transactions" class="section">
-    <div class="card">
-      <strong id="txTitle">Транзакции</strong>
-      <div class="table-wrap" style="margin-top:10px;">
-        <table>
-          <thead>
-            <tr>
-              <th id="thTime">Время</th><th id="thSource">Источник</th><th id="thChain">Сеть</th><th id="thProtocol">Протокол</th><th id="thAction">Действие</th><th id="thAsset">Актив</th><th id="thAmount">Сумма</th><th id="thUsd">USD</th>
-            </tr>
-          </thead>
-          <tbody id="txBody"></tbody>
-        </table>
-      </div>
-    </div>
     </section>
 
     <section id="strategy1Root" class="section" style="display:none;">
@@ -667,7 +650,7 @@
       if (portfolioEarned > 0 && portfolioPeriodDays > 0) {
         const startLbl =
           portfolioAvgDeployed > 0
-            ? ` · $${portfolioAvgDeployed.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+            ? ` · ср. $${portfolioAvgDeployed.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
             : "";
         avgSub.textContent =
           lang === "ru"
@@ -716,7 +699,7 @@
         data.equityHistoryByDay || null
       )
     );
-    const txs = data.transactions || [];
+    const txs = [];
     const prices = data.prices || { BTC: 0, ETH: 0 };
     const initial = Number(data.initialCapitalUsd || 15500);
     let lending = data.lendingPositions || [];
@@ -756,7 +739,7 @@
         current: "Текущий капитал",
         totalReturn: "Доходность с 01.01.2026",
         avgApr: "Доходность DeFi",
-        avgAprSub: "комиссии + инсентивы / LP",
+        avgAprSub: "комиссии + инсентивы / ср. LP",
         equity: "Динамика портфеля",
         dailyApr: "Ежедневная доходность (годовых, %)",
         updated: "Обновление",
@@ -793,7 +776,7 @@
         current: "Current capital",
         totalReturn: "Return since 2026-01-01",
         avgApr: "DeFi yield",
-        avgAprSub: "fees + incentives / LP",
+        avgAprSub: "fees + incentives / avg LP",
         equity: "Portfolio equity",
         dailyApr: "Daily yield (APR, %)",
         updated: "Updated",
@@ -885,20 +868,6 @@
 
     document.getElementById("initialUsd").textContent = fmtUsd(initial);
     renderDefiYieldKpi();
-
-    const txBody = document.getElementById("txBody");
-    txBody.innerHTML = txs.slice(0, 200).map(tx => `
-      <tr>
-        <td>${(tx.timestamp || "").replace("T"," ").slice(0,19)}</td>
-        <td>${tx.source || ""}</td>
-        <td>${tx.chain || ""}</td>
-        <td>${tx.protocol || ""}</td>
-        <td>${tx.action || ""}</td>
-        <td>${tx.asset || ""}</td>
-        <td>${tx.amount ?? ""}</td>
-        <td>${Number(tx.usdValue || 0).toFixed(2)}</td>
-      </tr>
-    `).join("");
 
     const labels = snapshots.map(s => (s.timestamp || "").slice(0, 10));
     baseEquity = snapshots.map((s) => Number(s.equityUsd || 0));
@@ -1098,7 +1067,7 @@
         const tab = btn.dataset.tab;
         document.querySelectorAll(".btn[data-tab]").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
-        ["dashboard", "positions", "transactions"].forEach((id) => {
+        ["dashboard", "positions"].forEach((id) => {
           const section = document.getElementById(id);
           if (section) section.classList.toggle("active", id === tab);
         });
@@ -1408,7 +1377,7 @@
     const switchApp = (app) => {
       document.querySelectorAll(".btn[data-app]").forEach((b) => b.classList.toggle("active", b.dataset.app === app));
       const showPublic = app === "public";
-      document.querySelectorAll("#dashboard,#positions,#transactions").forEach((el) => el.style.display = showPublic ? "" : "none");
+      document.querySelectorAll("#dashboard,#positions").forEach((el) => el.style.display = showPublic ? "" : "none");
       const s1root = document.getElementById("strategy1Root");
       if (s1root) s1root.style.display = showPublic ? "none" : "block";
       document.querySelectorAll(".btn[data-tab]").forEach((b) => b.style.display = showPublic ? "inline-block" : "none");
@@ -1447,7 +1416,6 @@
       document.querySelector('[data-app="strategy1"]').textContent = t("strategy1");
       document.getElementById("tabDashboardBtn").textContent = t("dashboard");
       document.getElementById("tabPositionsBtn").textContent = t("positions");
-      document.getElementById("tabTransactionsBtn").textContent = t("transactions");
       document.getElementById("refreshBtn").textContent = t("refresh");
       document.getElementById("initialLabel").textContent = t("initial");
       document.getElementById("currentLabel").textContent = t("current");
@@ -1462,14 +1430,6 @@
       document.getElementById("lendingTypeBtn").textContent = t("lending");
       document.getElementById("activeFilterBtn").textContent = t("active");
       document.getElementById("closedFilterBtn").textContent = t("closed");
-      document.getElementById("txTitle").textContent = t("transactions");
-      document.getElementById("thTime").textContent = t("txTime");
-      document.getElementById("thSource").textContent = t("txSource");
-      document.getElementById("thChain").textContent = t("txChain");
-      document.getElementById("thProtocol").textContent = t("txProtocol");
-      document.getElementById("thAction").textContent = t("txAction");
-      document.getElementById("thAsset").textContent = t("txAsset");
-      document.getElementById("thAmount").textContent = t("txAmount");
       document.getElementById("s1DashBtn").textContent = t("dashboard");
       document.getElementById("s1PosBtn").textContent = t("positions");
       document.getElementById("s1EqTitle").textContent = t("equity");

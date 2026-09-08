@@ -54,15 +54,14 @@ def run_audit(data: dict) -> dict:
 
     cur = float(data.get("currentCapitalUsd") or 0)
     base = float(data.get("liveCapitalBaseUsd") or 0)
-    unclaimed = float(data.get("openLiquidityUnclaimedUsd") or 0)
     idle = float(data.get("walletIdleUsd") or 0)
-    expected_cur = base + adj + unclaimed + idle
+    expected_cur = base + adj + idle
     if cur < MIN_CURRENT_CAPITAL_USD:
         warnings.append(f"current_capital_low: {cur:.2f} (<{MIN_CURRENT_CAPITAL_USD})")
     elif abs(cur - expected_cur) > 25.0:
         warnings.append(
-            f"current_capital_formula: {cur:.2f} != base+adj+fees+idle "
-            f"({base:.2f}+{adj:.0f}+{unclaimed:.2f}+{idle:.2f}={expected_cur:.2f})"
+            f"current_capital_formula: {cur:.2f} != base+adj+idle "
+            f"({base:.2f}+{adj:.0f}+{idle:.2f}={expected_cur:.2f})"
         )
     if snapshots:
         last = snapshots[-1]

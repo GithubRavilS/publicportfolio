@@ -667,10 +667,21 @@
       if (!res.ok) throw new Error(`wallet-idle HTTP ${res.status}`);
       const payload = await res.json();
       const usd = Number(payload.walletIdleUsd || 0);
-      if (!(usd >= 0)) return walletIdleUsd;
-      walletIdleUsd = usd;
-      writeCachedWalletIdle(usd);
-      return usd;
+      if (usd >= 0) {
+        walletIdleUsd = usd;
+        writeCachedWalletIdle(usd);
+      }
+      // Live EVM lending (Fluid) — заменяем устаревший CSV, Jupiter оставляем.
+      if (Array.isArray(payload.lending) && payload.lending.length) {
+        const jupiter = (lending || []).filter(
+          (p) => String(p.chain || "").toLowerCase() === "solana" || /jupiter/i.test(String(p.protocol || ""))
+        );
+        const next = [...jupiter, ...payload.lending];
+        lending = window.PortfolioUI?.dedupeLendingPositions
+          ? window.PortfolioUI.dedupeLendingPositions(next)
+          : next;
+      }
+      return walletIdleUsd;
     }
     let portfolioAvgApr = 0;
     let portfolioEarned = 0;
@@ -773,12 +784,11 @@
       const base = Math.max(0, coll - debt + liq);
       const exported = Number(data.currentCapitalUsd || 0);
       const exportedIdle = Number(data.walletIdleUsd || 0);
-      const unclaimed = openLpUnclaimedExport;
       const idle = Math.max(0, Number(walletIdleUsd || 0));
       const core =
         exported > 0
           ? Math.max(0, exported - Math.max(0, exportedIdle))
-          : base + manualEquityAdj + unclaimed;
+          : base + manualEquityAdj;
       last.equityUsd = core + idle;
       return out;
     }
@@ -918,12 +928,9 @@
         window.PortfolioUI?.calcLiveEquityUsd
           ? window.PortfolioUI.calcLiveEquityUsd(collateral, debt, liveLiq)
           : Math.max(0, collateral - debt + liveLiq);
-      const unclaimedLive = sumActiveLpUnclaimedUsd(lpForUnclaimed);
-      const unclaimed =
-        unclaimedLive > 0 ? unclaimedLive : openLpUnclaimedExport;
       const idle = Math.max(0, Number(walletIdleUsd || 0));
-      // equity = lending net + LP value + manual adj + unclaimed LP fees + idle wallet
-      const equity = base + manualEquityAdj + unclaimed + idle;
+      // Как DeFi Navigator: coll − debt + LP + idle + adj. Rewards отдельно, не в сумме.
+      const equity = base + manualEquityAdj + idle;
       const liveMode = Number(activeLpUsd || 0) > 0 || collateral > 0;
       const today = new Date().toISOString().slice(0, 10);
       if (snapshots.length && (snapshots[snapshots.length - 1].timestamp || "").slice(0, 10) === today) {

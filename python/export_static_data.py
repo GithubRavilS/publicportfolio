@@ -334,7 +334,7 @@ def sync_snapshot_today_live_capital(
     open_lp_unclaimed_usd: float = 0.0,
     wallet_idle_usd: float = 0.0,
 ) -> tuple[list[dict], float, float, float]:
-    """Сегодня: equity = залог − долг + ликвидность + поправка + fees LP + idle wallet."""
+    """Сегодня: equity = залог − долг + ликвидность + поправка + idle wallet (Navigator)."""
     if not snapshots:
         return snapshots, 0.0, 0.0, 0.0
     coll, debt, _ = aggregate_lending_totals(lending_positions)
@@ -344,7 +344,8 @@ def sync_snapshot_today_live_capital(
     unclaimed = max(0.0, float(open_lp_unclaimed_usd or 0.0))
     idle = max(0.0, float(wallet_idle_usd or 0.0))
     base = coll - debt + lp
-    live = base + float(adjustment_usd or 0.0) + unclaimed + idle
+    # Rewards/fees не входят в сумму — как в DeFi Navigator ($14,823 без $154 rewards).
+    live = base + float(adjustment_usd or 0.0) + idle
     out = [dict(s) for s in snapshots]
     for i, s in enumerate(out):
         if str(s.get("timestamp", ""))[:10] != today:
@@ -3465,7 +3466,16 @@ def main() -> None:
         print(f"[WARN] coingecko prices (yield/equity share one fetch): {exc}")
 
     jupiter_lending = fetch_jupiter_lending_positions(config)
-    debank_lending = load_latest_debank_lending_csv(config)
+    try:
+        from debank_lending_live import fetch_live_evm_lending
+
+        _evm_w = ((config.get("debank_wallets") or [""]) + [""])[0]
+        debank_lending = fetch_live_evm_lending(_evm_w)
+    except Exception as exc:
+        print(f"[WARN] live Debank lending failed: {exc}")
+        debank_lending = []
+    if not debank_lending:
+        debank_lending = load_latest_debank_lending_csv(config)
     lending_positions = dedupe_lending_positions(
         merge_live_lending(jupiter_lending, debank_lending)
     )
@@ -3537,7 +3547,7 @@ def main() -> None:
         print(
             f"[OK] currentCapitalUsd={current_capital_usd:.2f} "
             f"(base={live_capital_base:.2f} + adj {current_adjustment:.0f} "
-            f"+ open fees {open_lp_unclaimed:.2f} + wallet idle {wallet_idle_usd:.2f})"
+            f"+ wallet idle {wallet_idle_usd:.2f}; open fees {open_lp_unclaimed:.2f} info-only)"
         )
         print(
             f"[OK] DeFi APR {portfolio_apr_stats['portfolioAverageAprPct']:.2f}% "

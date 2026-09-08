@@ -37,6 +37,7 @@ from lp_income_snapshots import (  # noqa: E402
     load_income_store,
     refresh_income_store_and_backfill_gap,
 )
+from debank_lending_live import fetch_live_evm_lending  # noqa: E402
 from wallet_idle import fetch_wallet_idle_usd  # noqa: E402
 
 DATA_JS = ROOT / "data" / "portfolio-data.js"
@@ -204,7 +205,8 @@ def compute_today_snapshot(
     )
     idle = max(0.0, float(wallet_idle_usd or 0.0))
     adj = float(payload.get("manualVisualAdjustmentUsd") or 800.0)
-    equity = coll - debt + liq + adj + unclaimed + idle
+    # Как в DeFi Navigator: coll − debt + LP + idle (+ adj). Rewards не в сумме капитала.
+    equity = coll - debt + liq + adj + idle
     fee_today = float(income_by_day.get(today) or 0)
     payload["openLiquidityUnclaimedUsd"] = round(unclaimed, 2)
     payload["walletIdleUsd"] = round(idle, 2)
@@ -240,12 +242,18 @@ def enrich_tail(payload: dict, today: str) -> dict:
 
     config = load_portfolio_config()
     jupiter = fetch_jupiter_lending_positions(config)
-    stale_evm = [
-        p
-        for p in (payload.get("lendingPositions") or [])
-        if str(p.get("chain") or "").lower() != "solana"
-    ]
-    lending = merge_live_lending(jupiter, stale_evm)
+    live_evm = fetch_live_evm_lending(
+        str(payload.get("portfolioWallet") or "").strip()
+        or ((config.get("debank_wallets") or [""]) + [""])[0]
+    )
+    if not live_evm:
+        # fallback: stale export EVM rows (лучше чем пусто)
+        live_evm = [
+            p
+            for p in (payload.get("lendingPositions") or [])
+            if str(p.get("chain") or "").lower() != "solana"
+        ]
+    lending = merge_live_lending(jupiter, live_evm)
     payload["lendingPositions"] = lending
 
     lp_positions = fetch_active_lp_positions(payload)

@@ -334,7 +334,7 @@
       <div class="card kpi"><h3 id="returnLabel">Доходность с 01.01.2026</h3><p id="returnPct">0%</p></div>
       <div class="card kpi">
         <h3 id="avgAprLabel">Доходность DeFi</h3>
-        <p id="avgAprPct">0%</p>
+        <p id="avgAprPct">…</p>
         <p class="kpi-sub" id="avgAprSub"></p>
       </div>
     </div>
@@ -637,16 +637,51 @@
         return sum + Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
       }, 0);
     }
-    let portfolioAvgApr = Number(data.portfolioAverageAprPct ?? 0);
-    let portfolioEarned = Number(data.portfolioEarnedIncomeUsd ?? 0);
-    let portfolioAvgDeployed = Number(data.portfolioAverageDeployedUsd ?? 0);
-    let portfolioPeriodDays = Number(data.portfolioPeriodDays ?? 0);
+    let portfolioAvgApr = 0;
+    let portfolioEarned = 0;
+    let portfolioAvgDeployed = 0;
+    let portfolioPeriodDays = 0;
+    let defiYieldReady = false;
+    const DEFI_YIELD_CACHE_KEY = "pp_defi_yield_v2";
+
+    function readCachedDefiYield() {
+      try {
+        const raw = localStorage.getItem(DEFI_YIELD_CACHE_KEY);
+        if (!raw) return null;
+        const j = JSON.parse(raw);
+        if (!(Number(j.apr) > 0) || !(Number(j.earned) > 0)) return null;
+        return j;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function writeCachedDefiYield() {
+      try {
+        localStorage.setItem(
+          DEFI_YIELD_CACHE_KEY,
+          JSON.stringify({
+            apr: portfolioAvgApr,
+            earned: portfolioEarned,
+            deployed: portfolioAvgDeployed,
+            days: portfolioPeriodDays,
+            savedAt: new Date().toISOString(),
+          })
+        );
+      } catch (_) {}
+    }
 
     function renderDefiYieldKpi() {
       const avgAprEl = document.getElementById("avgAprPct");
+      const avgSub = document.getElementById("avgAprSub");
+      if (!defiYieldReady) {
+        avgAprEl.textContent = "…";
+        avgAprEl.style.color = "var(--muted)";
+        avgSub.textContent = lang === "ru" ? "считаем по таблице…" : "computing from sheet…";
+        return;
+      }
       avgAprEl.textContent = fmtPct(portfolioAvgApr);
       avgAprEl.style.color = portfolioAvgApr > 0 ? "var(--green)" : "var(--muted)";
-      const avgSub = document.getElementById("avgAprSub");
       if (portfolioEarned > 0 && portfolioPeriodDays > 0) {
         const startLbl =
           portfolioAvgDeployed > 0
@@ -663,7 +698,20 @@
 
     const LP_DEPLOYED_FOR_YIELD_USD = 10700;
     function applyLiveDefiYieldFromLp(lpList) {
-      if (!window.PortfolioUI?.computeDefiYieldFromLp || !Array.isArray(lpList) || !lpList.length) return;
+      if (!window.PortfolioUI?.computeDefiYieldFromLp || !Array.isArray(lpList) || !lpList.length) {
+        if (!defiYieldReady) {
+          const cached = readCachedDefiYield();
+          if (cached) {
+            portfolioAvgApr = Number(cached.apr);
+            portfolioEarned = Number(cached.earned);
+            portfolioAvgDeployed = Number(cached.deployed);
+            portfolioPeriodDays = Number(cached.days);
+            defiYieldReady = true;
+          }
+          renderDefiYieldKpi();
+        }
+        return;
+      }
       const stats = window.PortfolioUI.computeDefiYieldFromLp(lpList, {
         lpDeployedUsd: LP_DEPLOYED_FOR_YIELD_USD,
         periodStart: "2026-01-01",
@@ -673,6 +721,8 @@
       portfolioAvgDeployed = stats.portfolioAverageDeployedUsd;
       portfolioAvgApr = stats.portfolioAverageAprPct;
       portfolioPeriodDays = stats.portfolioPeriodDays;
+      defiYieldReady = true;
+      writeCachedDefiYield();
       renderDefiYieldKpi();
     }
     function patchTodayLiveCapital(snaps) {
@@ -867,7 +917,18 @@
     }
 
     document.getElementById("initialUsd").textContent = fmtUsd(initial);
-    renderDefiYieldKpi();
+    // Не рисуем stale portfolioAverageAprPct из export — ждём live LP или cache.
+    {
+      const cached = readCachedDefiYield();
+      if (cached) {
+        portfolioAvgApr = Number(cached.apr);
+        portfolioEarned = Number(cached.earned);
+        portfolioAvgDeployed = Number(cached.deployed);
+        portfolioPeriodDays = Number(cached.days);
+        defiYieldReady = true;
+      }
+      renderDefiYieldKpi();
+    }
 
     const labels = snapshots.map(s => (s.timestamp || "").slice(0, 10));
     baseEquity = snapshots.map((s) => Number(s.equityUsd || 0));

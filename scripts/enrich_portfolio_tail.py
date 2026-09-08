@@ -37,6 +37,7 @@ from lp_income_snapshots import (  # noqa: E402
     load_income_store,
     refresh_income_store_and_backfill_gap,
 )
+from wallet_idle import fetch_wallet_idle_usd  # noqa: E402
 
 DATA_JS = ROOT / "data" / "portfolio-data.js"
 YIELD_REF_PATH = ROOT / "data/chart-yield-reference.json"
@@ -193,6 +194,7 @@ def compute_today_snapshot(
     lp_positions: list[dict],
     today: str,
     income_by_day: dict[str, float],
+    wallet_idle_usd: float = 0.0,
 ) -> dict:
     coll = sum(float(p.get("collateralUsd") or 0) for p in lending_positions)
     debt = sum(float(p.get("borrowUsd") or 0) for p in lending_positions)
@@ -200,10 +202,12 @@ def compute_today_snapshot(
     unclaimed = sum(
         float(p.get("feesUsd") or 0) + float(p.get("incentivesUsd") or 0) for p in lp_positions
     )
+    idle = max(0.0, float(wallet_idle_usd or 0.0))
     adj = float(payload.get("manualVisualAdjustmentUsd") or 800.0)
-    equity = coll - debt + liq + adj + unclaimed
+    equity = coll - debt + liq + adj + unclaimed + idle
     fee_today = float(income_by_day.get(today) or 0)
     payload["openLiquidityUnclaimedUsd"] = round(unclaimed, 2)
+    payload["walletIdleUsd"] = round(idle, 2)
     payload["liveCapitalBaseUsd"] = round(coll - debt + liq, 2)
     payload["currentCapitalUsd"] = round(equity, 2)
     return {
@@ -258,7 +262,22 @@ def enrich_tail(payload: dict, today: str) -> dict:
         if d not in income_by_day or (income_by_day.get(d, 0) <= 0 and v > 0):
             income_by_day[d] = v
 
-    today_row = compute_today_snapshot(payload, lending, lp_positions, today, income_by_day)
+    evm_w = str(payload.get("portfolioWallet") or "").strip()
+    sol_w = ""
+    sols = payload.get("solanaWallets") or []
+    if isinstance(sols, list) and sols:
+        sol_w = str(sols[0] or "").strip()
+    idle_info = fetch_wallet_idle_usd(evm_wallet=evm_w, solana_wallet=sol_w)
+    idle_usd = float(idle_info.get("walletIdleUsd") or 0.0)
+    if idle_usd > 0:
+        print(
+            f"[OK] walletIdleUsd={idle_usd:.2f} "
+            f"(evm={idle_info.get('evmUsd', 0):.2f} sol={idle_info.get('solanaUsd', 0):.2f})"
+        )
+
+    today_row = compute_today_snapshot(
+        payload, lending, lp_positions, today, income_by_day, wallet_idle_usd=idle_usd
+    )
 
     adj = float(payload.get("manualVisualAdjustmentUsd") or 800.0)
     btc = fetch_btc_by_day("2026-06-14", today, BTC_CACHE)

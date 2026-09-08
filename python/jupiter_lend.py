@@ -256,7 +256,7 @@ def patch_live_capital_with_lending(
     lending_positions: list[dict],
     today: str,
 ) -> dict:
-    """Сегодня: coll/debt из актуального lending, equity = base + adj + fees."""
+    """Сегодня: coll/debt из актуального lending, equity = base + adj + fees + idle."""
     snaps = [dict(s) for s in (payload.get("snapshots") or [])]
     if not snaps:
         return payload
@@ -266,9 +266,10 @@ def patch_live_capital_with_lending(
         debt += float(p.get("borrowUsd") or 0)
     adj = float(payload.get("manualVisualAdjustmentUsd") or 800.0)
     unclaimed = float(payload.get("openLiquidityUnclaimedUsd") or 0.0)
+    idle = float(payload.get("walletIdleUsd") or 0.0)
     last_liq = float(snaps[-1].get("liquidityUsd") or 0.0)
     base = coll - debt + last_liq
-    live = base + adj + unclaimed
+    live = base + adj + unclaimed + idle
     payload["liveCapitalBaseUsd"] = round(base, 2)
     payload["currentCapitalUsd"] = round(live, 2)
     for i, s in enumerate(snaps):

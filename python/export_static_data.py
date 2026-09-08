@@ -332,8 +332,9 @@ def sync_snapshot_today_live_capital(
     sheet_lp_usd: float,
     adjustment_usd: float,
     open_lp_unclaimed_usd: float = 0.0,
+    wallet_idle_usd: float = 0.0,
 ) -> tuple[list[dict], float, float, float]:
-    """Сегодня: equity = залог − долг + ликвидность + поправка + невыведённые fees активных LP."""
+    """Сегодня: equity = залог − долг + ликвидность + поправка + fees LP + idle wallet."""
     if not snapshots:
         return snapshots, 0.0, 0.0, 0.0
     coll, debt, _ = aggregate_lending_totals(lending_positions)
@@ -341,8 +342,9 @@ def sync_snapshot_today_live_capital(
     if coll <= 0 and debt <= 0 and lp <= 0:
         return snapshots, 0.0, 0.0, 0.0
     unclaimed = max(0.0, float(open_lp_unclaimed_usd or 0.0))
+    idle = max(0.0, float(wallet_idle_usd or 0.0))
     base = coll - debt + lp
-    live = base + float(adjustment_usd or 0.0) + unclaimed
+    live = base + float(adjustment_usd or 0.0) + unclaimed + idle
     out = [dict(s) for s in snapshots]
     for i, s in enumerate(out):
         if str(s.get("timestamp", ""))[:10] != today:
@@ -3509,6 +3511,17 @@ def main() -> None:
     portfolio_apr_stats = compute_portfolio_weighted_average_apr(
         config, as_of=date.fromisoformat(today)
     )
+    try:
+        from wallet_idle import fetch_wallet_idle_usd
+
+        _evm = ((config.get("debank_wallets") or [""]) + [""])[0]
+        _sols = solana_wallets_from_config(config)
+        _sol = _sols[0] if _sols else ""
+        wallet_idle_info = fetch_wallet_idle_usd(evm_wallet=_evm, solana_wallet=_sol)
+        wallet_idle_usd = float(wallet_idle_info.get("walletIdleUsd") or 0.0)
+    except Exception as exc:
+        print(f"[WARN] wallet idle fetch failed: {exc}")
+        wallet_idle_usd = 0.0
     snapshots, live_capital_base, current_capital_usd, _unclaimed = (
         sync_snapshot_today_live_capital(
             snapshots,
@@ -3517,13 +3530,14 @@ def main() -> None:
             sheet_lp_usd=sheet_lp_usd,
             adjustment_usd=current_adjustment,
             open_lp_unclaimed_usd=open_lp_unclaimed,
+            wallet_idle_usd=wallet_idle_usd,
         )
     )
     if current_capital_usd > 0:
         print(
             f"[OK] currentCapitalUsd={current_capital_usd:.2f} "
             f"(base={live_capital_base:.2f} + adj {current_adjustment:.0f} "
-            f"+ open fees {open_lp_unclaimed:.2f})"
+            f"+ open fees {open_lp_unclaimed:.2f} + wallet idle {wallet_idle_usd:.2f})"
         )
         print(
             f"[OK] DeFi APR {portfolio_apr_stats['portfolioAverageAprPct']:.2f}% "
@@ -3798,6 +3812,7 @@ def main() -> None:
         "manualVisualAdjustmentUsd": current_adjustment,
         "liveCapitalBaseUsd": round(live_capital_base, 2),
         "openLiquidityUnclaimedUsd": round(open_lp_unclaimed, 2),
+        "walletIdleUsd": round(wallet_idle_usd, 2),
         "currentCapitalUsd": round(current_capital_usd, 2),
         "portfolioEarnedIncomeUsd": portfolio_apr_stats.get("portfolioEarnedIncomeUsd", 0.0),
         "portfolioAverageDeployedUsd": portfolio_apr_stats.get("portfolioAverageDeployedUsd", 0.0),

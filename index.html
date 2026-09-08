@@ -630,12 +630,47 @@
     const cfgAdj = Number(data.manualVisualAdjustmentUsd ?? MANUAL_EQUITY_ADJ_USD);
     const manualEquityAdj = cfgAdj >= 2500 ? cfgAdj : MANUAL_EQUITY_ADJ_USD;
     const openLpUnclaimedExport = Number(data.openLiquidityUnclaimedUsd ?? 0);
+    const WALLET_IDLE_CACHE_KEY = "pp_wallet_idle_v1";
+    let walletIdleUsd = Number(data.walletIdleUsd ?? 0);
+    try {
+      const cachedIdle = JSON.parse(localStorage.getItem(WALLET_IDLE_CACHE_KEY) || "null");
+      if (cachedIdle && Number(cachedIdle.usd) > 0) {
+        walletIdleUsd = Number(cachedIdle.usd);
+      }
+    } catch (_) {}
 
     function sumActiveLpUnclaimedUsd(positions) {
       return (positions || []).reduce((sum, p) => {
         if (!isActivePos(p)) return sum;
         return sum + Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
       }, 0);
+    }
+
+    function writeCachedWalletIdle(usd) {
+      try {
+        localStorage.setItem(
+          WALLET_IDLE_CACHE_KEY,
+          JSON.stringify({ usd: Number(usd) || 0, savedAt: new Date().toISOString() })
+        );
+      } catch (_) {}
+    }
+
+    async function refreshWalletIdleUsd() {
+      const sol =
+        (Array.isArray(data.solanaWallets) && data.solanaWallets[0]) ||
+        "";
+      const params = new URLSearchParams({
+        wallet: PORTFOLIO_WALLET || "",
+      });
+      if (sol) params.set("solana", sol);
+      const res = await fetch(`/api/wallet-idle?${params.toString()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`wallet-idle HTTP ${res.status}`);
+      const payload = await res.json();
+      const usd = Number(payload.walletIdleUsd || 0);
+      if (!(usd >= 0)) return walletIdleUsd;
+      walletIdleUsd = usd;
+      writeCachedWalletIdle(usd);
+      return usd;
     }
     let portfolioAvgApr = 0;
     let portfolioEarned = 0;
@@ -737,9 +772,14 @@
       const liq = Number(last.liquidityUsd || 0);
       const base = Math.max(0, coll - debt + liq);
       const exported = Number(data.currentCapitalUsd || 0);
+      const exportedIdle = Number(data.walletIdleUsd || 0);
       const unclaimed = openLpUnclaimedExport;
-      last.equityUsd =
-        exported > 0 ? exported : base + manualEquityAdj + unclaimed;
+      const idle = Math.max(0, Number(walletIdleUsd || 0));
+      const core =
+        exported > 0
+          ? Math.max(0, exported - Math.max(0, exportedIdle))
+          : base + manualEquityAdj + unclaimed;
+      last.equityUsd = core + idle;
       return out;
     }
 
@@ -881,7 +921,9 @@
       const unclaimedLive = sumActiveLpUnclaimedUsd(lpForUnclaimed);
       const unclaimed =
         unclaimedLive > 0 ? unclaimedLive : openLpUnclaimedExport;
-      const equity = base + manualEquityAdj + unclaimed;
+      const idle = Math.max(0, Number(walletIdleUsd || 0));
+      // equity = lending net + LP value + manual adj + unclaimed LP fees + idle wallet
+      const equity = base + manualEquityAdj + unclaimed + idle;
       const liveMode = Number(activeLpUsd || 0) > 0 || collateral > 0;
       const today = new Date().toISOString().slice(0, 10);
       if (snapshots.length && (snapshots[snapshots.length - 1].timestamp || "").slice(0, 10) === today) {
@@ -1101,6 +1143,14 @@
       applyDashboardKpis(activeLpUsd, lp);
       renderPositions();
     };
+    refreshWalletIdleUsd()
+      .then(() => {
+        const activeLpUsd = window.PortfolioUI?.sumActiveLpValueUsd
+          ? window.PortfolioUI.sumActiveLpValueUsd(lp)
+          : 0;
+        applyDashboardKpis(activeLpUsd, lp);
+      })
+      .catch((err) => console.warn("wallet idle refresh failed", err));
     if (syncLp) {
       const run = window.PortfolioUI.syncLiquidityPositionsFromSheet
         ? () => window.PortfolioUI.syncLiquidityPositionsFromSheet({

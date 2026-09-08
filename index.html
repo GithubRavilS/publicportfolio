@@ -654,10 +654,43 @@
         return sum + Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
       }, 0);
     }
-    const portfolioAvgApr = Number(data.portfolioAverageAprPct ?? 0);
-    const portfolioEarned = Number(data.portfolioEarnedIncomeUsd ?? 0);
-    const portfolioAvgDeployed = Number(data.portfolioAverageDeployedUsd ?? 0);
-    const portfolioPeriodDays = Number(data.portfolioPeriodDays ?? 0);
+    let portfolioAvgApr = Number(data.portfolioAverageAprPct ?? 0);
+    let portfolioEarned = Number(data.portfolioEarnedIncomeUsd ?? 0);
+    let portfolioAvgDeployed = Number(data.portfolioAverageDeployedUsd ?? 0);
+    let portfolioPeriodDays = Number(data.portfolioPeriodDays ?? 0);
+
+    function renderDefiYieldKpi() {
+      const avgAprEl = document.getElementById("avgAprPct");
+      avgAprEl.textContent = fmtPct(portfolioAvgApr);
+      avgAprEl.style.color = portfolioAvgApr > 0 ? "var(--green)" : "var(--muted)";
+      const avgSub = document.getElementById("avgAprSub");
+      if (portfolioEarned > 0 && portfolioPeriodDays > 0) {
+        const startLbl =
+          portfolioAvgDeployed > 0
+            ? ` · $${portfolioAvgDeployed.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+            : "";
+        avgSub.textContent =
+          lang === "ru"
+            ? `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })}${startLbl} · ${portfolioPeriodDays} дн.`
+            : `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })}${startLbl} · ${portfolioPeriodDays}d`;
+      } else {
+        avgSub.textContent = t("avgAprSub");
+      }
+    }
+
+    function applyLiveDefiYieldFromLp(lpList) {
+      if (!window.PortfolioUI?.computeDefiYieldFromLp || !Array.isArray(lpList) || !lpList.length) return;
+      const stats = window.PortfolioUI.computeDefiYieldFromLp(lpList, {
+        initialCapitalUsd: initial,
+        periodStart: "2026-01-01",
+      });
+      if (!(stats.portfolioEarnedIncomeUsd > 0)) return;
+      portfolioEarned = stats.portfolioEarnedIncomeUsd;
+      portfolioAvgDeployed = stats.portfolioAverageDeployedUsd;
+      portfolioAvgApr = stats.portfolioAverageAprPct;
+      portfolioPeriodDays = stats.portfolioPeriodDays;
+      renderDefiYieldKpi();
+    }
     function patchTodayLiveCapital(snaps) {
       const out = (snaps || []).map((s) => ({ ...s }));
       if (!out.length) return out;
@@ -722,7 +755,7 @@
         current: "Текущий капитал",
         totalReturn: "Доходность с 01.01.2026",
         avgApr: "Доходность DeFi",
-        avgAprSub: "комиссии + инсентивы, ср. вложено",
+        avgAprSub: "комиссии + инсентивы / старт",
         equity: "Динамика портфеля",
         dailyApr: "Ежедневная доходность (годовых, %)",
         updated: "Обновление",
@@ -759,7 +792,7 @@
         current: "Current capital",
         totalReturn: "Return since 2026-01-01",
         avgApr: "DeFi yield",
-        avgAprSub: "fees + incentives, avg deployed",
+        avgAprSub: "fees + incentives / start",
         equity: "Portfolio equity",
         dailyApr: "Daily yield (APR, %)",
         updated: "Updated",
@@ -850,22 +883,7 @@
     }
 
     document.getElementById("initialUsd").textContent = fmtUsd(initial);
-    const avgAprEl = document.getElementById("avgAprPct");
-    avgAprEl.textContent = fmtPct(portfolioAvgApr);
-    avgAprEl.style.color = portfolioAvgApr > 0 ? "var(--green)" : "var(--muted)";
-    const avgSub = document.getElementById("avgAprSub");
-    if (portfolioEarned > 0 && portfolioPeriodDays > 0) {
-      const dep =
-        portfolioAvgDeployed > 0
-          ? ` · ср. $${portfolioAvgDeployed.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-          : "";
-      avgSub.textContent =
-        lang === "ru"
-          ? `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })}${dep} · ${portfolioPeriodDays} дн.`
-          : `${t("avgAprSub")}: $${portfolioEarned.toLocaleString("en-US", { maximumFractionDigits: 0 })}${dep} · ${portfolioPeriodDays}d`;
-    } else {
-      avgSub.textContent = t("avgAprSub");
-    }
+    renderDefiYieldKpi();
 
     const txBody = document.getElementById("txBody");
     txBody.innerHTML = txs.slice(0, 200).map(tx => `
@@ -1048,6 +1066,7 @@
       const activeLpUsd = window.PortfolioUI?.sumActiveLpValueUsd
         ? window.PortfolioUI.sumActiveLpValueUsd(lp)
         : 0;
+      applyLiveDefiYieldFromLp(lp);
       applyDashboardKpis(activeLpUsd, lp);
       renderPositions();
     };

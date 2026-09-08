@@ -1353,10 +1353,9 @@ def compute_portfolio_weighted_average_apr(
 ) -> dict[str, float]:
     """
     Доходность DeFi с 01.01:
-    - доход = Σ (feesUsd + incentivesUsd) по всем LP (открытым и закрытым);
-    - каждый день: сумма investedUsd по пулам, открытым в этот день;
-    - среднее вложено = среднее арифметическое дневных сумм за период;
-    - APR% = (доход / среднее вложено) × (365 / дни периода) × 100.
+    - доход = Σ (feesUsd + incentivesUsd) по всем LP кошелька (открытым и закрытым);
+    - делитель = стартовый капитал портфеля;
+    - APR% = (доход / стартовый капитал) × (365 / дни периода) × 100.
     """
     as_of = as_of or datetime.now(timezone.utc).date()
     start = date.fromisoformat(period_start)
@@ -1368,29 +1367,17 @@ def compute_portfolio_weighted_average_apr(
         if income > 0:
             total_income += income
 
-    daily_deployed: list[float] = []
-    for i in range(period_days):
-        day = start + timedelta(days=i)
-        day_sum = 0.0
-        for p in positions:
-            if not position_open_on_date(p, day, start, as_of):
-                continue
-            cap = position_invested_usd(p)
-            if cap > 0:
-                day_sum += cap
-        daily_deployed.append(day_sum)
+    initial = float(config.get("initial_capital_usd") or 0.0)
+    if initial <= 0:
+        initial = float(EQUITY_CHART_START_USD) + float(EQUITY_CAPITAL_INJECT_USD or 0)
+    if initial <= 0:
+        initial = 15300.0
 
-    avg_deployed = sum(daily_deployed) / float(len(daily_deployed)) if daily_deployed else 0.0
-    max_deployed = max(daily_deployed) if daily_deployed else 0.0
-    avg_apr = (
-        (total_income / avg_deployed) * (365.0 / float(period_days)) * 100.0
-        if avg_deployed > 0
-        else 0.0
-    )
+    avg_apr = (total_income / initial) * (365.0 / float(period_days)) * 100.0
     return {
         "portfolioEarnedIncomeUsd": round(total_income, 2),
-        "portfolioAverageDeployedUsd": round(avg_deployed, 2),
-        "portfolioMaxDeployedUsd": round(max_deployed, 2),
+        "portfolioAverageDeployedUsd": round(initial, 2),
+        "portfolioMaxDeployedUsd": round(initial, 2),
         "portfolioAverageAprPct": round(min(avg_apr, 500.0), 2),
         "portfolioPeriodDays": int(period_days),
     }

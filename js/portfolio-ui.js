@@ -989,6 +989,39 @@
     }, 0);
   }
 
+  /**
+   * Доходность DeFi: Σ(fees+incentives) по всем LP кошелька / стартовый капитал,
+   * годовых: × (365 / дней с 01.01).
+   */
+  function computeDefiYieldFromLp(positions, opts) {
+    const list = positions || [];
+    const initial = Math.max(Number(opts?.initialCapitalUsd || 0), 1);
+    const startDay = String(opts?.periodStart || "2026-01-01").slice(0, 10);
+    const asOf = String(opts?.asOfDay || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    let earned = 0;
+    for (const p of list) {
+      const income = Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
+      if (income > 0) earned += income;
+    }
+    let periodDays = 1;
+    try {
+      const t0 = Date.parse(`${startDay}T00:00:00Z`);
+      const t1 = Date.parse(`${asOf}T00:00:00Z`);
+      if (Number.isFinite(t0) && Number.isFinite(t1) && t1 >= t0) {
+        periodDays = Math.max(Math.round((t1 - t0) / 86400000), 1);
+      }
+    } catch (_) {
+      periodDays = 1;
+    }
+    const aprPct = Math.min((earned / initial) * (365 / periodDays) * 100, 500);
+    return {
+      portfolioEarnedIncomeUsd: Math.round(earned * 100) / 100,
+      portfolioAverageDeployedUsd: Math.round(initial * 100) / 100,
+      portfolioAverageAprPct: Math.round(aprPct * 100) / 100,
+      portfolioPeriodDays: periodDays,
+    };
+  }
+
   function calcLiveEquityUsd(collateralUsd, debtUsd, activeLpUsd) {
     return (
       Math.max(0, Number(collateralUsd || 0)) -
@@ -1014,6 +1047,7 @@
     sumLendingTotals,
     sumActiveLpValueUsd,
     calcLiveEquityUsd,
+    computeDefiYieldFromLp,
     syncLiquidityPositionsFromSheet,
     enrichLpRangesFromSheet,
   };

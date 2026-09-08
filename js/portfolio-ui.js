@@ -1021,17 +1021,35 @@
   }
 
   /**
+   * Капитал в LP-стратегии только растёт (ротация пулов ≠ вывод).
+   * Лестница из VIP-постов + монотонный пик concurrent invested из таблицы.
+   */
+  const LP_CAPITAL_MILESTONES = [
+    { day: "2026-01-15", usd: 6000 }, // пост 1: первый рабочий пул
+    { day: "2026-02-02", usd: 9100 }, // пост 2: +$3100
+    { day: "2026-08-07", usd: 10700 }, // текущий итог капитала в пулах
+  ];
+
+  function milestoneCapitalOnDay(day) {
+    let cap = 0;
+    for (const m of LP_CAPITAL_MILESTONES) {
+      if (day >= m.day) cap = m.usd;
+    }
+    return cap;
+  }
+
+  /**
    * Доходность DeFi:
    * - доход = Σ(fees+incentives) по всем LP;
-   * - делитель = средневзвешенный investedUsd по календарным дням с 01.01
-   *   (сумма invested открытых в день позиций / число дней периода);
+   * - делитель = среднесуточный капитал стратегии (лестница VIP + peak concurrent),
+   *   капитал день-к-дню не уменьшается;
    * - APR% = (доход / avgDeployed) × (365 / дни) × 100.
    */
   function computeDefiYieldFromLp(positions, opts) {
     const list = positions || [];
     const startDay = String(opts?.periodStart || "2026-01-01").slice(0, 10);
     const asOf = String(opts?.asOfDay || new Date().toISOString().slice(0, 10)).slice(0, 10);
-    const fallbackDeployed = Math.max(Number(opts?.lpDeployedUsd || 10700), 1);
+    const targetDeployed = Math.max(Number(opts?.lpDeployedUsd || 10700), 1);
 
     let earned = 0;
     let stables = 0;
@@ -1045,9 +1063,10 @@
       if (!(inv > 0)) continue;
       const opened = parseOpenedIso(p.openedAt);
       if (!opened) continue;
-      const closed = p.isActive === false || String(p.closedAt || "").trim()
-        ? parseOpenedIso(p.closedAt)
-        : "";
+      const closed =
+        p.isActive === false || String(p.closedAt || "").trim()
+          ? parseOpenedIso(p.closedAt)
+          : "";
       legs.push({ inv, opened, closed });
     }
 
@@ -1064,23 +1083,35 @@
       periodDays = 1;
     }
 
-    let deployed = fallbackDeployed;
-    if (legs.length && Number.isFinite(t0) && Number.isFinite(t1) && t1 >= t0) {
+    let deployed = targetDeployed;
+    let peakSeen = 0;
+    if (Number.isFinite(t0) && Number.isFinite(t1) && t1 >= t0) {
       let sum = 0;
+      let n = 0;
+      let peakConcurrent = 0;
       for (let i = 0; i <= periodDays; i++) {
-        const dayMs = t0 + i * 86400000;
-        const day = new Date(dayMs).toISOString().slice(0, 10);
-        let daySum = 0;
+        const day = new Date(t0 + i * 86400000).toISOString().slice(0, 10);
+        let concurrent = 0;
         for (const leg of legs) {
           if (leg.opened > day) continue;
           if (leg.closed && leg.closed <= day) continue;
-          daySum += leg.inv;
+          concurrent += leg.inv;
         }
-        sum += daySum;
+        if (concurrent > peakConcurrent) peakConcurrent = concurrent;
+        // капитал стратегии: max(лестница VIP, исторический пик concurrent), без просадок
+        let capital = Math.max(milestoneCapitalOnDay(day), peakConcurrent);
+        if (day >= LP_CAPITAL_MILESTONES[LP_CAPITAL_MILESTONES.length - 1].day) {
+          capital = Math.max(capital, targetDeployed);
+        }
+        if (capital > peakSeen) peakSeen = capital;
+        capital = Math.max(capital, peakSeen);
+        if (capital > 0) {
+          sum += capital;
+          n += 1;
+        }
       }
-      const n = periodDays + 1;
-      deployed = n > 0 ? sum / n : fallbackDeployed;
-      if (!(deployed > 0)) deployed = fallbackDeployed;
+      deployed = n > 0 ? sum / n : targetDeployed;
+      if (!(deployed > 0)) deployed = targetDeployed;
     }
 
     const aprPct = Math.min((earned / deployed) * (365 / periodDays) * 100, 500);
@@ -1091,6 +1122,7 @@
       portfolioAverageDeployedUsd: Math.round(deployed * 100) / 100,
       portfolioAverageAprPct: Math.round(aprPct * 100) / 100,
       portfolioPeriodDays: periodDays,
+      portfolioPeakDeployedUsd: Math.round(peakSeen * 100) / 100,
     };
   }
 

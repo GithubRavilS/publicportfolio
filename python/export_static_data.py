@@ -1345,6 +1345,21 @@ def position_open_on_date(
     return eff_start <= day <= eff_end
 
 
+LP_CAPITAL_MILESTONES: list[tuple[str, float]] = [
+    ("2026-01-15", 6000.0),  # VIP пост 1: первый рабочий пул ~$6k
+    ("2026-02-02", 9100.0),  # VIP пост 2: +$3100 → $9100
+    ("2026-08-07", 10700.0),  # текущий капитал в пулах
+]
+
+
+def _milestone_capital_on_day(day: date) -> float:
+    cap = 0.0
+    for ds, usd in LP_CAPITAL_MILESTONES:
+        if day >= date.fromisoformat(ds):
+            cap = float(usd)
+    return cap
+
+
 def compute_portfolio_weighted_average_apr(
     config: dict,
     *,
@@ -1354,9 +1369,9 @@ def compute_portfolio_weighted_average_apr(
     """
     Доходность DeFi с 01.01:
     - доход = Σ (feesUsd + incentivesUsd) по всем LP кошелька;
-    - делитель = среднесуточный investedUsd открытых позиций (календарь с 01.01);
-    - fallback делитель = lp_deployed_for_yield_usd или $10_700;
-    - APR% = (доход / avgDeployed) × (365 / дни периода) × 100.
+    - капитал стратегии монотонно растёт (лестница VIP-постов + пик concurrent invested);
+    - закрытие/реопен пула не уменьшает капитал;
+    - APR% = (доход / среднесуточный капитал) × (365 / дни) × 100.
     """
     as_of = as_of or datetime.now(timezone.utc).date()
     start = date.fromisoformat(period_start)
@@ -1368,27 +1383,39 @@ def compute_portfolio_weighted_average_apr(
         if income > 0:
             total_income += income
 
-    fallback = float(config.get("lp_deployed_for_yield_usd") or 0.0)
-    if fallback <= 0:
-        fallback = 10700.0
+    target = float(config.get("lp_deployed_for_yield_usd") or 0.0)
+    if target <= 0:
+        target = 10700.0
 
-    daily_sums: list[float] = []
+    daily_caps: list[float] = []
+    peak_concurrent = 0.0
+    peak_seen = 0.0
+    last_milestone_day = date.fromisoformat(LP_CAPITAL_MILESTONES[-1][0])
     d_cur = start
     while d_cur <= as_of:
-        day_sum = 0.0
+        concurrent = 0.0
         for p in positions:
             if not position_open_on_date(p, d_cur, start, as_of):
                 continue
             cap = position_invested_usd(p)
             if cap > 0:
-                day_sum += cap
-        daily_sums.append(day_sum)
+                concurrent += cap
+        if concurrent > peak_concurrent:
+            peak_concurrent = concurrent
+        capital = max(_milestone_capital_on_day(d_cur), peak_concurrent)
+        if d_cur >= last_milestone_day:
+            capital = max(capital, target)
+        if capital > peak_seen:
+            peak_seen = capital
+        capital = max(capital, peak_seen)
+        if capital > 0:
+            daily_caps.append(capital)
         d_cur += timedelta(days=1)
 
-    avg_deployed = sum(daily_sums) / float(len(daily_sums)) if daily_sums else 0.0
+    avg_deployed = sum(daily_caps) / float(len(daily_caps)) if daily_caps else target
     if avg_deployed <= 0:
-        avg_deployed = fallback
-    max_deployed = max(daily_sums) if daily_sums else fallback
+        avg_deployed = target
+    max_deployed = max(daily_caps) if daily_caps else target
 
     avg_apr = (total_income / avg_deployed) * (365.0 / float(period_days)) * 100.0
     return {

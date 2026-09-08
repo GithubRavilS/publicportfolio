@@ -678,10 +678,11 @@
       }
     }
 
+    const LP_DEPLOYED_FOR_YIELD_USD = 10700;
     function applyLiveDefiYieldFromLp(lpList) {
       if (!window.PortfolioUI?.computeDefiYieldFromLp || !Array.isArray(lpList) || !lpList.length) return;
       const stats = window.PortfolioUI.computeDefiYieldFromLp(lpList, {
-        initialCapitalUsd: initial,
+        lpDeployedUsd: LP_DEPLOYED_FOR_YIELD_USD,
         periodStart: "2026-01-01",
       });
       if (!(stats.portfolioEarnedIncomeUsd > 0)) return;
@@ -755,7 +756,7 @@
         current: "Текущий капитал",
         totalReturn: "Доходность с 01.01.2026",
         avgApr: "Доходность DeFi",
-        avgAprSub: "комиссии + инсентивы / старт",
+        avgAprSub: "комиссии + инсентивы / LP",
         equity: "Динамика портфеля",
         dailyApr: "Ежедневная доходность (годовых, %)",
         updated: "Обновление",
@@ -792,7 +793,7 @@
         current: "Current capital",
         totalReturn: "Return since 2026-01-01",
         avgApr: "DeFi yield",
-        avgAprSub: "fees + incentives / start",
+        avgAprSub: "fees + incentives / LP",
         equity: "Portfolio equity",
         dailyApr: "Daily yield (APR, %)",
         updated: "Updated",

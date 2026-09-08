@@ -1354,8 +1354,8 @@ def compute_portfolio_weighted_average_apr(
     """
     Доходность DeFi с 01.01:
     - доход = Σ (feesUsd + incentivesUsd) по всем LP кошелька (открытым и закрытым);
-    - делитель = стартовый капитал портфеля;
-    - APR% = (доход / стартовый капитал) × (365 / дни периода) × 100.
+    - делитель = фиксированный капитал, заведённый в пулы (по умолчанию $10_700);
+    - APR% = (доход / LP-капитал) × (365 / дни периода) × 100.
     """
     as_of = as_of or datetime.now(timezone.utc).date()
     start = date.fromisoformat(period_start)
@@ -1367,17 +1367,15 @@ def compute_portfolio_weighted_average_apr(
         if income > 0:
             total_income += income
 
-    initial = float(config.get("initial_capital_usd") or 0.0)
-    if initial <= 0:
-        initial = float(EQUITY_CHART_START_USD) + float(EQUITY_CAPITAL_INJECT_USD or 0)
-    if initial <= 0:
-        initial = 15300.0
+    deployed = float(config.get("lp_deployed_for_yield_usd") or 0.0)
+    if deployed <= 0:
+        deployed = 10700.0
 
-    avg_apr = (total_income / initial) * (365.0 / float(period_days)) * 100.0
+    avg_apr = (total_income / deployed) * (365.0 / float(period_days)) * 100.0
     return {
         "portfolioEarnedIncomeUsd": round(total_income, 2),
-        "portfolioAverageDeployedUsd": round(initial, 2),
-        "portfolioMaxDeployedUsd": round(initial, 2),
+        "portfolioAverageDeployedUsd": round(deployed, 2),
+        "portfolioMaxDeployedUsd": round(deployed, 2),
         "portfolioAverageAprPct": round(min(avg_apr, 500.0), 2),
         "portfolioPeriodDays": int(period_days),
     }

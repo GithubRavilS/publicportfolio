@@ -835,6 +835,22 @@
       link,
       positionId: posId,
       valueUsd: Math.round(liveValueUsdFromSheetRow(headers, row) * 100) / 100,
+      investedUsd: Math.round(
+        parseMoneyCell(
+          row[
+            col(
+              "Инвестировано ВСЕГО (изначально)",
+              "invested",
+              "Invested",
+              "K",
+              11
+            )
+          ] ?? 0
+        ) * 100
+      ) / 100,
+      stablesEarnedUsd: Math.round(
+        parseMoneyCell(row[col("Заработано стейблов", "stables_earned", 25)] ?? 0) * 100
+      ) / 100,
     };
     const iLower = col(
       "Min price",
@@ -910,8 +926,23 @@
       if (!rowMatchesWallet(headers, row, wallet)) continue;
       const item = buildLpPositionFromSheetRow(headers, row);
       if (!item) continue;
-      const key = `${item.chain}|${item.platform}|${item.rangeMin}|${item.rangeMax}|${item.positionId || r}`;
-      byKey.set(key, item);
+      // Не схлопывать разные lifecycle одного NFT_ID (микро-строка 19.05
+      // раньше затирала основной доход той же позиции).
+      const key = [
+        item.positionId || `row${r}`,
+        item.openedAt || "",
+        item.closedAt || "",
+        item.chain || "",
+        item.platform || "",
+      ].join("|");
+      const prev = byKey.get(key);
+      if (!prev) {
+        byKey.set(key, item);
+        continue;
+      }
+      const prevInc = Number(prev.feesUsd || 0) + Number(prev.incentivesUsd || 0);
+      const nextInc = Number(item.feesUsd || 0) + Number(item.incentivesUsd || 0);
+      if (nextInc >= prevInc) byKey.set(key, item);
     }
     const list = [...byKey.values()];
     const spotPrices = await fetchLiveSpotPrices(opts?.fallbackPrices);
@@ -990,18 +1021,25 @@
   }
 
   /**
-   * Доходность DeFi: Σ(fees+incentives) по всем LP кошелька / стартовый капитал,
+   * Доходность DeFi: Σ(fees+incentives) по всем LP кошелька / фиксированный капитал в LP,
    * годовых: × (365 / дней с 01.01).
+   * Делитель — сколько изначально завели в пулы (не весь стартовый капитал портфеля).
    */
   function computeDefiYieldFromLp(positions, opts) {
     const list = positions || [];
-    const initial = Math.max(Number(opts?.initialCapitalUsd || 0), 1);
+    const deployed = Math.max(
+      Number(opts?.lpDeployedUsd ?? opts?.initialCapitalUsd ?? 10700),
+      1
+    );
     const startDay = String(opts?.periodStart || "2026-01-01").slice(0, 10);
     const asOf = String(opts?.asOfDay || new Date().toISOString().slice(0, 10)).slice(0, 10);
     let earned = 0;
+    let stables = 0;
     for (const p of list) {
       const income = Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
       if (income > 0) earned += income;
+      const st = Number(p.stablesEarnedUsd || 0);
+      if (st > 0) stables += st;
     }
     let periodDays = 1;
     try {
@@ -1013,10 +1051,12 @@
     } catch (_) {
       periodDays = 1;
     }
-    const aprPct = Math.min((earned / initial) * (365 / periodDays) * 100, 500);
+    const aprPct = Math.min((earned / deployed) * (365 / periodDays) * 100, 500);
     return {
       portfolioEarnedIncomeUsd: Math.round(earned * 100) / 100,
-      portfolioAverageDeployedUsd: Math.round(initial * 100) / 100,
+      portfolioStablesEarnedUsd: Math.round(stables * 100) / 100,
+      portfolioEthSideEarnedUsd: Math.round(Math.max(earned - stables, 0) * 100) / 100,
+      portfolioAverageDeployedUsd: Math.round(deployed * 100) / 100,
       portfolioAverageAprPct: Math.round(aprPct * 100) / 100,
       portfolioPeriodDays: periodDays,
     };

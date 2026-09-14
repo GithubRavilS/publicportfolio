@@ -319,21 +319,26 @@
     return Math.max(1, days);
   }
 
-  /** APR с учётом комиссий + инсентивов и дней в позиции (если Fee APY в таблице пустой). */
+  /** APR на карточке: из реальных fees+incentives / value / дни — не из кривого Fee APY листа. */
   function computeLpDisplayApr(p) {
-    const fromSheet = Number(p.displayApr || p.apr || 0);
-    if (fromSheet > 0) return Math.min(fromSheet, 500);
     const income = Number(p.feesUsd || 0) + Number(p.incentivesUsd || 0);
-    const value = Number(p.valueUsd || 0);
-    if (value <= 0 || income <= 0) return 0;
-    const days = daysHeldSinceOpen(p.openedAt);
-    return Math.min((income / value) * (365 / days) * 100, 500);
+    const value = Math.max(Number(p.valueUsd || 0), Number(p.investedUsd || 0));
+    if (value > 0 && income > 0) {
+      const days = daysHeldSinceOpen(p.openedAt);
+      // Молодые пулы (<30д): не раздуваем годовую экстраполяцию короткого окна
+      // (иначе 6 дней комиссий → 100%+ и пляска каждый день).
+      const annDays = Math.max(days, 30);
+      return Math.min((income / value) * (365 / annDays) * 100, 500);
+    }
+    const fromSheet = Number(p.sheetFeeApy || p.displayApr || p.apr || 0);
+    if (fromSheet > 0) return Math.min(fromSheet, 500);
+    return 0;
   }
 
   function renderLpCard(p, ctx) {
     applyLpRangeToPosition(p);
     const dex = displayPlatform(p.platform);
-    const aprVal = Number(p.displayApr || p.apr || 0);
+    const aprVal = computeLpDisplayApr(p);
     const aprShown = aprVal > 0 ? `${aprVal.toFixed(2)}%` : "—";
     const period = `${p.openedAt || "-"} → ${p.closedAt || (ctx.lang === "ru" ? "активна" : "active")}`;
     const statusRu = p.isActive ? "Активна" : "Закрыта";
@@ -619,9 +624,12 @@
   }
 
   function parseAprPercentCell(raw) {
+    // Google Sheets UNFORMATTED: доля (0.25 = 25%) или уже проценты (25 / 4.7).
+    // Важно: значение 1.72 в ячейке с форматом % = 172% (не «1.72%»).
+    // Смешанные форматы в колонке Fee APY дают мусор — для UI предпочитаем computeLpDisplayApr.
     if (typeof raw === "number" && Number.isFinite(raw)) {
-      if (raw > 0 && raw < 2) return Math.min(raw * 100, 500);
-      if (raw >= 2) return Math.min(raw, 500);
+      if (raw > 0 && raw < 1) return Math.min(raw * 100, 500);
+      if (raw >= 1) return Math.min(raw, 500);
       return null;
     }
     const s = String(raw || "").trim();
@@ -636,7 +644,7 @@
     }
     const n = parseFloat(t);
     if (!Number.isFinite(n) || n <= 0) return null;
-    if (hasPct || n >= 3) return Math.min(n, 500);
+    if (hasPct || n >= 1) return Math.min(n, 500);
     return Math.min(n * 100, 500);
   }
 
@@ -890,7 +898,16 @@
       }
     }
     applyLpRangeToPosition(item);
-    const aprVal = aprSheet > 0 ? Math.round(aprSheet * 100) / 100 : 0;
+    const sheetApy = aprSheet > 0 ? Math.round(aprSheet * 100) / 100 : 0;
+    item.sheetFeeApy = sheetApy;
+    // Карточка считает APR из fees/value/дни — Fee APY листа только fallback.
+    const computed = computeLpDisplayApr({
+      ...item,
+      displayApr: 0,
+      apr: 0,
+      sheetFeeApy: 0,
+    });
+    const aprVal = computed > 0 ? Math.round(computed * 100) / 100 : sheetApy;
     item.apr = aprVal;
     item.displayApr = aprVal;
     return item;

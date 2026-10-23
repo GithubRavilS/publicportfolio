@@ -20,8 +20,8 @@ const index = rows.findIndex((row) => row.date === date);
 if (index >= 0) rows[index] = next;
 else rows.push(next);
 rows = rows
-  .filter((row) => /^\\d{4}-\\d{2}-\\d{2}$/.test(row.date) && Number.isFinite(Number(row.equityUsd)))
+  .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(row.date) && Number.isFinite(Number(row.equityUsd)))
   .sort((a, b) => a.date.localeCompare(b.date))
   .slice(-1000);
-await writeFile(path, `${JSON.stringify(rows, null, 2)}\\n`);
+await writeFile(path, `${JSON.stringify(rows, null, 2)}\n`);
 console.log(`Recorded ${date}: $${equityUsd.toFixed(2)} (equity only)`);

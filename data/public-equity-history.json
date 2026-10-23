@@ -2,6 +2,14 @@
   {
     "date": "2026-10-23",
     "equityUsd": 15976.79,
+    "walletIdleUsd": 123.99,
+    "collateralUsd": 12349.82,
+    "debtUsd": 7352.84,
+    "liquidityUsd": 9558.64,
+    "yieldPrincipalUsd": 497.18,
+    "rewardsAccruedUsd": 49.59,
+    "borrowAprPct": 7.04,
+    "healthFactor": 1.4748,
     "asOf": "2026-10-23T16:45:14.417253+00:00"
   }
 ]

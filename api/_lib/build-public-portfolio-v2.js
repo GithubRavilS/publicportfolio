@@ -291,12 +291,15 @@ function mapLending(pack) {
       assetParts.length > 0
         ? assetParts.join(" / ")
         : fromSupplied.join(" + ") || "Lending";
+    // Pass through only when Navigator cache stored a finite value — never invent.
+    const rawCf = p.closeFactor ?? p.close_factor;
     const closeFactor =
-      p.closeFactor != null
-        ? num(p.closeFactor, null)
-        : p.close_factor != null
-          ? num(p.close_factor, null)
-          : null;
+      rawCf == null || rawCf === ""
+        ? null
+        : (() => {
+            const n = Number(rawCf);
+            return Number.isFinite(n) ? n : null;
+          })();
     out.push({
       id: stableId("lending", pack.address, protocol, p.chain, asset, coll, debt),
       type: rewardsOnly ? "rewards" : "lending",
@@ -469,22 +472,28 @@ function mapWallets(packs, walletIdleUsd) {
 }
 
 function buildHistory(snap) {
-  const rows = [];
-  // Prefer full factual daily series from Navigator cache; fall back to 7d sparkline.
+  // Only factual cache days from Navigator. Prefer historyDaily; history7d is the
+  // same cabinet series (last 7), not a live rebuild. Never densify / invent days.
   const source = Array.isArray(snap.historyDaily) && snap.historyDaily.length
     ? snap.historyDaily
-    : snap.history7d || [];
+    : Array.isArray(snap.history7d)
+      ? snap.history7d
+      : [];
+  const byDay = new Map();
   for (const h of source) {
     const date = dayKey(h?.date || h?.day);
     if (!date) continue;
+    const raw = h.equityUsd ?? h.totalUsd;
+    if (raw == null || raw === "") continue;
+    const equity = Number(raw);
+    if (!Number.isFinite(equity)) continue;
     // History from Navigator is cabinet equity (no public +$800).
     // Public chart expects headline equity → add adjustment once here.
-    rows.push({
-      date,
-      equityUsd: round2(num(h.equityUsd ?? h.totalUsd) + INTERNAL_EQUITY_ADJUSTMENT_USD),
-    });
+    byDay.set(date, round2(equity + INTERNAL_EQUITY_ADJUSTMENT_USD));
   }
-  return rows.sort((a, b) => a.date.localeCompare(b.date));
+  return [...byDay.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, equityUsd]) => ({ date, equityUsd }));
 }
 
 function collectCompleteness(snap, ctx) {

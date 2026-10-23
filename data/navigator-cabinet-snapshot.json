@@ -1,7 +1,7 @@
 {
   "clientId": 33,
   "clientName": "Равиль",
-  "generatedAt": "2026-10-23T21:24:07Z",
+  "generatedAt": "2026-10-23T21:31:25Z",
   "history7d": [
     {
       "date": "2026-09-15",
@@ -94,7 +94,7 @@
       }
     ]
   },
-  "snapshotId": "862379f3cf84377d",
+  "snapshotId": "597b6311bd3265c1",
   "source": "DeFi Navigator cockpit cache",
   "totals": {
     "borrowUsd": 7352.84,
@@ -106,7 +106,7 @@
     "walletUsd": 123.99,
     "yieldUsd": 497.18
   },
-  "updatedAt": "2026-10-23T21:22:13.271618+00:00",
+  "updatedAt": "2026-10-23T21:24:08.937509+00:00",
   "walletPacks": [
     {
       "address": "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355",
@@ -431,7 +431,7 @@
       "meta": {
         "fresh": true,
         "hasData": true,
-        "hourlyUpdatedAt": "2026-10-23T21:14:15.632652+00:00",
+        "hourlyUpdatedAt": "2026-10-23T21:24:08.937509+00:00",
         "lookedUpAt": "2026-10-23T13:25:53.570421+00:00"
       },
       "source": "cache",
@@ -447,7 +447,7 @@
         "walletUsd": 117.23,
         "yieldUsd": 497.18
       },
-      "updatedAt": "2026-10-23T21:14:15.632652+00:00",
+      "updatedAt": "2026-10-23T21:24:08.937509+00:00",
       "yieldPositions": [
         {
           "apr": null,

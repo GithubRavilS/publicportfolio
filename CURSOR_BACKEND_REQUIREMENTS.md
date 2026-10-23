@@ -2,14 +2,14 @@
 
 ## Goal
 
-Replace the site's mixed, partially stale browser aggregation with one read-only portfolio snapshot from the DeFi Navigator account/cache. The user reports approximately **$15,189** in the DeFi Navigator account. The current endpoint snapshot reports **$11,291.69**, so mark it incomplete until the missing lending export is included and the totals reconcile. The UI prototype is `public-portfolio-v2.html`; it requests `GET /api/public-portfolio/v2` (or a configurable `window.PUBLIC_PORTFOLIO_API`). No private keys, signing functions, account session tokens, or credentials may be exposed to this public page.
+Replace the site's mixed, partially stale browser aggregation with one read-only portfolio snapshot from the DeFi Navigator account/cache. The user reports approximately **$15,189** in the DeFi Navigator account. The latest endpoint snapshot reports **$15,431.88**, a **+$242.88** difference; the endpoint correctly marks it stale and incomplete because its own reconciliation threshold is ±$50. Preserve the warning until the source snapshot is fresh and reconciled. The UI prototype is `public-portfolio-v2.html`; it requests `GET /api/public-portfolio/v2` (or a configurable `window.PUBLIC_PORTFOLIO_API`). No private keys, signing functions, account session tokens, or credentials may be exposed to this public page.
 
 ## Current reconciliation issue found in PublicPortfolio
 
 - The current page imports `data/portfolio-data.js`, queries LP values separately through `/api/lp-sheet`, and fetches idle balances separately from `/api/wallet-idle`; it can also reuse `pp_wallet_idle_v1` from browser `localStorage`. Those sources can have different update times and wallet coverage.
 - Current equity calculation is effectively **collateral − debt + active LP value + idle wallet balance + internal equity adjustment**. Rewards are shown separately. The backend must define disjoint components so the same LP/yield/collateral principal is not counted twice.
 - Preserve the existing **+$800 internal equity adjustment** in the authoritative net-worth total. Keep its value in one backend configuration source; apply it only when calculating `netWorthUsd`. Do not return it as a separate API field or include it in wallet balances, positions, categories, rewards, transaction history, or any other breakdown.
-- The user reports DeFi Navigator at **$15,189**. The first backend snapshot totals **$11,291.69**, a difference of **$3,897.31**. Treat these as reconciliation inputs, not hard-coded production values. The backend investigation identified missing Jupiter/Solana lending entries from the cache export. Do not label the snapshot complete until the export includes all intended lending sources and a component-by-component comparison by wallet, chain, position type and timestamp reconciles the total. The displayed total must come from the canonical backend total, not a frontend re-sum of independently stale APIs.
+- Latest observed endpoint response: `netWorthUsd: 15431.88`, `stale: true`, `complete: false`, with reason “difference +$242.88 from DeFi Navigator (~$15,189), tolerance ±$50.” It contains 8 positions: 2 lending, 4 liquidity, and 2 wallet entries across 4 chains. The displayed total must come from the canonical backend total, not a frontend re-sum of independently stale APIs. Treat these figures as diagnostics, not hard-coded production values; refresh source data and reconcile before setting `complete: true`.
 
 ## Endpoint contract
 
@@ -26,7 +26,7 @@ Return one coherent, already-computed snapshot:
     "chains": 0,
     "stale": false,
     "complete": false,
-    "incompleteReasons": ["Lending export is missing one or more configured sources"],
+    "incompleteReasons": ["Snapshot is stale or differs from the DeFi Navigator account beyond the allowed tolerance"],
     "snapshotId": "opaque non-secret id"
   },
   "summary": {
@@ -59,7 +59,7 @@ Each transaction should include stable `id`, ISO date, chain, protocol, action, 
 2. Include both configured wallets and all supported chains, plus every position class visible in the DeFi Navigator account. Do not rely on a first-wallet-only parser or browser localStorage.
 3. Keep the existing `$800` internal equity adjustment in one backend configuration source and apply it only to `summary.netWorthUsd`. Do not expose it separately in the public response, position data, category totals, transaction history, or UI. Permit changing it intentionally. Never silently clamp/replace values based on a threshold.
 4. Return `meta.stale` when the source cache is old, and `meta.complete` plus `meta.incompleteReasons` when any configured wallet/source is missing or unsupported. Keep the last good snapshot available, but visibly label stale or incomplete snapshots and show their timestamp; never present old or partial balances as complete/live. Only set `complete: true` after all configured source exports are covered.
-5. Include per-position source identifiers and an audit/reconciliation report in server logs (no credentials). For the current mismatch, identify exactly which components account for the `$4,101` net displayed difference after accounting for the existing `$800` adjustment.
+5. Include per-position source identifiers and an audit/reconciliation report in server logs (no credentials). For the observed mismatch, identify the components and source timestamps that explain the **+$242.88** difference after applying the existing internal equity adjustment.
 6. Public response must contain only fields intentionally approved for the public portfolio. Never include auth cookies, access tokens, private notes, private user/account data, or any write capability.
 
 ## Frontend integration notes

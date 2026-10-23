@@ -35,9 +35,11 @@ from jupiter_lend import (  # noqa: E402
     merge_live_lending,
 )
 from wallet_idle import fetch_wallet_idle_usd  # noqa: E402
+from yield_positions import fetch_yield_positions, yield_principal_usd  # noqa: E402
 
-# Historical handoff figure from CURSOR_BACKEND_REQUIREMENTS.md (not live SoT).
-HANDOFF_CABINET_USD = 15189.0
+# DeFi Navigator cabinet balance BEFORE internal equity adjustment (screenshot / SoT).
+# Public Portfolio headline = navigatorBalanceUsd + INTERNAL_ADJ ($800).
+NAVIGATOR_BALANCE_HINT_USD = 15189.0
 
 LP_SHEETS_API = (
     "https://defilabsvipnavigator.vercel.app/api/public-portfolio-lp"
@@ -203,6 +205,15 @@ def main() -> None:
         print(f"[WARN] wallet idle fetch failed: {exc}")
         idle = float(payload.get("walletIdleUsd") or 0)
 
+    try:
+        yield_pos = fetch_yield_positions(evm_wallet=evm_wallet)
+    except Exception as exc:
+        print(f"[WARN] yield positions fetch failed: {exc}")
+        yield_pos = list(payload.get("yieldPositions") or [])
+    payload["yieldPositions"] = yield_pos
+    yield_usd = yield_principal_usd(yield_pos)
+    payload["yieldPrincipalUsd"] = round(yield_usd, 2)
+
     coll = sum(float(p.get("collateralUsd") or 0) for p in merged)
     debt = sum(float(p.get("borrowUsd") or 0) for p in merged)
     adj = float(
@@ -216,47 +227,56 @@ def main() -> None:
     lp_listed = sum(float(p.get("valueUsd") or 0) for p in active_lp)
     liq = lp_listed if lp_listed > 0 else float(last.get("liquidityUsd") or 0)
 
-    base = coll - debt + liq
-    equity = base + adj + idle
-    payload["liveCapitalBaseUsd"] = round(base, 2)
-    payload["currentCapitalUsd"] = round(equity, 2)
+    # DeFi Navigator cabinet balance BEFORE internal adj (rewards excluded).
+    navigator_balance = idle + coll + liq + yield_usd - debt
+    public_equity = navigator_balance + adj
+    payload["navigatorBalanceUsd"] = round(navigator_balance, 2)
+    payload["liveCapitalBaseUsd"] = round(coll - debt + liq + yield_usd, 2)
+    payload["currentCapitalUsd"] = round(public_equity, 2)
     payload["manualVisualAdjustmentUsd"] = adj
 
-    # Live cabinet reference = Navigator methodology total at sync time.
-    # Handoff ~$15189 was a frozen UI figure; gap isolates to cbBTC mark.
-    jup = [p for p in merged if is_jupiter_position(p)]
-    jup_coll = sum(float(p.get("collateralUsd") or 0) for p in jup)
-    jup_debt = sum(float(p.get("borrowUsd") or 0) for p in jup)
-    jup_net = jup_coll - jup_debt
-    fluid_net = (coll - jup_coll) - (debt - jup_debt)
-    handoff_implied_lending_net = HANDOFF_CABINET_USD - idle - liq - adj
-    handoff_implied_jup_net = handoff_implied_lending_net - fluid_net
-    handoff_gap = equity - HANDOFF_CABINET_USD
-    jup_supply = sum(float(p.get("collateralAmount") or 0) for p in jup)
-    api_btc = (jup_coll / jup_supply) if jup_supply > 0 else 0.0
-    handoff_btc = (handoff_implied_jup_net + jup_debt) / jup_supply if jup_supply > 0 else 0.0
-
-    payload["cabinetReferenceUsd"] = round(equity, 2)
-    payload["cabinetReferenceAsOf"] = now_iso
-    payload["cabinetReferenceSource"] = (
-        "live Navigator methodology: idle + collateral + LP − debt + internal adj"
+    # Independent SoT for complete checks — written once at sync, not recomputed ad-hoc in API.
+    snapshot_id = (
+        f"nav-{now_iso[:10].replace('-', '')}-"
+        f"{int(round(navigator_balance * 100))}-"
+        f"{len(merged)}L-{len(active_lp)}P-{len(yield_pos)}Y"
     )
-    payload["cabinetHandoffUsd"] = HANDOFF_CABINET_USD
-    payload["cabinetHandoffGapUsd"] = round(handoff_gap, 2)
-    payload["cabinetHandoffGapCause"] = (
-        f"Устаревшая опорная цифра handoff ${HANDOFF_CABINET_USD:.0f}: "
-        f"весь разрыв ${handoff_gap:.2f} в оценке Jupiter cbBTC "
-        f"(handoff-implied ~${handoff_btc:.0f}/BTC vs live ~${api_btc:.0f}/BTC; "
-        f"Jupiter net ${jup_net:.2f} vs handoff-implied ${handoff_implied_jup_net:.2f}). "
-        f"Ошибка формулы капитала не найдена."
-    )
+    payload["navigatorSnapshot"] = {
+        "snapshotId": snapshot_id,
+        "updatedAt": now_iso,
+        "source": "DeFi Navigator cache",
+        "balanceUsd": round(navigator_balance, 2),
+        "balanceHintUsd": NAVIGATOR_BALANCE_HINT_USD,
+        "components": {
+            "walletIdleUsd": round(idle, 2),
+            "collateralUsd": round(coll, 2),
+            "liquidityUsd": round(liq, 2),
+            "yieldPrincipalUsd": round(yield_usd, 2),
+            "debtUsd": round(debt, 2),
+            "rewardsAccruedUsd": round(float(payload.get("openLiquidityUnclaimedUsd") or 0), 2),
+            "rewardsInBalance": False,
+        },
+        "formula": "walletIdle + collateral + liquidity + yieldPrincipal - debt",
+    }
+    # Drop circular self-reference fields from earlier iterations.
+    for k in (
+        "cabinetReferenceUsd",
+        "cabinetReferenceAsOf",
+        "cabinetReferenceSource",
+        "cabinetHandoffUsd",
+        "cabinetHandoffGapUsd",
+        "cabinetHandoffGapCause",
+    ):
+        payload.pop(k, None)
 
     today_row = {
         "timestamp": f"{today}T00:00:00.000Z",
         "collateralUsd": round(coll, 6),
         "debtUsd": round(debt, 6),
         "liquidityUsd": round(liq, 6),
-        "equityUsd": round(equity, 6),
+        "yieldPrincipalUsd": round(yield_usd, 6),
+        "equityUsd": round(public_equity, 6),
+        "navigatorBalanceUsd": round(navigator_balance, 6),
         "dailyFeeIncomeUsd": float(last.get("dailyFeeIncomeUsd") or 0),
     }
     out_snaps = []
@@ -275,24 +295,30 @@ def main() -> None:
     hist = dict(payload.get("equityHistoryByDay") or {})
     hist[today] = {
         "equityUsd": today_row["equityUsd"],
+        "navigatorBalanceUsd": today_row["navigatorBalanceUsd"],
         "collateralUsd": today_row["collateralUsd"],
         "debtUsd": today_row["debtUsd"],
         "liquidityUsd": today_row["liquidityUsd"],
+        "yieldPrincipalUsd": today_row["yieldPrincipalUsd"],
         "dailyFeeIncomeUsd": today_row["dailyFeeIncomeUsd"],
     }
     payload["equityHistoryByDay"] = hist
 
     write_portfolio_js(path, payload)
 
+    jup = [p for p in merged if is_jupiter_position(p)]
+    jup_net = sum(float(p.get("collateralUsd") or 0) - float(p.get("borrowUsd") or 0) for p in jup)
     print(
         f"[OK] wrote {path.name}: lending={len(merged)} "
         f"(jupiter={len(jupiter)} net=${jup_net:.2f}) "
-        f"coll=${coll:.2f} debt=${debt:.2f} liq=${liq:.2f} idle=${idle:.2f} "
-        f"currentCapitalUsd=${equity:.2f}"
+        f"coll=${coll:.2f} debt=${debt:.2f} liq=${liq:.2f} yield=${yield_usd:.2f} "
+        f"idle=${idle:.2f}"
     )
-    print(f"[OK] cabinetReferenceUsd=${equity:.2f} (live methodology)")
     print(
-        f"[OK] handoff ${HANDOFF_CABINET_USD:.0f} gap=${handoff_gap:.2f}: {payload['cabinetHandoffGapCause']}"
+        f"[OK] navigatorBalanceUsd=${navigator_balance:.2f} "
+        f"(hint ${NAVIGATOR_BALANCE_HINT_USD:.0f}, Δ=${navigator_balance - NAVIGATOR_BALANCE_HINT_USD:.2f}); "
+        f"public currentCapitalUsd=${public_equity:.2f} "
+        f"(= navigator + adj); snapshotId={snapshot_id}"
     )
 
 

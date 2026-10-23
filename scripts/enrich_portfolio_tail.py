@@ -39,6 +39,7 @@ from lp_income_snapshots import (  # noqa: E402
 )
 from debank_lending_live import fetch_live_evm_lending  # noqa: E402
 from wallet_idle import fetch_wallet_idle_usd  # noqa: E402
+from yield_positions import fetch_yield_positions, yield_principal_usd  # noqa: E402
 
 DATA_JS = ROOT / "data" / "portfolio-data.js"
 YIELD_REF_PATH = ROOT / "data/chart-yield-reference.json"
@@ -204,19 +205,27 @@ def compute_today_snapshot(
         float(p.get("feesUsd") or 0) + float(p.get("incentivesUsd") or 0) for p in lp_positions
     )
     idle = max(0.0, float(wallet_idle_usd or 0.0))
+    yield_usd = float(payload.get("yieldPrincipalUsd") or 0.0)
+    if yield_usd <= 0 and payload.get("yieldPositions"):
+        yield_usd = yield_principal_usd(payload.get("yieldPositions") or [])
     adj = float(payload.get("manualVisualAdjustmentUsd") or 800.0)
-    # Как в DeFi Navigator: coll − debt + LP + idle (+ adj). Rewards не в сумме капитала.
-    equity = coll - debt + liq + adj + idle
+    # DeFi Navigator cabinet (до adj): coll − debt + LP + yield + idle. Rewards не в сумме.
+    navigator_balance = coll - debt + liq + yield_usd + idle
+    equity = navigator_balance + adj
     fee_today = float(income_by_day.get(today) or 0)
     payload["openLiquidityUnclaimedUsd"] = round(unclaimed, 2)
     payload["walletIdleUsd"] = round(idle, 2)
-    payload["liveCapitalBaseUsd"] = round(coll - debt + liq, 2)
+    payload["yieldPrincipalUsd"] = round(yield_usd, 2)
+    payload["navigatorBalanceUsd"] = round(navigator_balance, 2)
+    payload["liveCapitalBaseUsd"] = round(coll - debt + liq + yield_usd, 2)
     payload["currentCapitalUsd"] = round(equity, 2)
     return {
         "timestamp": f"{today}T00:00:00.000Z",
         "collateralUsd": round(coll, 6),
         "debtUsd": round(debt, 6),
         "liquidityUsd": round(liq, 6),
+        "yieldPrincipalUsd": round(yield_usd, 6),
+        "navigatorBalanceUsd": round(navigator_balance, 6),
         "equityUsd": round(equity, 6),
         "dailyFeeIncomeUsd": round(fee_today, 6),
     }
@@ -298,6 +307,13 @@ def enrich_tail(payload: dict, today: str) -> dict:
             f"[OK] walletIdleUsd={idle_usd:.2f} "
             f"(evm={idle_info.get('evmUsd', 0):.2f} sol={idle_info.get('solanaUsd', 0):.2f})"
         )
+
+    try:
+        yield_pos = fetch_yield_positions(evm_wallet=evm_w)
+        payload["yieldPositions"] = yield_pos
+        payload["yieldPrincipalUsd"] = round(yield_principal_usd(yield_pos), 2)
+    except Exception as exc:
+        print(f"[WARN] yield positions fetch failed: {exc}")
 
     today_row = compute_today_snapshot(
         payload, lending, lp_positions, today, income_by_day, wallet_idle_usd=idle_usd

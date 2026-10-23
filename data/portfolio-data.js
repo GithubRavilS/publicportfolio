@@ -1,5 +1,5 @@
 window.PORTFOLIO_DATA = {
-  "exportedAt": "2026-10-23T15:03:12Z",
+  "exportedAt": "2026-10-23T16:26:57Z",
   "googleSheetId": "1yq5nbZ-fws8o9C0PCZWjlZjxUqZs60E4hfPiI7L0GD8",
   "publicPortfolioSheetName": "Public portfolio",
   "portfolioWallet": "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355",
@@ -9,9 +9,9 @@ window.PORTFOLIO_DATA = {
   "initialCapitalUsd": 15300.0,
   "chartStartEquityUsd": 15100.0,
   "manualVisualAdjustmentUsd": 800.0,
-  "liveCapitalBaseUsd": 14562.36,
+  "liveCapitalBaseUsd": 14998.07,
   "openLiquidityUnclaimedUsd": 306.0,
-  "currentCapitalUsd": 15486.13,
+  "currentCapitalUsd": 15921.83,
   "portfolioEarnedIncomeUsd": 0,
   "portfolioAverageDeployedUsd": 0,
   "portfolioAverageAprPct": 0,
@@ -2383,10 +2383,12 @@ window.PORTFOLIO_DATA = {
     },
     {
       "timestamp": "2026-10-23T00:00:00.000Z",
-      "collateralUsd": 12357.718112,
-      "debtUsd": 7353.492667,
+      "collateralUsd": 12338.053157,
+      "debtUsd": 7353.642365,
       "liquidityUsd": 9558.13,
-      "equityUsd": 15486.125445,
+      "yieldPrincipalUsd": 455.528101,
+      "equityUsd": 15921.828893,
+      "navigatorBalanceUsd": 15121.828893,
       "dailyFeeIncomeUsd": 6.652109
     }
   ],
@@ -5053,10 +5055,12 @@ window.PORTFOLIO_DATA = {
       "dailyFeeIncomeUsd": 2.548888
     },
     "2026-10-23": {
-      "equityUsd": 15486.125445,
-      "collateralUsd": 12357.718112,
-      "debtUsd": 7353.492667,
+      "equityUsd": 15921.828893,
+      "navigatorBalanceUsd": 15121.828893,
+      "collateralUsd": 12338.053157,
+      "debtUsd": 7353.642365,
       "liquidityUsd": 9558.13,
+      "yieldPrincipalUsd": 455.528101,
       "dailyFeeIncomeUsd": 6.652109
     }
   },
@@ -7364,58 +7368,58 @@ window.PORTFOLIO_DATA = {
       "chain": "solana",
       "collateralAsset": "cbBTC",
       "collateralAmount": 0.13147161,
-      "collateralUsd": 10733.208112,
+      "collateralUsd": 10713.553157,
       "borrowAsset": "USDC",
-      "borrowAmount": 6551.774436,
-      "borrowUsd": 6548.922667,
+      "borrowAmount": 6551.864841,
+      "borrowUsd": 6549.052365,
       "supplied": [
         {
           "asset": "cbBTC",
           "amount": 0.13147161,
-          "usd": 10733.208112442784
+          "usd": 10713.553157233262
         }
       ],
       "borrowed": [
         {
           "asset": "USDC",
-          "amount": 6551.774436,
-          "usd": 6548.922666748994
+          "amount": 6551.864841,
+          "usd": 6549.05236528753
         }
       ],
-      "netUsd": 4184.285446,
-      "timestamp": "2026-10-23T15:03:13Z",
-      "healthFactor": 1.475,
-      "marketPrice": 81638.979795,
-      "liquidationPrice": 55347.163854,
+      "netUsd": 4164.500792,
+      "timestamp": "2026-10-23T16:26:57Z",
+      "healthFactor": 1.4723,
+      "marketPrice": 81489.480179,
+      "liquidationPrice": 55348.25998,
       "link": "https://jup.ag/lend/borrow/11",
       "dataSource": "jupiter-lend-borrow-api",
       "positionId": "765",
-      "borrowAprPct": 8.67
+      "borrowAprPct": 8.61
     },
     {
       "protocol": "Fluid",
       "chain": "arb",
       "collateralAsset": "ETH",
       "collateralAmount": 0.0,
-      "collateralUsd": 1624.51,
+      "collateralUsd": 1624.5,
       "borrowAsset": "USDC",
-      "borrowAmount": 804.57,
-      "borrowUsd": 804.57,
+      "borrowAmount": 804.59,
+      "borrowUsd": 804.59,
       "supplied": [
         {
           "asset": "ETH",
           "amount": 0.0,
-          "usd": 1624.51
+          "usd": 1624.5
         }
       ],
       "borrowed": [
         {
           "asset": "USDC",
-          "amount": 804.57,
-          "usd": 804.57
+          "amount": 804.59,
+          "usd": 804.59
         }
       ],
-      "netUsd": 819.94,
+      "netUsd": 819.91,
       "timestamp": "",
       "healthFactor": 1.86,
       "marketPrice": 0.0,
@@ -7427,7 +7431,7 @@ window.PORTFOLIO_DATA = {
   "solanaWallets": [
     "9Q4mAN4QTxC39CRn3SmFqEaxhEJjNd7UTYoeqUZ1pf5o"
   ],
-  "jupiterLendSyncedAt": "2026-10-23T15:03:12Z",
+  "jupiterLendSyncedAt": "2026-10-23T16:26:57Z",
   "transactions": [],
   "strategyOne": {
     "snapshots": [
@@ -7680,11 +7684,42 @@ window.PORTFOLIO_DATA = {
     "meanDisplayApr": 6.3826
   },
   "strategyOneInitialUsd": 30.0,
-  "walletIdleUsd": 123.77,
-  "cabinetReferenceUsd": 15486.13,
-  "cabinetReferenceAsOf": "2026-10-23T15:03:12Z",
-  "cabinetReferenceSource": "live Navigator methodology: idle + collateral + LP − debt + internal adj",
-  "cabinetHandoffUsd": 15189.0,
-  "cabinetHandoffGapUsd": 297.13,
-  "cabinetHandoffGapCause": "Устаревшая опорная цифра handoff $15189: весь разрыв $297.13 в оценке Jupiter cbBTC (handoff-implied ~$79379/BTC vs live ~$81639/BTC; Jupiter net $4184.29 vs handoff-implied $3887.16). Ошибка формулы капитала не найдена."
+  "walletIdleUsd": 123.76,
+  "yieldPositions": [
+    {
+      "type": "yield",
+      "protocol": "Pendle",
+      "platform": "Pendle",
+      "chain": "1",
+      "marketId": "1-0x8ce3a13852d13e0e991c677a8c6137584e2b7635",
+      "pair": "STRCx",
+      "asset": "STRCx",
+      "ptUsd": 455.528101,
+      "ytUsd": 0.0,
+      "lpUsd": 0.0,
+      "valueUsd": 455.528101,
+      "isActive": true,
+      "link": "https://app.pendle.finance/trade/markets",
+      "dataSource": "pendle-dashboard-api"
+    }
+  ],
+  "yieldPrincipalUsd": 455.53,
+  "navigatorBalanceUsd": 15121.83,
+  "navigatorSnapshot": {
+    "snapshotId": "nav-20261023-1512183-2L-4P-1Y",
+    "updatedAt": "2026-10-23T16:26:57Z",
+    "source": "DeFi Navigator cache",
+    "balanceUsd": 15121.83,
+    "balanceHintUsd": 15189.0,
+    "components": {
+      "walletIdleUsd": 123.76,
+      "collateralUsd": 12338.05,
+      "liquidityUsd": 9558.13,
+      "yieldPrincipalUsd": 455.53,
+      "debtUsd": 7353.64,
+      "rewardsAccruedUsd": 306.0,
+      "rewardsInBalance": false
+    },
+    "formula": "walletIdle + collateral + liquidity + yieldPrincipal - debt"
+  }
 };

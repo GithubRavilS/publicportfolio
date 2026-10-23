@@ -23,13 +23,17 @@ export const INTERNAL_EQUITY_ADJUSTMENT_USD = Number(
 const STALE_AFTER_MS = Number(process.env.PUBLIC_PORTFOLIO_STALE_MS ?? 36 * 60 * 60 * 1000);
 
 const CHAIN_LABEL = {
+  "1": "Ethereum",
   eth: "Ethereum",
   ethereum: "Ethereum",
   mainnet: "Ethereum",
+  "42161": "Arbitrum",
   arb: "Arbitrum",
   arbitrum: "Arbitrum",
+  "10": "Optimism",
   op: "Optimism",
   optimism: "Optimism",
+  "8453": "Base",
   base: "Base",
   sol: "Solana",
   solana: "Solana",
@@ -239,6 +243,47 @@ function liquidityPositions(data, primaryLabel) {
   return out;
 }
 
+function yieldPositions(data, primaryLabel) {
+  const out = [];
+  for (const p of data.yieldPositions || []) {
+    if (p.isActive === false) continue;
+    const value = round2(p.valueUsd);
+    if (value <= 0) continue;
+    const protocol = String(p.protocol || p.platform || "Yield");
+    const asset = String(p.asset || p.pair || "Yield");
+    const chainRaw = p.chain;
+    const chain =
+      String(chainRaw) === "1" || String(chainRaw) === "eth"
+        ? "Ethereum"
+        : chainLabel(chainRaw);
+    out.push({
+      id: stableId("yield", protocol, p.chain, p.marketId || asset),
+      type: "yield",
+      protocol,
+      chain,
+      walletLabel: primaryLabel,
+      asset,
+      valueUsd: value,
+      collateralUsd: 0,
+      debtUsd: 0,
+      ratePct: p.displayApr ?? p.apr ?? null,
+      rewardUsd: round2(p.rewardUsd || 0),
+      healthFactor: null,
+      includedInNetWorth: true,
+      detail: "Yield / Deposit позиция",
+      details: {
+        marketId: p.marketId || null,
+        ptUsd: p.ptUsd ?? null,
+        ytUsd: p.ytUsd ?? null,
+        lpUsd: p.lpUsd ?? null,
+        link: p.link || null,
+        dataSource: p.dataSource || null,
+      },
+    });
+  }
+  return out;
+}
+
 function walletPositions(data) {
   const idle = round2(data.walletIdleUsd);
   const evm = (data.debankWallets || []).filter(Boolean);
@@ -343,6 +388,9 @@ function collectCompleteness(data, ctx) {
   const rawLending = data.lendingPositions || [];
   const hasJupiter = rawLending.some(isJupiterLendingRow);
   const hasEvmLending = rawLending.some((p) => !isJupiterLendingRow(p));
+  const hasYield =
+    (data.yieldPositions || []).some((p) => p.isActive !== false && num(p.valueUsd) > 0) ||
+    ctx.yieldPrincipalUsd > 0;
   const jupiterSyncedAt = data.jupiterLendSyncedAt || null;
   const jupiterSyncMs = jupiterSyncedAt ? Date.parse(jupiterSyncedAt) : NaN;
   const jupiterSyncFresh =
@@ -359,12 +407,17 @@ function collectCompleteness(data, ctx) {
   }
   if (solConfigured && !hasJupiter) {
     reasons.push(
-      "Нет Jupiter/Solana lending в снимке при настроенном Solana-кошельке. Перезапустите export/sync_jupiter."
+      "Нет Jupiter/Solana lending в снимке при настроенном Solana-кошельке. Перезапустите sync."
     );
   }
   if (solConfigured && hasJupiter && !jupiterSyncFresh) {
     reasons.push(
       `Метка jupiterLendSyncedAt устарела или отсутствует (${jupiterSyncedAt || "нет"}).`
+    );
+  }
+  if (!hasYield) {
+    reasons.push(
+      "В снимке нет Yield-позиции (Pendle/Deposit). В кабинете DeFi Navigator Yield входит в баланс — перезапустите sync."
     );
   }
   if (ctx.ageMs > STALE_AFTER_MS) {
@@ -374,30 +427,35 @@ function collectCompleteness(data, ctx) {
   }
   if (ctx.lpListingGapUsd > 100) {
     reasons.push(
-      `Разобранные LP NFT ($${ctx.lpFromPositions}) меньше liquidityUsd снимка ($${ctx.liquidityUsd}) на $${ctx.lpListingGapUsd}. Residual-позицию не создаём (без дублей); сумма капитала берётся из снимка.`
+      `Разобранные LP NFT ($${ctx.lpFromPositions}) меньше liquidityUsd снимка ($${ctx.liquidityUsd}) на $${ctx.lpListingGapUsd}.`
     );
   }
-  if (!(ctx.cabinetReferenceUsd > 0)) {
+  if (!(ctx.navigatorBalanceUsd > 0)) {
     reasons.push(
-      "Нет свежей опоры кабинета (cabinetReferenceUsd). Запустите scripts/sync_jupiter_into_portfolio_data.py."
+      "В кэше нет независимого navigatorBalanceUsd из снимка DeFi Navigator. Запустите scripts/sync_jupiter_into_portfolio_data.py."
     );
   } else {
-    const gap = round2(ctx.netWorthUsd - ctx.cabinetReferenceUsd);
-    const absGap = Math.abs(gap);
-    if (absGap > ctx.navigatorToleranceUsd) {
+    // Public headline must be navigator balance + internal adj only.
+    const expectedPublic = round2(ctx.navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD);
+    const gapPublic = round2(ctx.netWorthUsd - expectedPublic);
+    if (Math.abs(gapPublic) > ctx.navigatorToleranceUsd) {
       reasons.push(
-        `Чистый капитал API ($${ctx.netWorthUsd}) расходится с опорой кабинета DeFi Navigator ($${ctx.cabinetReferenceUsd}) на ${gap >= 0 ? "+" : ""}$${gap} (допуск ±$${ctx.navigatorToleranceUsd}).`
+        `Чистый капитал Public Portfolio ($${ctx.netWorthUsd}) не равен балансу снимка Navigator ($${ctx.navigatorBalanceUsd}) + внутренняя корректировка (ожидалось $${expectedPublic}, Δ=${gapPublic >= 0 ? "+" : ""}$${gapPublic}, допуск ±$${ctx.navigatorToleranceUsd}).`
       );
     }
-  }
-  // Historical handoff ~$15189: report if still meaningfully different (does not alone block when live reference matches).
-  if (ctx.handoffUsd > 0 && ctx.cabinetReferenceUsd > 0) {
-    const handoffGap = round2(ctx.netWorthUsd - ctx.handoffUsd);
-    if (Math.abs(handoffGap) > ctx.navigatorToleranceUsd && ctx.handoffGapCause) {
-      // Informational only when live cabinet reference already matches — appended only if live ref missing/mismatched.
-      if (!(ctx.cabinetReferenceUsd > 0) || Math.abs(ctx.netWorthUsd - ctx.cabinetReferenceUsd) > ctx.navigatorToleranceUsd) {
-        reasons.push(ctx.handoffGapCause);
-      }
+    // Component integrity vs stored Navigator snapshot (not a circular API self-sum for SoT).
+    const componentSum = round2(
+      ctx.walletIdleUsd +
+        ctx.collateralUsd +
+        ctx.liquidityUsd +
+        ctx.yieldPrincipalUsd -
+        ctx.debtUsd
+    );
+    const gapComponents = round2(componentSum - ctx.navigatorBalanceUsd);
+    if (Math.abs(gapComponents) > ctx.navigatorToleranceUsd) {
+      reasons.push(
+        `Сумма категорий API ($${componentSum}) расходится с navigatorBalanceUsd снимка ($${ctx.navigatorBalanceUsd}) на ${gapComponents >= 0 ? "+" : ""}$${gapComponents}.`
+      );
     }
   }
   if (!(rawLending.length > 0) && ctx.collateralUsd <= 0 && ctx.debtUsd <= 0) {
@@ -420,11 +478,13 @@ export function buildPublicPortfolioV2(data, opts = {}) {
   const lending = lendingPositions(data, evmLabel);
   // Only real LP NFT/sheet rows — never invent a residual LP row (avoids double-count).
   const liquidity = liquidityPositions(data, primaryLabel);
+  const yields = yieldPositions(data, primaryLabel);
   const wallets = walletPositions(data);
 
   const collateralUsd = round2(lending.reduce((s, p) => s + num(p.collateralUsd), 0));
   const debtUsd = round2(lending.reduce((s, p) => s + num(p.debtUsd), 0));
   const lpFromPositions = round2(liquidity.reduce((s, p) => s + num(p.valueUsd), 0));
+  const yieldFromPositions = round2(yields.reduce((s, p) => s + num(p.valueUsd), 0));
 
   const snaps = data.snapshots || [];
   const lastSnap = snaps.length ? snaps[snaps.length - 1] : null;
@@ -434,16 +494,26 @@ export function buildPublicPortfolioV2(data, opts = {}) {
   const lpListingGapUsd = round2(Math.max(0, liquidityUsd - lpFromPositions));
 
   const walletIdleUsd = round2(data.walletIdleUsd);
-  const yieldPrincipalUsd = 0;
+  const yieldPrincipalUsd = round2(
+    data.yieldPrincipalUsd != null ? data.yieldPrincipalUsd : yieldFromPositions
+  );
   const rewardsAccruedUsd = round2(data.openLiquidityUnclaimedUsd);
 
-  const componentsBeforeAdj = round2(
-    walletIdleUsd + collateralUsd + liquidityUsd + yieldPrincipalUsd - debtUsd
+  // Independent Navigator SoT from cache (balance BEFORE internal adj; rewards excluded).
+  const navSnap = data.navigatorSnapshot || {};
+  const navigatorBalanceUsd = round2(
+    data.navigatorBalanceUsd != null
+      ? data.navigatorBalanceUsd
+      : navSnap.balanceUsd != null
+        ? navSnap.balanceUsd
+        : walletIdleUsd + collateralUsd + liquidityUsd + yieldPrincipalUsd - debtUsd
   );
-  const netWorthUsd = round2(componentsBeforeAdj + INTERNAL_EQUITY_ADJUSTMENT_USD);
+
+  // Public headline = Navigator cabinet balance + internal adj only.
+  const netWorthUsd = round2(navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD);
 
   // Include configured wallets even with $0 idle so both addresses stay visible.
-  const positions = [...lending, ...liquidity, ...wallets];
+  const positions = [...lending, ...liquidity, ...yields, ...wallets];
 
   const history = buildHistory(snaps);
   const { transactions, nextCursor, total: txTotal } = mapTransactions(data, opts);
@@ -464,15 +534,6 @@ export function buildPublicPortfolioV2(data, opts = {}) {
   const updatedMs = Date.parse(updatedAt);
   const ageMs = Number.isFinite(updatedMs) ? Date.now() - updatedMs : Infinity;
 
-  // Live cabinet SoT from sync (Navigator methodology). Env overrides when set.
-  const envCabinet = Number(process.env.PUBLIC_PORTFOLIO_NAVIGATOR_HINT_USD || "");
-  const cabinetReferenceUsd =
-    Number.isFinite(envCabinet) && envCabinet > 0
-      ? envCabinet
-      : num(data.cabinetReferenceUsd, 0);
-  const handoffUsd = num(data.cabinetHandoffUsd, 15189);
-  const handoffGapCause = String(data.cabinetHandoffGapCause || "");
-  // Strict: complete only when within ±$50 of cabinet reference.
   const navigatorToleranceUsd = Number(
     process.env.PUBLIC_PORTFOLIO_NAVIGATOR_TOLERANCE_USD || 50
   );
@@ -480,16 +541,16 @@ export function buildPublicPortfolioV2(data, opts = {}) {
   const incompleteReasons = collectCompleteness(data, {
     updatedAt,
     ageMs,
+    walletIdleUsd,
     collateralUsd,
     debtUsd,
     liquidityUsd,
+    yieldPrincipalUsd,
     lpFromPositions,
     lpListingGapUsd,
     netWorthUsd,
-    cabinetReferenceUsd,
+    navigatorBalanceUsd,
     navigatorToleranceUsd,
-    handoffUsd,
-    handoffGapCause,
   });
   const complete = incompleteReasons.length === 0;
   // stale = age only (incompleteReasons explain reconciliation separately).
@@ -504,15 +565,19 @@ export function buildPublicPortfolioV2(data, opts = {}) {
     new Set([...(data.debankWallets || []), ...(data.solanaWallets || [])].filter(Boolean))
       .size || 0;
 
-  const snapshotId = stableId(
-    "ppv2",
-    updatedAt,
-    netWorthUsd,
-    collateralUsd,
-    debtUsd,
-    liquidityUsd,
-    walletIdleUsd
-  );
+  const snapshotId =
+    String(navSnap.snapshotId || "").trim() ||
+    stableId(
+      "ppv2",
+      updatedAt,
+      navigatorBalanceUsd,
+      netWorthUsd,
+      collateralUsd,
+      debtUsd,
+      liquidityUsd,
+      yieldPrincipalUsd,
+      walletIdleUsd
+    );
 
   const jupiterRows = lending.filter((p) => String(p.protocol).toLowerCase().includes("jupiter"));
   const jupiterNet = round2(
@@ -538,6 +603,9 @@ export function buildPublicPortfolioV2(data, opts = {}) {
     stale,
     cacheAgeHours: Number.isFinite(ageMs) ? round2(ageMs / 3600000) : null,
     wallets: { evm: evmAddr ? shortAddr(evmAddr) : null, sol: solAddr ? shortAddr(solAddr) : null },
+    navigatorBalanceUsd,
+    netWorthUsd,
+    adjAppliedInNetWorthOnly: true,
     components: {
       walletIdleUsd,
       collateralUsd,
@@ -545,13 +613,11 @@ export function buildPublicPortfolioV2(data, opts = {}) {
       yieldPrincipalUsd,
       debtUsd,
       rewardsAccruedUsd,
-      componentsBeforeAdj,
-      netWorthUsd,
-      adjAppliedInNetWorthOnly: true,
     },
     positionCounts: {
       lending: lending.length,
       liquidityNft: liquidity.length,
+      yield: yields.length,
       lpListingGapUsd,
       wallet: wallets.length,
       total: positions.length,
@@ -559,25 +625,23 @@ export function buildPublicPortfolioV2(data, opts = {}) {
         jupiterLending: jupiterRows.length,
         evmLending: fluidRows.length,
         lpNft: liquidity.length,
+        yield: yields.length,
         walletRows: wallets.length,
       },
     },
     gapBridge: {
-      cabinetReferenceUsd,
-      handoffUsd,
-      apiNetWorthUsd: netWorthUsd,
-      gapVsCabinetUsd: round2(netWorthUsd - cabinetReferenceUsd),
-      gapVsHandoffUsd: round2(netWorthUsd - handoffUsd),
+      navigatorBalanceUsd,
+      publicNetWorthUsd: netWorthUsd,
       jupiterNetUsd: jupiterNet,
       evmLendingNetUsd: fluidNet,
-      handoffGapCause: handoffGapCause || null,
+      yieldPrincipalUsd,
       transactionsAvailable,
     },
   });
 
   const payload = {
     meta: {
-      updatedAt,
+      updatedAt: navSnap.updatedAt || updatedAt,
       source: "DeFi Navigator",
       walletCount,
       chains: chains.size,
@@ -585,28 +649,34 @@ export function buildPublicPortfolioV2(data, opts = {}) {
       complete,
       incompleteReasons,
       snapshotId,
+      navigatorBalanceUsd,
       formula:
-        "walletIdleUsd + collateralUsd + liquidityUsd + yieldPrincipalUsd - debtUsd + internalEquityAdjustment",
+        "navigatorBalanceUsd(= walletIdle + collateral + liquidity + yieldPrincipal - debt) + internalEquityAdjustment",
       rewardsInNetWorth: false,
       positionCounts: {
         total: positions.length,
         lending: lending.length,
         liquidity: liquidity.length,
+        yield: yields.length,
         wallet: wallets.length,
         lpListingGapUsd,
       },
       transactionsAvailable,
       transactionsNote,
-      cabinetReconciliation: {
-        referenceUsd: cabinetReferenceUsd || null,
-        referenceAsOf: data.cabinetReferenceAsOf || null,
-        referenceSource: data.cabinetReferenceSource || null,
-        handoffUsd,
-        gapVsHandoffUsd: round2(netWorthUsd - handoffUsd),
-        gapVsReferenceUsd: cabinetReferenceUsd
-          ? round2(netWorthUsd - cabinetReferenceUsd)
-          : null,
-        handoffGapCause: handoffGapCause || null,
+      navigatorSnapshot: {
+        snapshotId,
+        updatedAt: navSnap.updatedAt || updatedAt,
+        balanceUsd: navigatorBalanceUsd,
+        balanceHintUsd: navSnap.balanceHintUsd ?? 15189,
+        components: navSnap.components || {
+          walletIdleUsd,
+          collateralUsd,
+          liquidityUsd,
+          yieldPrincipalUsd,
+          debtUsd,
+          rewardsAccruedUsd,
+          rewardsInBalance: false,
+        },
       },
     },
     summary: {

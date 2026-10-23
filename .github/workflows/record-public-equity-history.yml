@@ -1,0 +1,36 @@
+name: Record public equity history
+
+on:
+  schedule:
+    - cron: "10 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Record the latest cabinet equity
+        run: node scripts/record-public-equity-history.mjs
+      - name: Commit the equity-only snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/public-equity-history.json
+          if git diff --cached --quiet; then
+            echo "No history change to commit."
+            exit 0
+          fi
+          git commit -m "Record daily public equity"
+          git push origin main

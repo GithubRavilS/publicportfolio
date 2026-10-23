@@ -1,14 +1,76 @@
 {
   "clientId": 33,
   "clientName": "Равиль",
-  "generatedAt": "2026-10-23T17:03:43Z",
+  "generatedAt": "2026-10-23T21:24:07Z",
   "history7d": [
+    {
+      "date": "2026-09-15",
+      "equityUsd": 14406.77
+    },
+    {
+      "date": "2026-09-18",
+      "equityUsd": 14846.41
+    },
+    {
+      "date": "2026-09-21",
+      "equityUsd": 16274.78
+    },
+    {
+      "date": "2026-09-25",
+      "equityUsd": 15986.17
+    },
+    {
+      "date": "2026-10-05",
+      "equityUsd": 16371.7
+    },
+    {
+      "date": "2026-10-06",
+      "equityUsd": 11497.22
+    },
     {
       "date": "2026-10-23",
       "equityUsd": 15188.72
     }
   ],
-  "note": "totals.totalUsd matches personal-cabinet sumTotals (wallet + collateral + LP + yield − debt). Rewards are separate.",
+  "historyDaily": [
+    {
+      "date": "2026-09-11",
+      "equityUsd": 11089.89
+    },
+    {
+      "date": "2026-09-14",
+      "equityUsd": 3842.05
+    },
+    {
+      "date": "2026-09-15",
+      "equityUsd": 14406.77
+    },
+    {
+      "date": "2026-09-18",
+      "equityUsd": 14846.41
+    },
+    {
+      "date": "2026-09-21",
+      "equityUsd": 16274.78
+    },
+    {
+      "date": "2026-09-25",
+      "equityUsd": 15986.17
+    },
+    {
+      "date": "2026-10-05",
+      "equityUsd": 16371.7
+    },
+    {
+      "date": "2026-10-06",
+      "equityUsd": 11497.22
+    },
+    {
+      "date": "2026-10-23",
+      "equityUsd": 15188.72
+    }
+  ],
+  "note": "totals.totalUsd matches personal-cabinet sumTotals (wallet + collateral + LP + yield − debt). Rewards are separate. historyDaily is the sum of cockpit_daily_snapshots.slot=last for cabinet wallets (factual cache days only). closeFactor is passed through from cached lending rows when the protocol stored it (incl. vault liquidationMaxLimit on Jupiter/Fluid).",
   "ok": true,
   "rewardsInBalance": false,
   "schema": "navigator-cabinet-snapshot/v1",
@@ -32,7 +94,7 @@
       }
     ]
   },
-  "snapshotId": "6f0e405d096c511c",
+  "snapshotId": "862379f3cf84377d",
   "source": "DeFi Navigator cockpit cache",
   "totals": {
     "borrowUsd": 7352.84,
@@ -44,7 +106,7 @@
     "walletUsd": 123.99,
     "yieldUsd": 497.18
   },
-  "updatedAt": "2026-10-23T16:45:14.417253+00:00",
+  "updatedAt": "2026-10-23T21:22:13.271618+00:00",
   "walletPacks": [
     {
       "address": "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355",
@@ -65,13 +127,16 @@
           ],
           "chain": "eth",
           "chainLabel": "Ethereum",
+          "closeFactor": null,
           "collateralAsset": null,
           "collateralUsd": 1618.02,
           "debtUsd": 803.95,
           "healthFactor": 1.85,
           "link": null,
+          "liquidationLtv": 0.92,
           "liquidationPrice": null,
           "marketPrice": null,
+          "maxLtv": null,
           "protocol": "Fluid",
           "rewards": [],
           "rewardsUsd": 0.0,
@@ -91,13 +156,16 @@
           "borrowed": [],
           "chain": "base",
           "chainLabel": "Base",
+          "closeFactor": null,
           "collateralAsset": null,
           "collateralUsd": 0.0,
           "debtUsd": 0.0,
           "healthFactor": null,
           "link": null,
+          "liquidationLtv": null,
           "liquidationPrice": null,
           "marketPrice": null,
+          "maxLtv": null,
           "protocol": "Compound V3",
           "rewards": [
             {
@@ -165,7 +233,7 @@
           "incentivesUsd": 0.0,
           "isActive": true,
           "link": null,
-          "openedAt": "2026-09-08T12:00:00Z",
+          "openedAt": "2026-08-07T12:00:00Z",
           "pair": "WETH/USDG",
           "platform": "Uniswap V4",
           "positionId": "0x58daec3116aae6d93017baaea7749052e8a04fa7-538299",
@@ -223,7 +291,7 @@
           "incentivesUsd": 0.0,
           "isActive": true,
           "link": null,
-          "openedAt": "2026-09-08T12:00:00Z",
+          "openedAt": "2026-08-07T12:00:00Z",
           "pair": "WETH/USDG",
           "platform": "Uniswap V4",
           "positionId": "0x58daec3116aae6d93017baaea7749052e8a04fa7-538313",
@@ -290,7 +358,7 @@
           "incentivesUsd": 4.47,
           "isActive": true,
           "link": null,
-          "openedAt": "2026-09-08T12:00:00Z",
+          "openedAt": "2026-08-07T12:00:00Z",
           "pair": "WETH/USDC",
           "platform": "PancakeSwap V3",
           "positionId": "0x46a15b0b27311cedf172ab29e4f4766fbe7f4364-2118427_0xc6a2db661d5a5690172d8eb0a7dea2d3008665a3",
@@ -348,7 +416,7 @@
           "incentivesUsd": 0.0,
           "isActive": true,
           "link": null,
-          "openedAt": "2026-09-08T12:00:00Z",
+          "openedAt": "2026-08-07T12:00:00Z",
           "pair": "WETH/USDG",
           "platform": "Uniswap V4",
           "positionId": "0x58daec3116aae6d93017baaea7749052e8a04fa7-538339",
@@ -363,7 +431,7 @@
       "meta": {
         "fresh": true,
         "hasData": true,
-        "hourlyUpdatedAt": "2026-10-23T16:45:14.417253+00:00",
+        "hourlyUpdatedAt": "2026-10-23T21:14:15.632652+00:00",
         "lookedUpAt": "2026-10-23T13:25:53.570421+00:00"
       },
       "source": "cache",
@@ -379,7 +447,7 @@
         "walletUsd": 117.23,
         "yieldUsd": 497.18
       },
-      "updatedAt": "2026-10-23T16:45:14.417253+00:00",
+      "updatedAt": "2026-10-23T21:14:15.632652+00:00",
       "yieldPositions": [
         {
           "apr": null,
@@ -416,7 +484,7 @@
       "label": "Rabby (TrustWallet) Sol",
       "lendingPositions": [
         {
-          "borrowApy": 8.63,
+          "borrowApy": 8.34,
           "borrowAsset": null,
           "borrowUsd": 6548.89,
           "borrowed": [
@@ -430,13 +498,16 @@
           ],
           "chain": "solana",
           "chainLabel": "Solana",
+          "closeFactor": 0.95,
           "collateralAsset": null,
           "collateralUsd": 10731.8,
           "debtUsd": 6548.89,
           "healthFactor": 1.4748,
           "link": null,
+          "liquidationLtv": 0.9,
           "liquidationPrice": null,
           "marketPrice": null,
+          "maxLtv": 0.85,
           "protocol": "Jupiter Lend",
           "rewards": [],
           "rewardsUsd": 0.0,
@@ -458,12 +529,12 @@
       "meta": {
         "fresh": true,
         "hasData": true,
-        "hourlyUpdatedAt": "2026-10-23T13:25:58.793527+00:00",
+        "hourlyUpdatedAt": "2026-10-23T21:22:13.271618+00:00",
         "lookedUpAt": "2026-10-23T13:25:57.444395+00:00"
       },
       "source": "cache",
       "summary": {
-        "avgBorrowApy": 8.63,
+        "avgBorrowApy": 8.34,
         "borrowUsd": 6548.89,
         "collateralUsd": 10731.8,
         "idleUsd": 6.76,
@@ -474,7 +545,7 @@
         "walletUsd": 6.76,
         "yieldUsd": 0.0
       },
-      "updatedAt": "2026-10-23T13:25:58.793527+00:00",
+      "updatedAt": "2026-10-23T21:22:13.271618+00:00",
       "yieldPositions": []
     }
   ],

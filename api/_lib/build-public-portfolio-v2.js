@@ -279,7 +279,9 @@ function mapLending(pack) {
   for (const p of pack.lendingPositions || []) {
     const coll = round2(p.collateralUsd);
     const debt = round2(p.debtUsd ?? p.borrowUsd);
-    if (coll <= 0 && debt <= 0) continue;
+    const reward = round2(p.rewardsUsd || 0);
+    const rewardsOnly = coll <= 0 && debt <= 0 && reward > 0;
+    if (coll <= 0 && debt <= 0 && reward <= 0) continue;
     const protocol = String(p.protocol || "Lending");
     const assetParts = [];
     if (p.collateralAsset) assetParts.push(String(p.collateralAsset));
@@ -289,31 +291,46 @@ function mapLending(pack) {
       assetParts.length > 0
         ? assetParts.join(" / ")
         : fromSupplied.join(" + ") || "Lending";
+    const closeFactor =
+      p.closeFactor != null
+        ? num(p.closeFactor, null)
+        : p.close_factor != null
+          ? num(p.close_factor, null)
+          : null;
     out.push({
       id: stableId("lending", pack.address, protocol, p.chain, asset, coll, debt),
-      type: "lending",
+      type: rewardsOnly ? "rewards" : "lending",
       protocol,
       chain: chainLabel(p.chain || p.chainLabel),
       walletLabel: label,
       asset,
-      valueUsd: round2(coll - debt),
+      valueUsd: rewardsOnly ? 0 : round2(coll - debt),
       collateralUsd: coll,
       debtUsd: debt,
       ratePct: p.borrowApy ?? p.supplyApy ?? null,
-      rewardUsd: round2(p.rewardsUsd || 0),
+      rewardUsd: reward,
       healthFactor: p.healthFactor == null ? null : num(p.healthFactor, null),
-      includedInNetWorth: true,
-      detail: debt > 0 ? "Залоговая позиция" : "Снабжение без долга",
+      closeFactor,
+      includedInNetWorth: !rewardsOnly,
+      detail: rewardsOnly
+        ? "Начисленные награды (вне капитала)"
+        : debt > 0
+          ? "Залоговая позиция"
+          : "Снабжение без долга",
       details: {
         collateralAsset: p.collateralAsset || null,
         borrowAsset: p.borrowAsset || null,
         supplyApy: p.supplyApy ?? null,
         borrowApy: p.borrowApy ?? null,
+        closeFactor,
+        liquidationLtv: p.liquidationLtv ?? null,
+        maxLtv: p.maxLtv ?? null,
         liquidationPrice: p.liquidationPrice ?? null,
         marketPrice: p.marketPrice ?? null,
         link: p.link || null,
         supplied: p.supplied || null,
         borrowed: p.borrowed || null,
+        rewards: p.rewards || [],
         sourceTimestamp: pack.updatedAt || null,
       },
     });
@@ -453,14 +470,18 @@ function mapWallets(packs, walletIdleUsd) {
 
 function buildHistory(snap) {
   const rows = [];
-  for (const h of snap.history7d || []) {
-    const date = dayKey(h?.date);
+  // Prefer full factual daily series from Navigator cache; fall back to 7d sparkline.
+  const source = Array.isArray(snap.historyDaily) && snap.historyDaily.length
+    ? snap.historyDaily
+    : snap.history7d || [];
+  for (const h of source) {
+    const date = dayKey(h?.date || h?.day);
     if (!date) continue;
     // History from Navigator is cabinet equity (no public +$800).
     // Public chart expects headline equity → add adjustment once here.
     rows.push({
       date,
-      equityUsd: round2(num(h.equityUsd) + INTERNAL_EQUITY_ADJUSTMENT_USD),
+      equityUsd: round2(num(h.equityUsd ?? h.totalUsd) + INTERNAL_EQUITY_ADJUSTMENT_USD),
     });
   }
   return rows.sort((a, b) => a.date.localeCompare(b.date));

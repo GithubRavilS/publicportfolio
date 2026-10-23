@@ -1,0 +1,485 @@
+{
+  "clientId": 33,
+  "clientName": "Равиль",
+  "generatedAt": "2026-10-23T17:03:43Z",
+  "history7d": [
+    {
+      "date": "2026-10-23",
+      "equityUsd": 15188.72
+    }
+  ],
+  "note": "totals.totalUsd matches personal-cabinet sumTotals (wallet + collateral + LP + yield − debt). Rewards are separate.",
+  "ok": true,
+  "rewardsInBalance": false,
+  "schema": "navigator-cabinet-snapshot/v1",
+  "snapshotHealth": {
+    "totalDailyDays": 15,
+    "totalScanRows": 72,
+    "wallets": [
+      {
+        "dailySnapshotDays": 8,
+        "latestDailyAt": "2026-10-23T13:25:55Z",
+        "latestScanAt": "2026-10-23T13:25:55.739691+00:00",
+        "scanHistoryRows": 63,
+        "wallet": "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355"
+      },
+      {
+        "dailySnapshotDays": 7,
+        "latestDailyAt": "2026-10-23T13:25:59Z",
+        "latestScanAt": "2026-10-23T13:25:59.272523+00:00",
+        "scanHistoryRows": 9,
+        "wallet": "9Q4mAN4QTxC39CRn3SmFqEaxhEJjNd7UTYoeqUZ1pf5o"
+      }
+    ]
+  },
+  "snapshotId": "6f0e405d096c511c",
+  "source": "DeFi Navigator cockpit cache",
+  "totals": {
+    "borrowUsd": 7352.84,
+    "collateralUsd": 12349.82,
+    "liquidityUsd": 9558.64,
+    "rewardsInBalance": false,
+    "rewardsUsd": 49.59,
+    "totalUsd": 15176.79,
+    "walletUsd": 123.99,
+    "yieldUsd": 497.18
+  },
+  "updatedAt": "2026-10-23T16:45:14.417253+00:00",
+  "walletPacks": [
+    {
+      "address": "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355",
+      "addressMasked": "0x1fb0…f355",
+      "kind": "evm",
+      "label": "Rainbow EVM",
+      "lendingPositions": [
+        {
+          "borrowApy": 5.45,
+          "borrowAsset": null,
+          "borrowUsd": 803.95,
+          "borrowed": [
+            {
+              "amount": "804.6223356469951",
+              "token": "USDtb",
+              "usd": 803.95
+            }
+          ],
+          "chain": "eth",
+          "chainLabel": "Ethereum",
+          "collateralAsset": null,
+          "collateralUsd": 1618.02,
+          "debtUsd": 803.95,
+          "healthFactor": 1.85,
+          "link": null,
+          "liquidationPrice": null,
+          "marketPrice": null,
+          "protocol": "Fluid",
+          "rewards": [],
+          "rewardsUsd": 0.0,
+          "supplied": [
+            {
+              "amount": "0.6745576897436637",
+              "token": "ETH",
+              "usd": 1618.02
+            }
+          ],
+          "supplyApy": null
+        },
+        {
+          "borrowApy": 6.83,
+          "borrowAsset": null,
+          "borrowUsd": 0.0,
+          "borrowed": [],
+          "chain": "base",
+          "chainLabel": "Base",
+          "collateralAsset": null,
+          "collateralUsd": 0.0,
+          "debtUsd": 0.0,
+          "healthFactor": null,
+          "link": null,
+          "liquidationPrice": null,
+          "marketPrice": null,
+          "protocol": "Compound V3",
+          "rewards": [
+            {
+              "amount": "0.051812",
+              "token": "COMP",
+              "usd": 1.26
+            }
+          ],
+          "rewardsUsd": 1.26,
+          "supplied": [
+            {
+              "amount": "1e-8",
+              "token": "cbBTC",
+              "usd": 0.00081645
+            }
+          ],
+          "supplyApy": null
+        }
+      ],
+      "liquidityPositions": [
+        {
+          "apr": null,
+          "chain": "Robinhood",
+          "displayApr": null,
+          "earnings": {
+            "earningsSchema": 2,
+            "feesClaimed": [
+              {
+                "amount": "0.01870693",
+                "symbol": "WETH",
+                "usd": 44.95096
+              },
+              {
+                "amount": "46.77543",
+                "symbol": "USDG",
+                "usd": 46.784341
+              }
+            ],
+            "feesClaimedUsd": 91.735301,
+            "feesPending": [
+              {
+                "amount": "0.00317716",
+                "symbol": "WETH",
+                "usd": 7.634401
+              },
+              {
+                "amount": "7.584552",
+                "symbol": "USDG",
+                "usd": 7.585997
+              }
+            ],
+            "feesPendingUsd": 15.220398,
+            "feesTotalUsd": 106.955699,
+            "incentives": [],
+            "incentivesClaimedUsd": 0.0,
+            "incentivesPendingUsd": 0.0,
+            "incentivesUsd": 0.0,
+            "source": "krystal-cloud",
+            "totalEarnedUsd": 106.955699,
+            "unclaimedUsd": 15.220398
+          },
+          "feeTier": null,
+          "feesUsd": 15.22,
+          "inRange": true,
+          "incentivesUsd": 0.0,
+          "isActive": true,
+          "link": null,
+          "openedAt": "2026-09-08T12:00:00Z",
+          "pair": "WETH/USDG",
+          "platform": "Uniswap V4",
+          "positionId": "0x58daec3116aae6d93017baaea7749052e8a04fa7-538299",
+          "positionValueUsd": 4431.64,
+          "protocol": "Uniswap V4",
+          "rangeCurrent": null,
+          "rangeMax": null,
+          "rangeMin": null,
+          "valueUsd": 4431.64
+        },
+        {
+          "apr": null,
+          "chain": "Robinhood",
+          "displayApr": null,
+          "earnings": {
+            "earningsSchema": 2,
+            "feesClaimed": [
+              {
+                "amount": "0.02118371",
+                "symbol": "WETH",
+                "usd": 50.902404
+              },
+              {
+                "amount": "52.969577",
+                "symbol": "USDG",
+                "usd": 52.979668
+              }
+            ],
+            "feesClaimedUsd": 103.882072,
+            "feesPending": [
+              {
+                "amount": "0.00359789",
+                "symbol": "WETH",
+                "usd": 8.645382
+              },
+              {
+                "amount": "8.588932",
+                "symbol": "USDG",
+                "usd": 8.590568
+              }
+            ],
+            "feesPendingUsd": 17.23595,
+            "feesTotalUsd": 121.118022,
+            "incentives": [],
+            "incentivesClaimedUsd": 0.0,
+            "incentivesPendingUsd": 0.0,
+            "incentivesUsd": 0.0,
+            "source": "krystal-cloud",
+            "totalEarnedUsd": 121.118022,
+            "unclaimedUsd": 17.23595
+          },
+          "feeTier": null,
+          "feesUsd": 17.24,
+          "inRange": true,
+          "incentivesUsd": 0.0,
+          "isActive": true,
+          "link": null,
+          "openedAt": "2026-09-08T12:00:00Z",
+          "pair": "WETH/USDG",
+          "platform": "Uniswap V4",
+          "positionId": "0x58daec3116aae6d93017baaea7749052e8a04fa7-538313",
+          "positionValueUsd": 2715.01,
+          "protocol": "Uniswap V4",
+          "rangeCurrent": null,
+          "rangeMax": null,
+          "rangeMin": null,
+          "valueUsd": 2715.01
+        },
+        {
+          "apr": null,
+          "chain": "Base",
+          "displayApr": null,
+          "earnings": {
+            "earningsSchema": 2,
+            "feesClaimed": [
+              {
+                "amount": "0.00213377",
+                "symbol": "WETH",
+                "usd": 5.131207
+              },
+              {
+                "amount": "5.563451",
+                "symbol": "USDC",
+                "usd": 5.563476
+              }
+            ],
+            "feesClaimedUsd": 10.694683,
+            "feesPending": [
+              {
+                "amount": "0.00128387",
+                "symbol": "WETH",
+                "usd": 3.087401
+              },
+              {
+                "amount": "3.143586",
+                "symbol": "USDC",
+                "usd": 3.1436
+              }
+            ],
+            "feesPendingUsd": 6.231001,
+            "feesTotalUsd": 16.925684,
+            "incentives": [
+              {
+                "claimedAmount": "2.654289",
+                "claimedUsd": 5.766022,
+                "pendingAmount": "2.058985",
+                "pendingUsd": 4.472819,
+                "symbol": "CAKE",
+                "totalUsd": 10.238841
+              }
+            ],
+            "incentivesClaimedUsd": 5.766022,
+            "incentivesPendingUsd": 4.472819,
+            "incentivesUsd": 10.238841,
+            "source": "krystal-cloud",
+            "totalEarnedUsd": 27.164525,
+            "unclaimedUsd": 10.70382
+          },
+          "feeTier": null,
+          "feesUsd": 6.23,
+          "inRange": true,
+          "incentivesUsd": 4.47,
+          "isActive": true,
+          "link": null,
+          "openedAt": "2026-09-08T12:00:00Z",
+          "pair": "WETH/USDC",
+          "platform": "PancakeSwap V3",
+          "positionId": "0x46a15b0b27311cedf172ab29e4f4766fbe7f4364-2118427_0xc6a2db661d5a5690172d8eb0a7dea2d3008665a3",
+          "positionValueUsd": 1282.94,
+          "protocol": "PancakeSwap V3",
+          "rangeCurrent": null,
+          "rangeMax": null,
+          "rangeMin": null,
+          "valueUsd": 1282.94
+        },
+        {
+          "apr": null,
+          "chain": "Robinhood",
+          "displayApr": null,
+          "earnings": {
+            "earningsSchema": 2,
+            "feesClaimed": [
+              {
+                "amount": "0.0063488",
+                "symbol": "WETH",
+                "usd": 15.255564
+              },
+              {
+                "amount": "15.874538",
+                "symbol": "USDG",
+                "usd": 15.877562
+              }
+            ],
+            "feesClaimedUsd": 31.133126,
+            "feesPending": [
+              {
+                "amount": "0.0010783",
+                "symbol": "WETH",
+                "usd": 2.59104
+              },
+              {
+                "amount": "2.574122",
+                "symbol": "USDG",
+                "usd": 2.574612
+              }
+            ],
+            "feesPendingUsd": 5.165652,
+            "feesTotalUsd": 36.298778,
+            "incentives": [],
+            "incentivesClaimedUsd": 0.0,
+            "incentivesPendingUsd": 0.0,
+            "incentivesUsd": 0.0,
+            "source": "krystal-cloud",
+            "totalEarnedUsd": 36.298778,
+            "unclaimedUsd": 5.165652
+          },
+          "feeTier": null,
+          "feesUsd": 5.17,
+          "inRange": true,
+          "incentivesUsd": 0.0,
+          "isActive": true,
+          "link": null,
+          "openedAt": "2026-09-08T12:00:00Z",
+          "pair": "WETH/USDG",
+          "platform": "Uniswap V4",
+          "positionId": "0x58daec3116aae6d93017baaea7749052e8a04fa7-538339",
+          "positionValueUsd": 1129.05,
+          "protocol": "Uniswap V4",
+          "rangeCurrent": null,
+          "rangeMax": null,
+          "rangeMin": null,
+          "valueUsd": 1129.05
+        }
+      ],
+      "meta": {
+        "fresh": true,
+        "hasData": true,
+        "hourlyUpdatedAt": "2026-10-23T16:45:14.417253+00:00",
+        "lookedUpAt": "2026-10-23T13:25:53.570421+00:00"
+      },
+      "source": "cache",
+      "summary": {
+        "avgBorrowApy": 5.45,
+        "borrowUsd": 803.95,
+        "collateralUsd": 1618.02,
+        "idleUsd": 117.23,
+        "liquidityUsd": 9558.64,
+        "minHealthFactor": 1.85,
+        "rewardsUsd": 11.93,
+        "totalUsd": 10999.05,
+        "walletUsd": 117.23,
+        "yieldUsd": 497.18
+      },
+      "updatedAt": "2026-10-23T16:45:14.417253+00:00",
+      "yieldPositions": [
+        {
+          "apr": null,
+          "asset": "Pendle PT",
+          "chain": "eth",
+          "displayApr": null,
+          "isActive": true,
+          "kind": "Yield",
+          "link": null,
+          "marketId": null,
+          "netUsd": 497.18,
+          "pair": "Pendle PT",
+          "platform": "Pendle",
+          "poolId": null,
+          "positionUsd": 497.18,
+          "protocol": "Pendle",
+          "rewards": [],
+          "rewardsUsd": 0.0,
+          "supplied": [
+            {
+              "amount": "4.658609368910551",
+              "token": "PT-STRCx-26NOV2026",
+              "usd": 497.18
+            }
+          ],
+          "valueUsd": 497.18
+        }
+      ]
+    },
+    {
+      "address": "9Q4mAN4QTxC39CRn3SmFqEaxhEJjNd7UTYoeqUZ1pf5o",
+      "addressMasked": "9Q4mAN…pf5o",
+      "kind": "sol",
+      "label": "Rabby (TrustWallet) Sol",
+      "lendingPositions": [
+        {
+          "borrowApy": 8.63,
+          "borrowAsset": null,
+          "borrowUsd": 6548.89,
+          "borrowed": [
+            {
+              "amount": "6551.668938",
+              "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+              "price": 0.999575733666,
+              "token": "USDC",
+              "usd": 6548.89
+            }
+          ],
+          "chain": "solana",
+          "chainLabel": "Solana",
+          "collateralAsset": null,
+          "collateralUsd": 10731.8,
+          "debtUsd": 6548.89,
+          "healthFactor": 1.4748,
+          "link": null,
+          "liquidationPrice": null,
+          "marketPrice": null,
+          "protocol": "Jupiter Lend",
+          "rewards": [],
+          "rewardsUsd": 0.0,
+          "supplied": [
+            {
+              "amount": "0.13147161",
+              "liquidationLtv": 0.9,
+              "maxLtv": 0.85,
+              "mint": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
+              "price": 81628.2892670299,
+              "token": "cbBTC",
+              "usd": 10731.8
+            }
+          ],
+          "supplyApy": null
+        }
+      ],
+      "liquidityPositions": [],
+      "meta": {
+        "fresh": true,
+        "hasData": true,
+        "hourlyUpdatedAt": "2026-10-23T13:25:58.793527+00:00",
+        "lookedUpAt": "2026-10-23T13:25:57.444395+00:00"
+      },
+      "source": "cache",
+      "summary": {
+        "avgBorrowApy": 8.63,
+        "borrowUsd": 6548.89,
+        "collateralUsd": 10731.8,
+        "idleUsd": 6.76,
+        "liquidityUsd": 0.0,
+        "minHealthFactor": 1.47,
+        "rewardsUsd": 0.0,
+        "totalUsd": 4189.67,
+        "walletUsd": 6.76,
+        "yieldUsd": 0.0
+      },
+      "updatedAt": "2026-10-23T13:25:58.793527+00:00",
+      "yieldPositions": []
+    }
+  ],
+  "wallets": [
+    "0x1fb07ac5643428710ee3bf5a73a4a66d0762f355",
+    "9Q4mAN4QTxC39CRn3SmFqEaxhEJjNd7UTYoeqUZ1pf5o"
+  ]
+}

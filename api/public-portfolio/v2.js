@@ -1,11 +1,11 @@
 /**
  * GET /api/public-portfolio/v2
- * Read-only Public Portfolio snapshot from Navigator cache.
- * Does not call Debank or protocol APIs on request.
+ * Read-only Public Portfolio from DeFi Navigator personal-cabinet cache snapshot.
+ * Prefer NAVIGATOR_SNAPSHOT_URL (PA read-only export); else data/navigator-cabinet-snapshot.json.
  */
 
 import {
-  buildFromDisk,
+  buildFromSource,
   INTERNAL_EQUITY_ADJUSTMENT_USD,
 } from "../_lib/build-public-portfolio-v2.js";
 
@@ -32,13 +32,13 @@ export default async function handler(req, res) {
     const limit = url.searchParams.get("limit");
     const cursor = url.searchParams.get("cursor") || undefined;
 
-    const payload = buildFromDisk({
+    const payload = await buildFromSource({
       limit: limit != null ? Number(limit) : undefined,
       cursor,
+      allowFileFallback: true,
       log: (...args) => console.info(...args),
     });
 
-    // Ensure adjustment config is loaded (used only inside builder for netWorthUsd).
     void INTERNAL_EQUITY_ADJUSTMENT_USD;
 
     res.statusCode = 200;

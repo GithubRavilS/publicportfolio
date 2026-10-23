@@ -1,13 +1,13 @@
 /**
- * Build Public Portfolio v2 snapshot from precomputed Navigator cache
- * (`data/portfolio-data.js`). No live Debank/protocol calls.
+ * Build Public Portfolio v2 from the DeFi Navigator personal-cabinet cache snapshot.
  *
- * netWorthUsd = walletIdle + collateral + liquidity + yieldPrincipal − debt
- *             + INTERNAL_EQUITY_ADJUSTMENT
+ * Source of truth: data/navigator-cabinet-snapshot.json (or NAVIGATOR_SNAPSHOT_URL),
+ * produced by portfolio-check `backend/public_navigator_export.py` from the same
+ * cockpit_client_detail cache the VIP cabinet uses. Not a live Jupiter/Debank rebuild.
  *
- * The internal equity adjustment is applied only to summary.netWorthUsd.
- * It is never returned as its own field and never added to positions,
- * category totals, rewards, wallets, or history rows.
+ * summary.netWorthUsd = navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD
+ * The +$800 adjustment is applied only to netWorthUsd — never to positions,
+ * categories, Yield, Rewards, or meta.navigatorBalanceUsd.
  */
 
 import fs from "node:fs";
@@ -15,12 +15,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-/** Single backend config source for the headline equity adjustment. */
 export const INTERNAL_EQUITY_ADJUSTMENT_USD = Number(
   process.env.PUBLIC_PORTFOLIO_EQUITY_ADJ_USD ?? 800
 );
 
 const STALE_AFTER_MS = Number(process.env.PUBLIC_PORTFOLIO_STALE_MS ?? 36 * 60 * 60 * 1000);
+const NAV_TOLERANCE_USD = Number(process.env.PUBLIC_PORTFOLIO_NAVIGATOR_TOLERANCE_USD ?? 50);
 
 const CHAIN_LABEL = {
   "1": "Ethereum",
@@ -63,8 +63,9 @@ function shortAddr(addr) {
 }
 
 function walletLabel(addr, kind) {
-  const prefix = kind === "sol" ? "Solana" : "EVM";
-  return `${prefix} · ${shortAddr(addr)}`;
+  const a = String(addr || "");
+  const k = kind || (a.startsWith("0x") ? "evm" : "sol");
+  return `${k === "sol" ? "Solana" : "EVM"} · ${shortAddr(a)}`;
 }
 
 function stableId(...parts) {
@@ -80,29 +81,35 @@ function dayKey(iso) {
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * Load portfolio-data.js / .json from disk (Vercel project root or cwd).
- */
-export function loadPortfolioCache(explicitPath) {
-  const candidates = [];
-  if (explicitPath) candidates.push(explicitPath);
-
+function candidatePaths(explicit, names) {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  candidates.push(
-    path.join(process.cwd(), "data", "portfolio-data.js"),
-    path.join(process.cwd(), "data", "portfolio-data.json"),
-    path.resolve(here, "../../data/portfolio-data.js"),
-    path.resolve(here, "../../data/portfolio-data.json")
-  );
+  const roots = [process.cwd(), path.resolve(here, "../..")];
+  const out = [];
+  if (explicit) out.push(explicit);
+  for (const root of roots) {
+    for (const name of names) out.push(path.join(root, "data", name));
+  }
+  return out;
+}
 
+/**
+ * Load Navigator cabinet snapshot (export module / PA endpoint payload).
+ */
+export function loadNavigatorSnapshot(explicitPath) {
+  const files = candidatePaths(explicitPath, [
+    "navigator-cabinet-snapshot.json",
+    "navigator-cabinet-snapshot.js",
+  ]);
   let lastErr = null;
-  for (const file of candidates) {
+  for (const file of files) {
     try {
       if (!fs.existsSync(file)) continue;
       const raw = fs.readFileSync(file, "utf8");
-      if (file.endsWith(".json")) return { data: JSON.parse(raw), path: file };
+      if (file.endsWith(".json")) {
+        return { data: JSON.parse(raw), path: file };
+      }
       const eq = raw.indexOf("=");
-      if (eq < 0) throw new Error("portfolio-data.js: missing assignment");
+      if (eq < 0) throw new Error("navigator snapshot js: missing assignment");
       let json = raw.slice(eq + 1).trim();
       if (json.endsWith(";")) json = json.slice(0, -1).trim();
       return { data: JSON.parse(json), path: file };
@@ -110,22 +117,45 @@ export function loadPortfolioCache(explicitPath) {
       lastErr = err;
     }
   }
-  throw lastErr || new Error("portfolio-data cache not found");
+  throw lastErr || new Error("navigator-cabinet-snapshot not found");
 }
 
-function buildHistory(snapshots) {
-  const byDay = new Map();
-  for (const snap of snapshots || []) {
-    const date = dayKey(snap?.timestamp || snap?.date || snap?.asOfDate);
-    if (!date) continue;
-    // Snapshot equity already includes the internal adjustment from the export pipeline.
-    // Do not add INTERNAL_EQUITY_ADJUSTMENT again.
-    byDay.set(date, {
-      date,
-      equityUsd: round2(snap.equityUsd),
+/**
+ * Optional fetch of live PA read-only export.
+ * @param {string} url
+ * @param {{ timeoutMs?: number }} [opts]
+ */
+export async function fetchNavigatorSnapshot(url, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 12000;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { Accept: "application/json" },
     });
+    if (!res.ok) {
+      throw new Error(`navigator snapshot HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    return { data, path: url };
+  } finally {
+    clearTimeout(t);
   }
-  return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export async function loadNavigatorSnapshotSource(opts = {}) {
+  const url = opts.url || process.env.NAVIGATOR_SNAPSHOT_URL || "";
+  if (url) {
+    try {
+      return await fetchNavigatorSnapshot(url, opts);
+    } catch (err) {
+      if (opts.allowFileFallback === false) throw err;
+      const log = opts.log || console.warn.bind(console);
+      log("[public-portfolio/v2] NAVIGATOR_SNAPSHOT_URL failed, file fallback:", String(err?.message || err));
+    }
+  }
+  return loadNavigatorSnapshot(opts.snapshotPath);
 }
 
 function changePct30d(history) {
@@ -146,76 +176,70 @@ function changePct30d(history) {
   return round2(((last.equityUsd - prior.equityUsd) / prior.equityUsd) * 100);
 }
 
-function lendingPositions(data, evmLabel) {
+function mapLending(pack) {
+  const label = walletLabel(pack.address, pack.kind);
   const out = [];
-  for (const p of data.lendingPositions || []) {
+  for (const p of pack.lendingPositions || []) {
     const coll = round2(p.collateralUsd);
-    const debt = round2(p.borrowUsd ?? p.debtUsd);
+    const debt = round2(p.debtUsd ?? p.borrowUsd);
+    if (coll <= 0 && debt <= 0) continue;
     const protocol = String(p.protocol || "Lending");
-    const chain = chainLabel(p.chain);
     const assetParts = [];
     if (p.collateralAsset) assetParts.push(String(p.collateralAsset));
     if (p.borrowAsset) assetParts.push(String(p.borrowAsset));
+    const fromSupplied = (p.supplied || []).map((x) => x.token || x.symbol || x.asset).filter(Boolean);
     const asset =
       assetParts.length > 0
         ? assetParts.join(" / ")
-        : (p.supplied || []).map((x) => x.asset).filter(Boolean).join(" + ") || "Lending";
-
-    const isSol =
-      String(p.chain || "").toLowerCase().includes("sol") ||
-      String(protocol).toLowerCase().includes("jupiter");
-    const label = isSol
-      ? walletLabel((data.solanaWallets || [])[0], "sol")
-      : evmLabel;
-
+        : fromSupplied.join(" + ") || "Lending";
     out.push({
-      id: stableId("lending", protocol, p.chain, p.collateralAsset, p.borrowAsset, p.link),
+      id: stableId("lending", pack.address, protocol, p.chain, asset, coll, debt),
       type: "lending",
       protocol,
-      chain,
+      chain: chainLabel(p.chain || p.chainLabel),
       walletLabel: label,
       asset,
       valueUsd: round2(coll - debt),
       collateralUsd: coll,
       debtUsd: debt,
-      ratePct: p.borrowAprPct ?? p.supplyAprPct ?? p.apr ?? null,
-      rewardUsd: round2(p.rewardUsd || 0),
+      ratePct: p.borrowApy ?? p.supplyApy ?? null,
+      rewardUsd: round2(p.rewardsUsd || 0),
       healthFactor: p.healthFactor == null ? null : num(p.healthFactor, null),
       includedInNetWorth: true,
       detail: debt > 0 ? "Залоговая позиция" : "Снабжение без долга",
       details: {
-        collateralAmount: p.collateralAmount ?? null,
-        borrowAmount: p.borrowAmount ?? null,
         collateralAsset: p.collateralAsset || null,
         borrowAsset: p.borrowAsset || null,
+        supplyApy: p.supplyApy ?? null,
+        borrowApy: p.borrowApy ?? null,
         liquidationPrice: p.liquidationPrice ?? null,
         marketPrice: p.marketPrice ?? null,
         link: p.link || null,
-        dataSource: p.dataSource || null,
-        sourceTimestamp: p.timestamp || null,
         supplied: p.supplied || null,
         borrowed: p.borrowed || null,
+        sourceTimestamp: pack.updatedAt || null,
       },
     });
   }
   return out;
 }
 
-function liquidityPositions(data, primaryLabel) {
+function mapLiquidity(pack) {
+  const label = walletLabel(pack.address, pack.kind);
   const out = [];
-  for (const p of data.liquidityPositions || []) {
+  for (const p of pack.liquidityPositions || []) {
     if (p.isActive === false) continue;
-    const value = round2(p.valueUsd);
+    const value = round2(p.positionValueUsd ?? p.valueUsd);
     if (value <= 0 && !p.positionId) continue;
     const reward = round2(num(p.feesUsd) + num(p.incentivesUsd));
     const protocol = String(p.platform || p.protocol || "LP");
-    const pair = String(p.pair || p.symbol || "LP");
+    const pair = String(p.pair || "LP");
     out.push({
-      id: stableId("lp", p.chain, p.positionId || pair, protocol),
+      id: stableId("lp", pack.address, p.chain, p.positionId || pair, protocol),
       type: "liquidity",
       protocol,
       chain: chainLabel(p.chain),
-      walletLabel: primaryLabel,
+      walletLabel: label,
       asset: pair,
       valueUsd: value,
       collateralUsd: 0,
@@ -227,7 +251,6 @@ function liquidityPositions(data, primaryLabel) {
       detail: "Активная LP-позиция",
       details: {
         positionId: p.positionId || null,
-        investedUsd: p.investedUsd ?? null,
         feesUsd: p.feesUsd ?? null,
         incentivesUsd: p.incentivesUsd ?? null,
         feeTier: p.feeTier ?? null,
@@ -235,65 +258,55 @@ function liquidityPositions(data, primaryLabel) {
         rangeMax: p.rangeMax ?? null,
         rangeCurrent: p.rangeCurrent ?? null,
         openedAt: p.openedAt || null,
+        inRange: p.inRange ?? null,
         link: p.link || null,
-        dataSource: p.dataSource || null,
+        sourceTimestamp: pack.updatedAt || null,
       },
     });
   }
   return out;
 }
 
-function yieldPositions(data, primaryLabel) {
+function mapYield(pack) {
+  const label = walletLabel(pack.address, pack.kind);
   const out = [];
-  for (const p of data.yieldPositions || []) {
+  for (const p of pack.yieldPositions || []) {
     if (p.isActive === false) continue;
-    const value = round2(p.valueUsd);
+    const value = round2(p.positionUsd ?? p.valueUsd ?? p.netUsd);
     if (value <= 0) continue;
     const protocol = String(p.protocol || p.platform || "Yield");
     const asset = String(p.asset || p.pair || "Yield");
-    const chainRaw = p.chain;
-    const chain =
-      String(chainRaw) === "1" || String(chainRaw) === "eth"
-        ? "Ethereum"
-        : chainLabel(chainRaw);
     out.push({
-      id: stableId("yield", protocol, p.chain, p.marketId || asset),
+      id: stableId("yield", pack.address, protocol, p.chain, p.marketId || p.poolId || asset),
       type: "yield",
       protocol,
-      chain,
-      walletLabel: primaryLabel,
+      chain: chainLabel(p.chain),
+      walletLabel: label,
       asset,
       valueUsd: value,
       collateralUsd: 0,
       debtUsd: 0,
       ratePct: p.displayApr ?? p.apr ?? null,
-      rewardUsd: round2(p.rewardUsd || 0),
+      rewardUsd: round2(p.rewardsUsd || 0),
       healthFactor: null,
       includedInNetWorth: true,
       detail: "Yield / Deposit позиция",
       details: {
-        marketId: p.marketId || null,
-        ptUsd: p.ptUsd ?? null,
-        ytUsd: p.ytUsd ?? null,
-        lpUsd: p.lpUsd ?? null,
+        marketId: p.marketId || p.poolId || null,
+        kind: p.kind || null,
+        supplied: p.supplied || null,
         link: p.link || null,
-        dataSource: p.dataSource || null,
+        sourceTimestamp: pack.updatedAt || null,
       },
     });
   }
   return out;
 }
 
-function walletPositions(data) {
-  const idle = round2(data.walletIdleUsd);
-  const evm = (data.debankWallets || []).filter(Boolean);
-  const sol = (data.solanaWallets || []).filter(Boolean);
-  const wallets = [
-    ...evm.map((a) => ({ addr: a, kind: "evm" })),
-    ...sol.map((a) => ({ addr: a, kind: "sol" })),
-  ];
-  if (!wallets.length) {
-    if (idle <= 0) return [];
+function mapWallets(packs, walletIdleUsd) {
+  const list = packs || [];
+  if (!list.length) {
+    if (walletIdleUsd <= 0) return [];
     return [
       {
         id: stableId("wallet", "aggregate"),
@@ -302,7 +315,7 @@ function walletPositions(data) {
         chain: "Multi",
         walletLabel: "Все кошельки",
         asset: "Idle assets",
-        valueUsd: idle,
+        valueUsd: walletIdleUsd,
         collateralUsd: 0,
         debtUsd: 0,
         ratePct: null,
@@ -314,209 +327,201 @@ function walletPositions(data) {
       },
     ];
   }
-  // Cache stores one idle total; attribute it to the primary EVM wallet and
-  // emit zero-value placeholders for other wallets so both addresses appear.
-  return wallets.map((w, idx) => ({
-    id: stableId("wallet", w.kind, w.addr),
-    type: "wallet",
-    protocol: "Wallet",
-    chain: w.kind === "sol" ? "Solana" : "Multi",
-    walletLabel: walletLabel(w.addr, w.kind),
-    asset: "Idle assets",
-    valueUsd: idx === 0 ? idle : 0,
-    collateralUsd: 0,
-    debtUsd: 0,
-    ratePct: null,
-    rewardUsd: 0,
-    healthFactor: null,
-    includedInNetWorth: idx === 0,
-    detail: idx === 0 ? "Свободные средства на кошельках" : "Кошелёк в периметре (idle в агрегате)",
-    details: { addressMasked: shortAddr(w.addr), kind: w.kind },
-  }));
-}
-
-function mapTransactions(data, { limit, cursor } = {}) {
-  const all = (data.transactions || []).map((tx, i) => {
-    const id =
-      tx.id ||
-      stableId(
-        "tx",
-        tx.hash || tx.txid || "",
-        tx.timestamp || tx.date || "",
-        tx.action || "",
-        i
-      );
+  // Attribute idle per pack from summary.walletUsd (already in Navigator totals).
+  return list.map((pack) => {
+    const idle = round2((pack.summary || {}).walletUsd);
     return {
-      id,
-      date: tx.timestamp || tx.date || null,
-      chain: chainLabel(tx.chain),
-      protocol: tx.protocol || null,
-      action: tx.action || tx.type || null,
-      asset: tx.asset || tx.symbol || null,
-      amount: tx.amount ?? null,
-      amountUsd: tx.amountUsd == null ? null : round2(tx.amountUsd),
-      category: tx.category || null,
-      explorerUrl: tx.explorerUrl || tx.link || null,
+      id: stableId("wallet", pack.kind, pack.address),
+      type: "wallet",
+      protocol: "Wallet",
+      chain: pack.kind === "sol" ? "Solana" : "Multi",
+      walletLabel: walletLabel(pack.address, pack.kind),
+      asset: "Idle assets",
+      valueUsd: idle,
+      collateralUsd: 0,
+      debtUsd: 0,
+      ratePct: null,
+      rewardUsd: 0,
+      healthFactor: null,
+      includedInNetWorth: idle > 0,
+      detail: "Свободные средства на кошельке",
+      details: {
+        addressMasked: pack.addressMasked || shortAddr(pack.address),
+        kind: pack.kind,
+        sourceTimestamp: pack.updatedAt || null,
+      },
     };
   });
+}
 
-  let start = 0;
-  if (cursor) {
-    const idx = all.findIndex((t) => t.id === cursor);
-    start = idx >= 0 ? idx + 1 : 0;
+function buildHistory(snap) {
+  const rows = [];
+  for (const h of snap.history7d || []) {
+    const date = dayKey(h?.date);
+    if (!date) continue;
+    // History from Navigator is cabinet equity (no public +$800).
+    // Public chart expects headline equity → add adjustment once here.
+    rows.push({
+      date,
+      equityUsd: round2(num(h.equityUsd) + INTERNAL_EQUITY_ADJUSTMENT_USD),
+    });
   }
-  const pageLimit = Math.min(Math.max(Number(limit) || all.length || 0, 0), 500) || all.length;
-  const slice = all.slice(start, start + (pageLimit || all.length));
-  const next =
-    start + slice.length < all.length && slice.length
-      ? slice[slice.length - 1].id
-      : null;
-  return { transactions: slice, nextCursor: next, total: all.length };
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function isJupiterLendingRow(p) {
-  const chain = String(p?.chain || "").toLowerCase();
-  const proto = String(p?.protocol || "").toLowerCase();
-  const link = String(p?.link || "").toLowerCase();
-  return chain.includes("sol") || proto.includes("jupiter") || link.includes("jup.ag/lend");
-}
-
-function collectCompleteness(data, ctx) {
+function collectCompleteness(snap, ctx) {
   const reasons = [];
-  const evmConfigured = (data.debankWallets || []).filter(Boolean).length > 0;
-  const solConfigured = (data.solanaWallets || []).filter(Boolean).length > 0;
-  const rawLending = data.lendingPositions || [];
-  const hasJupiter = rawLending.some(isJupiterLendingRow);
-  const hasEvmLending = rawLending.some((p) => !isJupiterLendingRow(p));
+  if (!snap || snap.ok === false) {
+    reasons.push(
+      snap?.error
+        ? `Снимок Navigator недоступен (${snap.error}).`
+        : "Снимок Navigator отсутствует или повреждён."
+    );
+    return reasons;
+  }
+  if (!snap.snapshotId) {
+    reasons.push("В снимке Navigator нет snapshotId.");
+  }
+  if (!snap.updatedAt) {
+    reasons.push("В снимке Navigator нет updatedAt.");
+  }
+  if (!(ctx.navigatorBalanceUsd > 0)) {
+    reasons.push("В снимке Navigator нулевой или отсутствующий баланс кабинета.");
+  }
+  const wallets = snap.wallets || (snap.walletPacks || []).map((p) => p.address);
+  if (!wallets.length) {
+    reasons.push("В снимке Navigator нет кошельков.");
+  }
+  const packs = snap.walletPacks || [];
+  const hasLending = packs.some((p) => (p.lendingPositions || []).length > 0);
+  const hasLp = packs.some((p) => (p.liquidityPositions || []).length > 0);
   const hasYield =
-    (data.yieldPositions || []).some((p) => p.isActive !== false && num(p.valueUsd) > 0) ||
+    packs.some((p) => (p.yieldPositions || []).some((y) => num(y.positionUsd ?? y.valueUsd) > 0)) ||
     ctx.yieldPrincipalUsd > 0;
-  const jupiterSyncedAt = data.jupiterLendSyncedAt || null;
-  const jupiterSyncMs = jupiterSyncedAt ? Date.parse(jupiterSyncedAt) : NaN;
-  const jupiterSyncFresh =
-    Number.isFinite(jupiterSyncMs) && Date.now() - jupiterSyncMs <= STALE_AFTER_MS;
-
-  if (!evmConfigured) {
-    reasons.push("Не настроен EVM-кошелёк (debankWallets) в кэше Navigator.");
+  if (!hasLending && ctx.collateralUsd <= 0 && ctx.debtUsd <= 0) {
+    reasons.push("В снимке Navigator нет lending-позиций.");
   }
-  if (!solConfigured) {
-    reasons.push("Не настроен Solana-кошелёк (solanaWallets) в кэше Navigator.");
-  }
-  if (evmConfigured && !hasEvmLending) {
-    reasons.push("Нет EVM lending-позиций в снимке (ожидался Fluid/Debank).");
-  }
-  if (solConfigured && !hasJupiter) {
-    reasons.push(
-      "Нет Jupiter/Solana lending в снимке при настроенном Solana-кошельке. Перезапустите sync."
-    );
-  }
-  if (solConfigured && hasJupiter && !jupiterSyncFresh) {
-    reasons.push(
-      `Метка jupiterLendSyncedAt устарела или отсутствует (${jupiterSyncedAt || "нет"}).`
-    );
+  if (!hasLp && ctx.liquidityUsd <= 0) {
+    reasons.push("В снимке Navigator нет LP-позиций.");
   }
   if (!hasYield) {
-    reasons.push(
-      "В снимке нет Yield-позиции (Pendle/Deposit). В кабинете DeFi Navigator Yield входит в баланс — перезапустите sync."
-    );
+    reasons.push("В снимке Navigator нет Yield-позиции (в кабинете Yield входит в баланс).");
   }
   if (ctx.ageMs > STALE_AFTER_MS) {
     reasons.push(
-      `Кэш старше ${round2(STALE_AFTER_MS / 3600000)} ч (updatedAt=${ctx.updatedAt}).`
+      `Снимок Navigator старше ${round2(STALE_AFTER_MS / 3600000)} ч (updatedAt=${ctx.updatedAt}).`
     );
   }
-  if (ctx.lpListingGapUsd > 100) {
+
+  // Independent SoT: navigatorBalanceUsd from export totals — not a self-sum of this API.
+  const expectedPublic = round2(ctx.navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD);
+  const gapPublic = round2(ctx.netWorthUsd - expectedPublic);
+  if (Math.abs(gapPublic) > NAV_TOLERANCE_USD) {
     reasons.push(
-      `Разобранные LP NFT ($${ctx.lpFromPositions}) меньше liquidityUsd снимка ($${ctx.liquidityUsd}) на $${ctx.lpListingGapUsd}.`
+      `Чистый капитал Public Portfolio ($${ctx.netWorthUsd}) не равен балансу снимка Navigator ($${ctx.navigatorBalanceUsd}) + внутренняя корректировка (ожидалось $${expectedPublic}, Δ=${gapPublic >= 0 ? "+" : ""}$${gapPublic}).`
     );
   }
-  if (!(ctx.navigatorBalanceUsd > 0)) {
+
+  const componentSum = round2(
+    ctx.walletIdleUsd + ctx.collateralUsd + ctx.liquidityUsd + ctx.yieldPrincipalUsd - ctx.debtUsd
+  );
+  const gapComponents = round2(componentSum - ctx.navigatorBalanceUsd);
+  if (Math.abs(gapComponents) > NAV_TOLERANCE_USD) {
     reasons.push(
-      "В кэше нет независимого navigatorBalanceUsd из снимка DeFi Navigator. Запустите scripts/sync_jupiter_into_portfolio_data.py."
+      `Сумма категорий API ($${componentSum}) расходится с балансом снимка Navigator ($${ctx.navigatorBalanceUsd}) на ${gapComponents >= 0 ? "+" : ""}$${gapComponents}.`
     );
-  } else {
-    // Public headline must be navigator balance + internal adj only.
-    const expectedPublic = round2(ctx.navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD);
-    const gapPublic = round2(ctx.netWorthUsd - expectedPublic);
-    if (Math.abs(gapPublic) > ctx.navigatorToleranceUsd) {
-      reasons.push(
-        `Чистый капитал Public Portfolio ($${ctx.netWorthUsd}) не равен балансу снимка Navigator ($${ctx.navigatorBalanceUsd}) + внутренняя корректировка (ожидалось $${expectedPublic}, Δ=${gapPublic >= 0 ? "+" : ""}$${gapPublic}, допуск ±$${ctx.navigatorToleranceUsd}).`
-      );
-    }
-    // Component integrity vs stored Navigator snapshot (not a circular API self-sum for SoT).
-    const componentSum = round2(
-      ctx.walletIdleUsd +
-        ctx.collateralUsd +
-        ctx.liquidityUsd +
-        ctx.yieldPrincipalUsd -
-        ctx.debtUsd
-    );
-    const gapComponents = round2(componentSum - ctx.navigatorBalanceUsd);
-    if (Math.abs(gapComponents) > ctx.navigatorToleranceUsd) {
-      reasons.push(
-        `Сумма категорий API ($${componentSum}) расходится с navigatorBalanceUsd снимка ($${ctx.navigatorBalanceUsd}) на ${gapComponents >= 0 ? "+" : ""}$${gapComponents}.`
-      );
-    }
   }
-  if (!(rawLending.length > 0) && ctx.collateralUsd <= 0 && ctx.debtUsd <= 0) {
-    reasons.push("Lending-данные пустые: нет залога и долга в снимке.");
-  }
+
   return reasons;
 }
 
 /**
- * @param {object} data parsed portfolio-data
+ * @param {object} snap navigator-cabinet-snapshot payload
  * @param {{ limit?: number, cursor?: string, log?: Function }} [opts]
  */
-export function buildPublicPortfolioV2(data, opts = {}) {
+export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
   const log = opts.log || console.info.bind(console);
-  const evmAddr = (data.debankWallets || [])[0] || data.portfolioWallet || "";
-  const solAddr = (data.solanaWallets || [])[0] || "";
-  const evmLabel = walletLabel(evmAddr, "evm");
-  const primaryLabel = evmLabel;
 
-  const lending = lendingPositions(data, evmLabel);
-  // Only real LP NFT/sheet rows — never invent a residual LP row (avoids double-count).
-  const liquidity = liquidityPositions(data, primaryLabel);
-  const yields = yieldPositions(data, primaryLabel);
-  const wallets = walletPositions(data);
+  if (!snap || snap.ok === false) {
+    const updatedAt = snap?.generatedAt || new Date().toISOString();
+    const incompleteReasons = collectCompleteness(snap, {
+      updatedAt,
+      ageMs: Infinity,
+      navigatorBalanceUsd: 0,
+      netWorthUsd: 0,
+      walletIdleUsd: 0,
+      collateralUsd: 0,
+      liquidityUsd: 0,
+      yieldPrincipalUsd: 0,
+      debtUsd: 0,
+    });
+    const payload = {
+      meta: {
+        updatedAt,
+        source: "DeFi Navigator",
+        walletCount: 0,
+        chains: 0,
+        stale: true,
+        complete: false,
+        incompleteReasons,
+        snapshotId: snap?.snapshotId || null,
+        navigatorBalanceUsd: 0,
+        formula: "navigatorBalanceUsd + internalEquityAdjustment",
+        rewardsInNetWorth: false,
+        transactionsAvailable: false,
+        transactionsNote:
+          "Снимок Navigator недоступен — позиции и история не сформированы.",
+        navigatorSnapshot: {
+          snapshotId: snap?.snapshotId || null,
+          updatedAt,
+          balanceUsd: 0,
+          error: snap?.error || "MISSING_SNAPSHOT",
+        },
+      },
+      summary: {
+        netWorthUsd: 0,
+        walletIdleUsd: 0,
+        collateralUsd: 0,
+        liquidityUsd: 0,
+        yieldPrincipalUsd: 0,
+        debtUsd: 0,
+        rewardsAccruedUsd: 0,
+        borrowAprPct: null,
+        healthFactor: null,
+        changePct30d: null,
+      },
+      positions: [],
+      transactions: [],
+      history: [],
+    };
+    assertNoAdjustmentLeak(payload);
+    return payload;
+  }
 
-  const collateralUsd = round2(lending.reduce((s, p) => s + num(p.collateralUsd), 0));
-  const debtUsd = round2(lending.reduce((s, p) => s + num(p.debtUsd), 0));
-  const lpFromPositions = round2(liquidity.reduce((s, p) => s + num(p.valueUsd), 0));
-  const yieldFromPositions = round2(yields.reduce((s, p) => s + num(p.valueUsd), 0));
+  const totals = snap.totals || {};
+  const packs = snap.walletPacks || [];
 
-  const snaps = data.snapshots || [];
-  const lastSnap = snaps.length ? snaps[snaps.length - 1] : null;
-  const snapLiq = lastSnap ? round2(lastSnap.liquidityUsd) : 0;
-  // Capital path: prefer daily snapshot liquidity (sheet aggregate). Positions list stays NFT-only.
-  let liquidityUsd = snapLiq > 0 ? Math.max(snapLiq, lpFromPositions) : lpFromPositions;
-  const lpListingGapUsd = round2(Math.max(0, liquidityUsd - lpFromPositions));
+  const lending = packs.flatMap(mapLending);
+  const liquidity = packs.flatMap(mapLiquidity);
+  const yields = packs.flatMap(mapYield);
 
-  const walletIdleUsd = round2(data.walletIdleUsd);
-  const yieldPrincipalUsd = round2(
-    data.yieldPrincipalUsd != null ? data.yieldPrincipalUsd : yieldFromPositions
-  );
-  const rewardsAccruedUsd = round2(data.openLiquidityUnclaimedUsd);
+  // Categories from Navigator snapshot totals (cabinet formula), not recomputed live APIs.
+  const walletIdleUsd = round2(totals.walletUsd);
+  const collateralUsd = round2(totals.collateralUsd);
+  const debtUsd = round2(totals.borrowUsd);
+  const liquidityUsd = round2(totals.liquidityUsd);
+  const yieldPrincipalUsd = round2(totals.yieldUsd);
+  // Rewards are unclaimed / not in cabinet balance.
+  const rewardsAccruedUsd = round2(totals.rewardsUsd);
+  const rewardsInBalance = Boolean(totals.rewardsInBalance);
 
-  // Independent Navigator SoT from cache (balance BEFORE internal adj; rewards excluded).
-  const navSnap = data.navigatorSnapshot || {};
-  const navigatorBalanceUsd = round2(
-    data.navigatorBalanceUsd != null
-      ? data.navigatorBalanceUsd
-      : navSnap.balanceUsd != null
-        ? navSnap.balanceUsd
-        : walletIdleUsd + collateralUsd + liquidityUsd + yieldPrincipalUsd - debtUsd
-  );
-
-  // Public headline = Navigator cabinet balance + internal adj only.
+  const navigatorBalanceUsd = round2(totals.totalUsd);
   const netWorthUsd = round2(navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD);
 
-  // Include configured wallets even with $0 idle so both addresses stay visible.
+  const wallets = mapWallets(packs, walletIdleUsd);
   const positions = [...lending, ...liquidity, ...yields, ...wallets];
 
-  const history = buildHistory(snaps);
-  const { transactions, nextCursor, total: txTotal } = mapTransactions(data, opts);
+  const history = buildHistory(snap);
 
   const hfCandidates = lending
     .map((p) => p.healthFactor)
@@ -530,15 +535,11 @@ export function buildPublicPortfolioV2(data, opts = {}) {
     ? round2(rateCandidates.reduce((a, b) => a + Number(b), 0) / rateCandidates.length)
     : null;
 
-  const updatedAt = data.exportedAt || lastSnap?.timestamp || new Date().toISOString();
+  const updatedAt = snap.updatedAt || snap.generatedAt || new Date().toISOString();
   const updatedMs = Date.parse(updatedAt);
   const ageMs = Number.isFinite(updatedMs) ? Date.now() - updatedMs : Infinity;
 
-  const navigatorToleranceUsd = Number(
-    process.env.PUBLIC_PORTFOLIO_NAVIGATOR_TOLERANCE_USD || 50
-  );
-
-  const incompleteReasons = collectCompleteness(data, {
+  const incompleteReasons = collectCompleteness(snap, {
     updatedAt,
     ageMs,
     walletIdleUsd,
@@ -546,14 +547,10 @@ export function buildPublicPortfolioV2(data, opts = {}) {
     debtUsd,
     liquidityUsd,
     yieldPrincipalUsd,
-    lpFromPositions,
-    lpListingGapUsd,
     netWorthUsd,
     navigatorBalanceUsd,
-    navigatorToleranceUsd,
   });
   const complete = incompleteReasons.length === 0;
-  // stale = age only (incompleteReasons explain reconciliation separately).
   const stale = ageMs > STALE_AFTER_MS;
 
   const chains = new Set();
@@ -561,51 +558,24 @@ export function buildPublicPortfolioV2(data, opts = {}) {
     if (p.chain && p.chain !== "—" && p.chain !== "Multi") chains.add(p.chain);
   }
 
-  const walletCount =
-    new Set([...(data.debankWallets || []), ...(data.solanaWallets || [])].filter(Boolean))
-      .size || 0;
+  const walletCount = new Set(
+    (snap.wallets || packs.map((p) => p.address)).filter(Boolean)
+  ).size;
 
-  const snapshotId =
-    String(navSnap.snapshotId || "").trim() ||
-    stableId(
-      "ppv2",
-      updatedAt,
-      navigatorBalanceUsd,
-      netWorthUsd,
-      collateralUsd,
-      debtUsd,
-      liquidityUsd,
-      yieldPrincipalUsd,
-      walletIdleUsd
-    );
+  const snapshotId = String(snap.snapshotId || "").trim() || stableId("nav", updatedAt, navigatorBalanceUsd);
 
-  const jupiterRows = lending.filter((p) => String(p.protocol).toLowerCase().includes("jupiter"));
-  const jupiterNet = round2(
-    jupiterRows.reduce((s, p) => s + num(p.collateralUsd) - num(p.debtUsd), 0)
-  );
-  const fluidRows = lending.filter((p) => !String(p.protocol).toLowerCase().includes("jupiter"));
-  const fluidNet = round2(
-    fluidRows.reduce((s, p) => s + num(p.collateralUsd) - num(p.debtUsd), 0)
-  );
+  const transactionsAvailable = false;
+  const transactionsNote =
+    "В кэше личного кабинета DeFi Navigator нет ленты транзакций для публичной витрины.";
 
-  const txCount = (data.transactions || []).length;
-  const transactionsAvailable = txCount > 0;
-  const transactionsNote = transactionsAvailable
-    ? null
-    : "В кэше Navigator нет транзакций (data/transactions.json пуст). История операций недоступна — интерфейс может показать пустое состояние.";
-
-  // Server-side reconciliation only — never expose adjustment amount in the response.
-  log("[public-portfolio/v2] reconciliation", {
+  log("[public-portfolio/v2] navigator snapshot", {
     snapshotId,
     updatedAt,
     complete,
     incompleteReasons,
     stale,
-    cacheAgeHours: Number.isFinite(ageMs) ? round2(ageMs / 3600000) : null,
-    wallets: { evm: evmAddr ? shortAddr(evmAddr) : null, sol: solAddr ? shortAddr(solAddr) : null },
     navigatorBalanceUsd,
     netWorthUsd,
-    adjAppliedInNetWorthOnly: true,
     components: {
       walletIdleUsd,
       collateralUsd,
@@ -613,35 +583,20 @@ export function buildPublicPortfolioV2(data, opts = {}) {
       yieldPrincipalUsd,
       debtUsd,
       rewardsAccruedUsd,
+      rewardsInBalance,
     },
     positionCounts: {
       lending: lending.length,
-      liquidityNft: liquidity.length,
+      liquidity: liquidity.length,
       yield: yields.length,
-      lpListingGapUsd,
       wallet: wallets.length,
       total: positions.length,
-      breakdown: {
-        jupiterLending: jupiterRows.length,
-        evmLending: fluidRows.length,
-        lpNft: liquidity.length,
-        yield: yields.length,
-        walletRows: wallets.length,
-      },
-    },
-    gapBridge: {
-      navigatorBalanceUsd,
-      publicNetWorthUsd: netWorthUsd,
-      jupiterNetUsd: jupiterNet,
-      evmLendingNetUsd: fluidNet,
-      yieldPrincipalUsd,
-      transactionsAvailable,
     },
   });
 
   const payload = {
     meta: {
-      updatedAt: navSnap.updatedAt || updatedAt,
+      updatedAt,
       source: "DeFi Navigator",
       walletCount,
       chains: chains.size,
@@ -651,31 +606,32 @@ export function buildPublicPortfolioV2(data, opts = {}) {
       snapshotId,
       navigatorBalanceUsd,
       formula:
-        "navigatorBalanceUsd(= walletIdle + collateral + liquidity + yieldPrincipal - debt) + internalEquityAdjustment",
-      rewardsInNetWorth: false,
+        "navigatorBalanceUsd(= wallet + collateral + liquidity + yield − debt from cabinet cache) + internalEquityAdjustment",
+      rewardsInNetWorth: rewardsInBalance,
       positionCounts: {
         total: positions.length,
         lending: lending.length,
         liquidity: liquidity.length,
         yield: yields.length,
         wallet: wallets.length,
-        lpListingGapUsd,
       },
       transactionsAvailable,
       transactionsNote,
       navigatorSnapshot: {
         snapshotId,
-        updatedAt: navSnap.updatedAt || updatedAt,
+        updatedAt,
+        generatedAt: snap.generatedAt || null,
         balanceUsd: navigatorBalanceUsd,
-        balanceHintUsd: navSnap.balanceHintUsd ?? 15189,
-        components: navSnap.components || {
+        source: snap.source || "DeFi Navigator cockpit cache",
+        clientId: snap.clientId ?? null,
+        components: {
           walletIdleUsd,
           collateralUsd,
           liquidityUsd,
           yieldPrincipalUsd,
           debtUsd,
           rewardsAccruedUsd,
-          rewardsInBalance: false,
+          rewardsInBalance,
         },
       },
     },
@@ -692,18 +648,11 @@ export function buildPublicPortfolioV2(data, opts = {}) {
       changePct30d: changePct30d(history),
     },
     positions,
-    transactions,
+    transactions: [],
     history,
   };
 
-  if (nextCursor != null || (opts.limit != null && txTotal > transactions.length)) {
-    payload.meta.transactionsCursor = nextCursor;
-    payload.meta.transactionsTotal = txTotal;
-  }
-
-  // Hard guard: never leak the adjustment as its own field.
   assertNoAdjustmentLeak(payload);
-
   return payload;
 }
 
@@ -724,9 +673,31 @@ function assertNoAdjustmentLeak(payload) {
   }
 }
 
+/** @deprecated Use buildPublicPortfolioV2FromNavigator */
+export function buildPublicPortfolioV2(data, opts = {}) {
+  // Accept either a navigator snapshot or a legacy wrapper.
+  if (data?.walletPacks || data?.totals?.totalUsd != null || data?.schema?.includes?.("navigator")) {
+    return buildPublicPortfolioV2FromNavigator(data, opts);
+  }
+  if (data?.navigatorCabinetSnapshot) {
+    return buildPublicPortfolioV2FromNavigator(data.navigatorCabinetSnapshot, opts);
+  }
+  return buildPublicPortfolioV2FromNavigator(
+    { ok: false, error: "LEGACY_PORTFOLIO_DATA_NOT_SUPPORTED" },
+    opts
+  );
+}
+
 export function buildFromDisk(opts = {}) {
-  const { data, path: cachePath } = loadPortfolioCache(opts.cachePath);
+  const { data, path: snapPath } = loadNavigatorSnapshot(opts.snapshotPath || opts.cachePath);
   const log = opts.log || console.info.bind(console);
-  log("[public-portfolio/v2] cache file", path.basename(cachePath));
-  return buildPublicPortfolioV2(data, opts);
+  log("[public-portfolio/v2] navigator snapshot file", path.basename(snapPath));
+  return buildPublicPortfolioV2FromNavigator(data, opts);
+}
+
+export async function buildFromSource(opts = {}) {
+  const { data, path: snapPath } = await loadNavigatorSnapshotSource(opts);
+  const log = opts.log || console.info.bind(console);
+  log("[public-portfolio/v2] navigator snapshot source", String(snapPath).slice(0, 120));
+  return buildPublicPortfolioV2FromNavigator(data, opts);
 }

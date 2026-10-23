@@ -472,13 +472,9 @@ function mapWallets(packs, walletIdleUsd) {
 }
 
 function buildHistory(snap) {
-  // Only factual cache days from Navigator. Prefer historyDaily; history7d is the
-  // same cabinet series (last 7), not a live rebuild. Never densify / invent days.
-  const source = Array.isArray(snap.historyDaily) && snap.historyDaily.length
-    ? snap.historyDaily
-    : Array.isArray(snap.history7d)
-      ? snap.history7d
-      : [];
+  // Strict: only historyDaily from Navigator cache. No densify, no demo, no
+  // invented calendar days. Missing days stay missing (chart draws gaps).
+  const source = Array.isArray(snap.historyDaily) ? snap.historyDaily : [];
   const byDay = new Map();
   for (const h of source) {
     const date = dayKey(h?.date || h?.day);

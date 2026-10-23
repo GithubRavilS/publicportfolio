@@ -10,3 +10,7 @@ python/config.json
 *.sqlite
 debank_lending_*.csv
 /tmp/
+
+# secrets
+python/google-service-account.json
+**/google-service-account.json

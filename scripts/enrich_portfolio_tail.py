@@ -257,6 +257,22 @@ def enrich_tail(payload: dict, today: str) -> dict:
     payload["lendingPositions"] = lending
 
     lp_positions = fetch_active_lp_positions(payload)
+    # Keep liquidityPositions in the public cache aligned with the live sheet.
+    if lp_positions:
+        closed_prev = [
+            p for p in (payload.get("liquidityPositions") or []) if not p.get("isActive", True)
+        ]
+        for p in closed_prev:
+            p["isActive"] = False
+            p["valueUsd"] = 0.0
+        payload["liquidityPositions"] = closed_prev + lp_positions
+        payload["openLiquidityUnclaimedUsd"] = round(
+            sum(
+                float(p.get("feesUsd") or 0) + float(p.get("incentivesUsd") or 0)
+                for p in lp_positions
+            ),
+            2,
+        )
     income_store = load_income_store()
     income_by_day, yield_backfill_days = refresh_income_store_and_backfill_gap(
         income_store,

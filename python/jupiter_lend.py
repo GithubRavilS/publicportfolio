@@ -5,6 +5,7 @@ Jupiter Lend (Solana) — позиции через бесплатный Jupiter
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 
 JUPITER_PORTFOLIO_API = "https://api.jup.ag/portfolio/v1/positions/{wallet}"
+JUPITER_LEND_BORROW_POSITIONS_API = "https://api.jup.ag/lend/v1/borrow/positions?users={wallet}"
 DEFAULT_SOLANA_WALLET = "9Q4mAN4QTxC39CRn3SmFqEaxhEJjNd7UTYoeqUZ1pf5o"
 CHART_BRIDGE_ANCHOR_DAY = "2026-06-09"
 CHART_BRIDGE_START = "2026-06-10"
@@ -51,15 +53,6 @@ def solana_wallets_from_config(config: dict | None) -> list[str]:
 def _token_symbol(token_info: dict[str, Any], mint: str) -> str:
     meta = (token_info or {}).get("solana", {}).get(mint) or {}
     return str(meta.get("symbol") or mint[:8])
-
-
-def fetch_portfolio_positions(wallet: str, timeout: float = 25.0) -> dict:
-    url = JUPITER_PORTFOLIO_API.format(wallet=wallet)
-    req = urllib.request.Request(
-        url, headers={"Accept": "application/json", "User-Agent": "publicportfolio/1.0"}
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as res:
-        return json.loads(res.read().decode())
 
 
 def parse_borrowlend_element(element: dict, token_info: dict[str, Any]) -> dict | None:
@@ -120,25 +113,155 @@ def parse_borrowlend_element(element: dict, token_info: dict[str, Any]) -> dict 
     }
 
 
+def _http_json(url: str, timeout: float = 25.0) -> Any:
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "publicportfolio/1.0",
+    }
+    api_key = str(os.environ.get("JUPITER_API_KEY") or os.environ.get("JUP_API_KEY") or "").strip()
+    if api_key:
+        headers["x-api-key"] = api_key
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        return json.loads(res.read().decode())
+
+
+def fetch_portfolio_positions(wallet: str, timeout: float = 25.0) -> dict:
+    url = JUPITER_PORTFOLIO_API.format(wallet=wallet)
+    doc = _http_json(url, timeout=timeout)
+    if not isinstance(doc, dict):
+        raise TypeError("Jupiter portfolio API expected object")
+    return doc
+
+
+def parse_lend_borrow_api_position(row: dict) -> dict | None:
+    """Parse Jupiter Lend Borrow API row (lend/v1/borrow/positions)."""
+    if not isinstance(row, dict):
+        return None
+    vault = row.get("vault") or {}
+    supply_tok = vault.get("supplyToken") or {}
+    borrow_tok = vault.get("borrowToken") or {}
+    s_dec = int(supply_tok.get("decimals") or 0)
+    b_dec = int(borrow_tok.get("decimals") or 0)
+    s_price = float(supply_tok.get("price") or 0)
+    b_price = float(borrow_tok.get("price") or 0)
+    supply_raw = int(float(row.get("supply") or 0))
+    borrow_raw = int(float(row.get("borrow") or 0))
+    # dustBorrow is residual interest dust in token base units — not the main debt.
+    if s_dec < 0 or b_dec < 0:
+        return None
+    supply_amt = supply_raw / (10**s_dec) if s_dec else float(supply_raw)
+    borrow_amt = borrow_raw / (10**b_dec) if b_dec else float(borrow_raw)
+    collateral_usd = supply_amt * s_price
+    borrow_usd = borrow_amt * b_price
+    if collateral_usd <= 0 and borrow_usd <= 0:
+        return None
+    coll_asset = str(supply_tok.get("uiSymbol") or supply_tok.get("symbol") or "COLL")
+    bor_asset = str(borrow_tok.get("uiSymbol") or borrow_tok.get("symbol") or "DEBT")
+    lt = float(vault.get("liquidationThreshold") or 0) / 1000.0
+    if lt <= 0:
+        lt = JUPITER_LTV_FOR_HF
+    hf = (collateral_usd * lt / borrow_usd) if borrow_usd > 0 else 0.0
+    market_price = s_price if supply_amt > 0 else 0.0
+    liquidation_price = (market_price / hf) if hf > 0 and hf <= 25 and market_price > 0 else 0.0
+    pos_id = row.get("id")
+    vault_id = row.get("vaultId") or vault.get("id")
+    link = (
+        f"https://jup.ag/lend/borrow/{vault_id}" if vault_id is not None else "https://jup.ag/lend"
+    )
+    return {
+        "protocol": "Jupiter Lend",
+        "chain": "solana",
+        "collateralAsset": coll_asset,
+        "collateralAmount": round(supply_amt, 8),
+        "collateralUsd": round(collateral_usd, 6),
+        "borrowAsset": bor_asset,
+        "borrowAmount": round(borrow_amt, 6),
+        "borrowUsd": round(borrow_usd, 6),
+        "supplied": [{"asset": coll_asset, "amount": supply_amt, "usd": collateral_usd}],
+        "borrowed": [{"asset": bor_asset, "amount": borrow_amt, "usd": borrow_usd}],
+        "netUsd": round(collateral_usd - borrow_usd, 6),
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "healthFactor": round(hf, 4),
+        "marketPrice": round(market_price, 6),
+        "liquidationPrice": round(liquidation_price, 6),
+        "link": link,
+        "dataSource": "jupiter-lend-borrow-api",
+        "positionId": str(pos_id) if pos_id is not None else "",
+        "borrowAprPct": round(float(vault.get("borrowRate") or 0) / 100.0, 4)
+        if vault.get("borrowRate") is not None
+        else None,
+    }
+
+
+def fetch_jupiter_lend_borrow_positions(wallet: str, timeout: float = 25.0) -> list[dict]:
+    url = JUPITER_LEND_BORROW_POSITIONS_API.format(wallet=wallet)
+    doc = _http_json(url, timeout=timeout)
+    rows = doc if isinstance(doc, list) else (doc.get("data") or doc.get("positions") or [])
+    out: list[dict] = []
+    for row in rows or []:
+        pos = parse_lend_borrow_api_position(row)
+        if pos:
+            out.append(pos)
+    return out
+
+
 def fetch_jupiter_lending_positions(config: dict | None = None) -> list[dict]:
+    """
+    Live Jupiter Lend positions for configured Solana wallets.
+
+    Prefer Portfolio API borrowlend elements; if that endpoint is down (503) or
+    returns nothing, fall back to Lend Borrow Positions API which does not
+    require the portfolio fetcher mesh.
+    """
     out: list[dict] = []
     for wallet in solana_wallets_from_config(config):
+        wallet_pos: list[dict] = []
         try:
             doc = fetch_portfolio_positions(wallet)
-        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+            token_info = doc.get("tokenInfo") or {}
+            for el in doc.get("elements") or []:
+                pos = parse_borrowlend_element(el, token_info)
+                if pos:
+                    pos.setdefault("dataSource", "jupiter-portfolio-api")
+                    wallet_pos.append(pos)
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            OSError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as e:
             print(f"[WARN] Jupiter portfolio API ({wallet[:8]}…): {e}")
-            continue
-        token_info = doc.get("tokenInfo") or {}
-        for el in doc.get("elements") or []:
-            pos = parse_borrowlend_element(el, token_info)
-            if pos:
-                out.append(pos)
+
+        if not wallet_pos:
+            try:
+                wallet_pos = fetch_jupiter_lend_borrow_positions(wallet)
+                if wallet_pos:
+                    print(
+                        f"[OK] Jupiter Lend Borrow API fallback ({wallet[:8]}…): "
+                        f"{len(wallet_pos)} pos"
+                    )
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                OSError,
+                json.JSONDecodeError,
+                ValueError,
+                TypeError,
+            ) as e:
+                print(f"[WARN] Jupiter lend borrow API ({wallet[:8]}…): {e}")
+
+        out.extend(wallet_pos)
+
     if out:
         coll = sum(float(p.get("collateralUsd") or 0) for p in out)
         debt = sum(float(p.get("borrowUsd") or 0) for p in out)
         print(
             f"[OK] Jupiter Lend: {len(out)} pos, coll=${coll:.2f} debt=${debt:.2f} net=${coll - debt:.2f}"
         )
+    else:
+        print("[WARN] Jupiter Lend: no positions returned for configured Solana wallets")
     return out
 
 

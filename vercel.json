@@ -1,4 +1,7 @@
 {
+  "env": {
+    "NAVIGATOR_SNAPSHOT_URL": "https://cry-maden008.pythonanywhere.com/portfolio-check/api/public/navigator-snapshot"
+  },
   "headers": [
     {
       "source": "/data/(.*)",

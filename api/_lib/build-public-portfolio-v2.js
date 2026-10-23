@@ -120,8 +120,11 @@ export function loadNavigatorSnapshot(explicitPath) {
   throw lastErr || new Error("navigator-cabinet-snapshot not found");
 }
 
+export const DEFAULT_NAVIGATOR_SNAPSHOT_URL =
+  "https://cry-maden008.pythonanywhere.com/portfolio-check/api/public/navigator-snapshot";
+
 /**
- * Optional fetch of live PA read-only export.
+ * Fetch live PA read-only export.
  * @param {string} url
  * @param {{ timeoutMs?: number }} [opts]
  */
@@ -138,24 +141,118 @@ export async function fetchNavigatorSnapshot(url, opts = {}) {
       throw new Error(`navigator snapshot HTTP ${res.status}`);
     }
     const data = await res.json();
-    return { data, path: url };
+    if (!data || data.ok === false) {
+      throw new Error(
+        `navigator snapshot payload not ok (${data?.error || "unknown"})`
+      );
+    }
+    if (!data.snapshotId || !data.updatedAt) {
+      throw new Error("navigator snapshot missing snapshotId/updatedAt");
+    }
+    return {
+      data,
+      path: url,
+      sourceKind: "endpoint",
+      endpointUrl: url,
+      liveFromEndpoint: true,
+      endpointError: null,
+    };
   } finally {
     clearTimeout(t);
   }
 }
 
+/**
+ * Resolve snapshot source.
+ *
+ * When NAVIGATOR_SNAPSHOT_URL is configured (Vercel Preview/Production):
+ * - success → live endpoint payload (liveFromEndpoint=true)
+ * - failure → optional file only as degraded cache; never marked live/complete
+ *
+ * When URL is unset (local dump): file is the primary source.
+ */
 export async function loadNavigatorSnapshotSource(opts = {}) {
-  const url = opts.url || process.env.NAVIGATOR_SNAPSHOT_URL || "";
+  const log = opts.log || console.warn.bind(console);
+  const url = String(opts.url || process.env.NAVIGATOR_SNAPSHOT_URL || "").trim();
+  const requireEndpoint =
+    opts.requireEndpoint === true ||
+    Boolean(url) ||
+    String(process.env.VERCEL_ENV || "") === "preview" ||
+    String(process.env.VERCEL_ENV || "") === "production";
+
   if (url) {
     try {
       return await fetchNavigatorSnapshot(url, opts);
     } catch (err) {
-      if (opts.allowFileFallback === false) throw err;
-      const log = opts.log || console.warn.bind(console);
-      log("[public-portfolio/v2] NAVIGATOR_SNAPSHOT_URL failed, file fallback:", String(err?.message || err));
+      const endpointError = String(err?.message || err);
+      log("[public-portfolio/v2] NAVIGATOR_SNAPSHOT_URL failed:", endpointError);
+      if (opts.allowFileFallback === false) {
+        return {
+          data: {
+            ok: false,
+            error: "ENDPOINT_UNAVAILABLE",
+            endpointError,
+            endpointUrl: url,
+          },
+          path: url,
+          sourceKind: "endpoint-error",
+          endpointUrl: url,
+          liveFromEndpoint: false,
+          endpointError,
+        };
+      }
+      try {
+        const file = loadNavigatorSnapshot(opts.snapshotPath);
+        return {
+          ...file,
+          sourceKind: "file-fallback",
+          endpointUrl: url,
+          liveFromEndpoint: false,
+          endpointError,
+        };
+      } catch (fileErr) {
+        return {
+          data: {
+            ok: false,
+            error: "ENDPOINT_UNAVAILABLE",
+            endpointError,
+            fileError: String(fileErr?.message || fileErr),
+            endpointUrl: url,
+          },
+          path: url,
+          sourceKind: "endpoint-error",
+          endpointUrl: url,
+          liveFromEndpoint: false,
+          endpointError,
+        };
+      }
     }
   }
-  return loadNavigatorSnapshot(opts.snapshotPath);
+
+  if (requireEndpoint) {
+    return {
+      data: {
+        ok: false,
+        error: "NAVIGATOR_SNAPSHOT_URL_UNSET",
+        endpointError:
+          "NAVIGATOR_SNAPSHOT_URL не задан в окружении — live-снимок Navigator недоступен.",
+      },
+      path: null,
+      sourceKind: "endpoint-error",
+      endpointUrl: null,
+      liveFromEndpoint: false,
+      endpointError: "NAVIGATOR_SNAPSHOT_URL unset",
+    };
+  }
+
+  const file = loadNavigatorSnapshot(opts.snapshotPath);
+  return {
+    ...file,
+    sourceKind: "file",
+    endpointUrl: null,
+    liveFromEndpoint: false,
+    endpointError: null,
+  };
 }
 
 function changePct30d(history) {
@@ -371,6 +468,21 @@ function buildHistory(snap) {
 
 function collectCompleteness(snap, ctx) {
   const reasons = [];
+  if (ctx.endpointError) {
+    reasons.push(
+      `Read-only endpoint Navigator недоступен: ${ctx.endpointError}. Сохранённый JSON не считается актуальным снимком.`
+    );
+  }
+  if (ctx.sourceKind === "file-fallback") {
+    reasons.push(
+      "Показан устаревший файловый кэш (file-fallback) — live snapshotId/updatedAt с endpoint не получены."
+    );
+  }
+  if (ctx.requireLiveEndpoint && !ctx.liveFromEndpoint) {
+    reasons.push(
+      "Ожидался live-снимок с NAVIGATOR_SNAPSHOT_URL, но endpoint не отдал актуальные данные."
+    );
+  }
   if (!snap || snap.ok === false) {
     reasons.push(
       snap?.error
@@ -441,6 +553,15 @@ function collectCompleteness(snap, ctx) {
  */
 export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
   const log = opts.log || console.info.bind(console);
+  const sourceKind = opts.sourceKind || "unknown";
+  const liveFromEndpoint = opts.liveFromEndpoint === true;
+  const endpointUrl = opts.endpointUrl || null;
+  const endpointError = opts.endpointError || null;
+  const requireLiveEndpoint =
+    opts.requireLiveEndpoint === true ||
+    Boolean(endpointUrl) ||
+    String(process.env.VERCEL_ENV || "") === "preview" ||
+    String(process.env.VERCEL_ENV || "") === "production";
 
   if (!snap || snap.ok === false) {
     const updatedAt = snap?.generatedAt || new Date().toISOString();
@@ -454,6 +575,10 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
       liquidityUsd: 0,
       yieldPrincipalUsd: 0,
       debtUsd: 0,
+      sourceKind,
+      liveFromEndpoint,
+      endpointError,
+      requireLiveEndpoint,
     });
     const payload = {
       meta: {
@@ -468,6 +593,10 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
         navigatorBalanceUsd: 0,
         formula: "navigatorBalanceUsd + internalEquityAdjustment",
         rewardsInNetWorth: false,
+        liveFromEndpoint: false,
+        snapshotSource: sourceKind,
+        endpointUrl,
+        endpointError,
         transactionsAvailable: false,
         transactionsNote:
           "Снимок Navigator недоступен — позиции и история не сформированы.",
@@ -476,6 +605,9 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
           updatedAt,
           balanceUsd: 0,
           error: snap?.error || "MISSING_SNAPSHOT",
+          liveFromEndpoint: false,
+          sourceKind,
+          endpointError,
         },
       },
       summary: {
@@ -549,9 +681,18 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
     yieldPrincipalUsd,
     netWorthUsd,
     navigatorBalanceUsd,
+    sourceKind,
+    liveFromEndpoint,
+    endpointError,
+    requireLiveEndpoint,
   });
-  const complete = incompleteReasons.length === 0;
-  const stale = ageMs > STALE_AFTER_MS;
+  // File cache must never report complete/live when an endpoint is expected.
+  const complete = incompleteReasons.length === 0 && (!requireLiveEndpoint || liveFromEndpoint);
+  const stale =
+    ageMs > STALE_AFTER_MS ||
+    sourceKind === "file-fallback" ||
+    Boolean(endpointError) ||
+    (requireLiveEndpoint && !liveFromEndpoint);
 
   const chains = new Set();
   for (const p of positions) {
@@ -574,6 +715,10 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
     complete,
     incompleteReasons,
     stale,
+    liveFromEndpoint,
+    sourceKind,
+    endpointUrl,
+    endpointError,
     navigatorBalanceUsd,
     netWorthUsd,
     components: {
@@ -608,6 +753,10 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
       formula:
         "navigatorBalanceUsd(= wallet + collateral + liquidity + yield − debt from cabinet cache) + internalEquityAdjustment",
       rewardsInNetWorth: rewardsInBalance,
+      liveFromEndpoint,
+      snapshotSource: sourceKind,
+      endpointUrl,
+      endpointError,
       positionCounts: {
         total: positions.length,
         lending: lending.length,
@@ -624,6 +773,10 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
         balanceUsd: navigatorBalanceUsd,
         source: snap.source || "DeFi Navigator cockpit cache",
         clientId: snap.clientId ?? null,
+        liveFromEndpoint,
+        sourceKind,
+        endpointUrl,
+        endpointError,
         components: {
           walletIdleUsd,
           collateralUsd,
@@ -692,12 +845,36 @@ export function buildFromDisk(opts = {}) {
   const { data, path: snapPath } = loadNavigatorSnapshot(opts.snapshotPath || opts.cachePath);
   const log = opts.log || console.info.bind(console);
   log("[public-portfolio/v2] navigator snapshot file", path.basename(snapPath));
-  return buildPublicPortfolioV2FromNavigator(data, opts);
+  return buildPublicPortfolioV2FromNavigator(data, {
+    ...opts,
+    sourceKind: "file",
+    liveFromEndpoint: false,
+    endpointUrl: null,
+    endpointError: null,
+    requireLiveEndpoint: false,
+  });
 }
 
 export async function buildFromSource(opts = {}) {
-  const { data, path: snapPath } = await loadNavigatorSnapshotSource(opts);
+  const loaded = await loadNavigatorSnapshotSource(opts);
   const log = opts.log || console.info.bind(console);
-  log("[public-portfolio/v2] navigator snapshot source", String(snapPath).slice(0, 120));
-  return buildPublicPortfolioV2FromNavigator(data, opts);
+  log(
+    "[public-portfolio/v2] navigator snapshot source",
+    loaded.sourceKind,
+    String(loaded.path || "").slice(0, 120),
+    loaded.liveFromEndpoint ? "live" : "not-live"
+  );
+  return buildPublicPortfolioV2FromNavigator(loaded.data, {
+    ...opts,
+    sourceKind: loaded.sourceKind,
+    liveFromEndpoint: loaded.liveFromEndpoint === true,
+    endpointUrl: loaded.endpointUrl || null,
+    endpointError: loaded.endpointError || null,
+    requireLiveEndpoint:
+      opts.requireLiveEndpoint != null
+        ? Boolean(opts.requireLiveEndpoint)
+        : Boolean(loaded.endpointUrl) ||
+          String(process.env.VERCEL_ENV || "") === "preview" ||
+          String(process.env.VERCEL_ENV || "") === "production",
+  });
 }

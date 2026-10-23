@@ -1,11 +1,13 @@
 /**
  * GET /api/public-portfolio/v2
  * Read-only Public Portfolio from DeFi Navigator personal-cabinet cache snapshot.
- * Prefer NAVIGATOR_SNAPSHOT_URL (PA read-only export); else data/navigator-cabinet-snapshot.json.
+ * Preview/Production: NAVIGATOR_SNAPSHOT_URL (PA read-only export) is required for complete=true.
+ * Saved JSON is never presented as a live snapshot when the endpoint fails.
  */
 
 import {
   buildFromSource,
+  DEFAULT_NAVIGATOR_SNAPSHOT_URL,
   INTERNAL_EQUITY_ADJUSTMENT_USD,
 } from "../_lib/build-public-portfolio-v2.js";
 
@@ -31,11 +33,19 @@ export default async function handler(req, res) {
     const url = new URL(req.url || "/", "http://localhost");
     const limit = url.searchParams.get("limit");
     const cursor = url.searchParams.get("cursor") || undefined;
+    const vercelEnv = String(process.env.VERCEL_ENV || "");
+    const isHosted = vercelEnv === "preview" || vercelEnv === "production";
+    const snapshotUrl =
+      process.env.NAVIGATOR_SNAPSHOT_URL ||
+      (isHosted ? DEFAULT_NAVIGATOR_SNAPSHOT_URL : "");
 
     const payload = await buildFromSource({
+      url: snapshotUrl || undefined,
       limit: limit != null ? Number(limit) : undefined,
       cursor,
+      // Hosted: keep last file only as degraded view; never as complete/live.
       allowFileFallback: true,
+      requireLiveEndpoint: isHosted || Boolean(snapshotUrl),
       log: (...args) => console.info(...args),
     });
 

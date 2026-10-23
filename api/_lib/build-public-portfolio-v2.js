@@ -279,7 +279,9 @@ function mapLending(pack) {
   for (const p of pack.lendingPositions || []) {
     const coll = round2(p.collateralUsd);
     const debt = round2(p.debtUsd ?? p.borrowUsd);
-    if (coll <= 0 && debt <= 0) continue;
+    const reward = round2(p.rewardsUsd || 0);
+    const rewardsOnly = coll <= 0 && debt <= 0 && reward > 0;
+    if (coll <= 0 && debt <= 0 && reward <= 0) continue;
     const protocol = String(p.protocol || "Lending");
     const assetParts = [];
     if (p.collateralAsset) assetParts.push(String(p.collateralAsset));
@@ -291,20 +293,20 @@ function mapLending(pack) {
         : fromSupplied.join(" + ") || "Lending";
     out.push({
       id: stableId("lending", pack.address, protocol, p.chain, asset, coll, debt),
-      type: "lending",
+      type: rewardsOnly ? "rewards" : "lending",
       protocol,
       chain: chainLabel(p.chain || p.chainLabel),
       walletLabel: label,
       asset,
-      valueUsd: round2(coll - debt),
+      valueUsd: rewardsOnly ? 0 : round2(coll - debt),
       collateralUsd: coll,
       debtUsd: debt,
       ratePct: p.borrowApy ?? p.supplyApy ?? null,
-      rewardUsd: round2(p.rewardsUsd || 0),
+      rewardUsd: reward,
       healthFactor: p.healthFactor == null ? null : num(p.healthFactor, null),
       closeFactor: p.closeFactor ?? p.close_factor ?? null,
-      includedInNetWorth: true,
-      detail: debt > 0 ? "Залоговая позиция" : "Снабжение без долга",
+      includedInNetWorth: !rewardsOnly,
+      detail: rewardsOnly ? "Начисленные награды (вне капитала)" : debt > 0 ? "Залоговая позиция" : "Снабжение без долга",
       details: {
         collateralAsset: p.collateralAsset || null,
         borrowAsset: p.borrowAsset || null,

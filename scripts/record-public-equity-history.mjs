@@ -15,7 +15,23 @@ const equityUsd = Math.round((Number(snapshot.totals.totalUsd) + adjustmentUsd) 
 const path = "data/public-equity-history.json";
 let rows = JSON.parse(await readFile(path, "utf8"));
 if (!Array.isArray(rows)) throw new Error("History file must contain an array");
-const next = { date, equityUsd, asOf: snapshot.updatedAt };
+const lending = (snapshot.walletPacks || []).flatMap((pack) => pack.lendingPositions || []).filter((position) => Number(position.collateralUsd || 0) > 0 || Number(position.debtUsd || position.borrowUsd || 0) > 0);
+const rates = lending.map((position) => Number(position.borrowApy ?? position.supplyApy)).filter(Number.isFinite);
+const healthFactors = lending.map((position) => Number(position.healthFactor)).filter((value) => Number.isFinite(value) && value > 0);
+const totals = snapshot.totals;
+const next = {
+  date,
+  equityUsd,
+  walletIdleUsd: Number(totals.walletUsd || 0),
+  collateralUsd: Number(totals.collateralUsd || 0),
+  debtUsd: Number(totals.borrowUsd || 0),
+  liquidityUsd: Number(totals.liquidityUsd || 0),
+  yieldPrincipalUsd: Number(totals.yieldUsd || 0),
+  rewardsAccruedUsd: Number(totals.rewardsUsd || 0),
+  borrowAprPct: rates.length ? Math.round((rates.reduce((sum, rate) => sum + rate, 0) / rates.length) * 100) / 100 : null,
+  healthFactor: healthFactors.length ? Math.min(...healthFactors) : null,
+  asOf: snapshot.updatedAt,
+};
 const index = rows.findIndex((row) => row.date === date);
 if (index >= 0) rows[index] = next;
 else rows.push(next);

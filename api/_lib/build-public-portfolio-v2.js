@@ -459,23 +459,26 @@ function mapWallets(packs, walletIdleUsd) {
 }
 
 function buildHistory(snap) {
-  const rows = [];
-  // Prefer the full factual daily series from the Navigator cache.
-  // Keep the 7-day sparkline as a compatibility fallback.
+  // Use only dated, finite observations from the Navigator cabinet cache.
   const source = Array.isArray(snap.historyDaily) && snap.historyDaily.length
     ? snap.historyDaily
-    : snap.history7d || [];
+    : Array.isArray(snap.history7d)
+      ? snap.history7d
+      : [];
+  const byDay = new Map();
   for (const h of source) {
     const date = dayKey(h?.date || h?.day);
     if (!date) continue;
-    // History from Navigator is cabinet equity (no public +$800).
-    // Public chart expects headline equity → add adjustment once here.
-    rows.push({
-      date,
-      equityUsd: round2(num(h.equityUsd ?? h.totalUsd) + INTERNAL_EQUITY_ADJUSTMENT_USD),
-    });
+    const raw = h.equityUsd ?? h.totalUsd;
+    if (raw == null || raw === "") continue;
+    const equity = Number(raw);
+    if (!Number.isFinite(equity)) continue;
+    // Navigator history excludes the public +$800 adjustment.
+    byDay.set(date, round2(equity + INTERNAL_EQUITY_ADJUSTMENT_USD));
   }
-  return rows.sort((a, b) => a.date.localeCompare(b.date));
+  return [...byDay.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, equityUsd]) => ({ date, equityUsd }));
 }
 
 function collectCompleteness(snap, ctx) {

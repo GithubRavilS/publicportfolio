@@ -460,14 +460,19 @@ function mapWallets(packs, walletIdleUsd) {
 
 function buildHistory(snap) {
   const rows = [];
-  for (const h of snap.history7d || []) {
-    const date = dayKey(h?.date);
+  // Prefer the full factual daily series from the Navigator cache.
+  // Keep the 7-day sparkline as a compatibility fallback.
+  const source = Array.isArray(snap.historyDaily) && snap.historyDaily.length
+    ? snap.historyDaily
+    : snap.history7d || [];
+  for (const h of source) {
+    const date = dayKey(h?.date || h?.day);
     if (!date) continue;
     // History from Navigator is cabinet equity (no public +$800).
     // Public chart expects headline equity → add adjustment once here.
     rows.push({
       date,
-      equityUsd: round2(num(h.equityUsd) + INTERNAL_EQUITY_ADJUSTMENT_USD),
+      equityUsd: round2(num(h.equityUsd ?? h.totalUsd) + INTERNAL_EQUITY_ADJUSTMENT_USD),
     });
   }
   return rows.sort((a, b) => a.date.localeCompare(b.date));

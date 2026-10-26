@@ -471,21 +471,43 @@ function mapWallets(packs, walletIdleUsd) {
   });
 }
 
-function buildHistory(snap) {
-  // Strict: only historyDaily from Navigator cache. No densify, no demo, no
-  // invented calendar days. Missing days stay missing (chart draws gaps).
-  const source = Array.isArray(snap.historyDaily) ? snap.historyDaily : [];
+function loadLegacyHistoryArchive() {
+  for (const file of candidatePaths(null, ["portfolio-data.js"])) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const raw = fs.readFileSync(file, "utf8");
+      const eq = raw.indexOf("=");
+      if (eq < 0) continue;
+      const json = raw.slice(eq + 1).trim().replace(/;\\s*$/, "");
+      const payload = JSON.parse(json);
+      return Array.isArray(payload.snapshots) ? payload.snapshots : [];
+    } catch (err) {
+      console.warn("[public-portfolio/v2] historical archive unavailable:", String(err?.message || err));
+    }
+  }
+  return [];
+}
+
+function buildHistory(snap, currentNetWorthUsd) {
+  // The existing daily archive is the historical chart series. Current cabinet
+  // rows take precedence on overlapping dates and use the public +$800 once.
   const byDay = new Map();
-  for (const h of source) {
+  for (const row of loadLegacyHistoryArchive()) {
+    const date = dayKey(row?.timestamp || row?.date || row?.day);
+    const equity = Number(row?.equityUsd);
+    if (date && Number.isFinite(equity)) byDay.set(date, round2(equity));
+  }
+  for (const h of Array.isArray(snap.historyDaily) ? snap.historyDaily : []) {
     const date = dayKey(h?.date || h?.day);
-    if (!date) continue;
     const raw = h.equityUsd ?? h.totalUsd;
-    if (raw == null || raw === "") continue;
     const equity = Number(raw);
-    if (!Number.isFinite(equity)) continue;
-    // History from Navigator is cabinet equity (no public +$800).
-    // Public chart expects headline equity → add adjustment once here.
-    byDay.set(date, round2(equity + INTERNAL_EQUITY_ADJUSTMENT_USD));
+    if (date && raw != null && raw !== "" && Number.isFinite(equity)) {
+      byDay.set(date, round2(equity + INTERNAL_EQUITY_ADJUSTMENT_USD));
+    }
+  }
+  const updatedDate = dayKey(snap.updatedAt || snap.generatedAt);
+  if (updatedDate && Number.isFinite(Number(currentNetWorthUsd))) {
+    byDay.set(updatedDate, round2(currentNetWorthUsd));
   }
   return [...byDay.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
@@ -679,7 +701,7 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
   const wallets = mapWallets(packs, walletIdleUsd);
   const positions = [...lending, ...liquidity, ...yields, ...wallets];
 
-  const history = buildHistory(snap);
+  const history = buildHistory(snap, netWorthUsd);
 
   const hfCandidates = lending
     .map((p) => p.healthFactor)

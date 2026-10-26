@@ -31,6 +31,8 @@ const next = {
   borrowAprPct: rates.length ? Math.round((rates.reduce((sum, rate) => sum + rate, 0) / rates.length) * 100) / 100 : null,
   healthFactor: healthFactors.length ? Math.min(...healthFactors) : null,
   asOf: snapshot.updatedAt,
+  snapshotId: snapshot.snapshotId || snapshot.meta?.snapshotId || null,
+  source: "navigator-cabinet",
 };
 const index = rows.findIndex((row) => row.date === date);
 if (index >= 0) rows[index] = next;

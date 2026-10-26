@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 
 const apiUrl = process.env.PUBLIC_PORTFOLIO_API_URL
   || "https://publicportfolio-mu.vercel.app/api/public-portfolio/v2";
-const dataPath = "data/portfolio-data.js";
+const historyPath = "data/public-equity-history.json";
 
 const response = await fetch(apiUrl, { headers: { accept: "application/json" } });
 if (!response.ok) throw new Error(`Public Portfolio API returned HTTP ${response.status}`);
@@ -12,29 +12,20 @@ if (api?.meta?.complete !== true || api?.meta?.stale !== false || api?.meta?.liv
 }
 const equityUsd = Number(api?.summary?.netWorthUsd);
 const updatedAt = String(api?.meta?.updatedAt || "");
-if (!Number.isFinite(equityUsd) || !Number.isFinite(Date.parse(updatedAt))) {
+const updatedMs = Date.parse(updatedAt);
+if (!Number.isFinite(equityUsd) || !Number.isFinite(updatedMs)) {
   throw new Error("API snapshot is missing a valid net worth or updatedAt timestamp.");
 }
 
-const raw = await fs.readFile(dataPath, "utf8");
-const assignment = raw.indexOf("=");
-if (assignment < 0) throw new Error("Could not parse data/portfolio-data.js.");
-let json = raw.slice(assignment + 1).trim();
-if (json.endsWith(";")) json = json.slice(0, -1).trim();
-const portfolio = JSON.parse(json);
-if (!Array.isArray(portfolio.snapshots)) portfolio.snapshots = [];
+const history = JSON.parse(await fs.readFile(historyPath, "utf8"));
+if (!Array.isArray(history)) throw new Error("History archive must be a JSON array.");
+const day = new Date(updatedMs).toISOString().slice(0, 10);
+const existing = history.findIndex((row) => row.date === day);
+const previous = existing >= 0 ? history[existing] : {};
+const point = { ...previous, date: day, equityUsd: Math.round(equityUsd * 100) / 100 };
+if (existing >= 0) history[existing] = point;
+else history.push(point);
+history.sort((a, b) => a.date.localeCompare(b.date));
 
-const day = updatedAt.slice(0, 10);
-const existing = portfolio.snapshots.findIndex((row) =>
-  String(row.timestamp || row.date || row.day || "").slice(0, 10) === day
-);
-const previous = existing >= 0 ? portfolio.snapshots[existing] : {};
-const point = { ...previous, timestamp: updatedAt, equityUsd: Math.round(equityUsd * 100) / 100 };
-if (existing >= 0) portfolio.snapshots[existing] = point;
-else portfolio.snapshots.push(point);
-portfolio.snapshots.sort((a, b) => String(a.timestamp || a.date || "").localeCompare(String(b.timestamp || b.date || "")));
-portfolio.currentCapitalUsd = point.equityUsd;
-portfolio.exportedAt = updatedAt;
-
-await fs.writeFile(dataPath, "window.PORTFOLIO_DATA = " + JSON.stringify(portfolio, null, 2) + "\n");
+await fs.writeFile(historyPath, JSON.stringify(history, null, 2) + "\n");
 console.log(`Archived ${day}: $${point.equityUsd.toFixed(2)} (${existing >= 0 ? "updated" : "added"}).`);

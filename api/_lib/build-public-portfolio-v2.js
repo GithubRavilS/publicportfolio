@@ -478,22 +478,26 @@ function buildHistory(snap, currentNetWorthUsd) {
   // Legacy chart values are retained as historical observations per product
   // requirements. They already contain the public equity adjustment.
   const byDay = new Map();
+  const updatedDate = dayKey(snap.updatedAt || snap.generatedAt);
+  // Never show archive rows dated after the latest cabinet snapshot: they are
+  // not yet confirmed by a live balance.
   for (const row of loadLegacyHistoryArchive()) {
     const date = dayKey(row?.timestamp || row?.date || row?.day);
     const equity = Number(row?.equityUsd);
-    if (date && Number.isFinite(equity)) byDay.set(date, round2(equity));
+    if (date && (!updatedDate || date <= updatedDate) && Number.isFinite(equity)) {
+      byDay.set(date, round2(equity));
+    }
   }
   // Prefer the more recent Navigator daily cache where it overlaps the archive.
   for (const h of Array.isArray(snap.historyDaily) ? snap.historyDaily : []) {
     const date = dayKey(h?.date || h?.day);
     const raw = h.equityUsd ?? h.totalUsd;
     const equity = Number(raw);
-    if (date && raw != null && raw !== "" && Number.isFinite(equity)) {
+    if (date && (!updatedDate || date <= updatedDate) && raw != null && raw !== "" && Number.isFinite(equity)) {
       byDay.set(date, round2(equity + INTERNAL_EQUITY_ADJUSTMENT_USD));
     }
   }
-  // Today's live cabinet total is authoritative and replaces today's archive row.
-  const updatedDate = dayKey(snap.updatedAt || snap.generatedAt);
+  // Today's live cabinet total is authoritative and replaces its archive row.
   if (updatedDate && Number.isFinite(Number(currentNetWorthUsd))) {
     byDay.set(updatedDate, round2(currentNetWorthUsd));
   }

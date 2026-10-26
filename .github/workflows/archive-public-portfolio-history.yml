@@ -1,0 +1,35 @@
+name: Archive daily public portfolio snapshot
+
+on:
+  schedule:
+    - cron: "55 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-public-portfolio-history
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Append the current verified snapshot
+        run: node scripts/append-public-portfolio-history.mjs
+      - name: Commit the daily point
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/portfolio-data.js
+          if git diff --cached --quiet; then
+            echo "No portfolio history changes."
+            exit 0
+          fi
+          git commit -m "chore: archive daily public portfolio snapshot"
+          git push

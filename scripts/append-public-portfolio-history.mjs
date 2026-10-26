@@ -29,7 +29,7 @@ if (!Array.isArray(history)) throw new Error("History archive must be a JSON arr
 const day = new Date(updatedMs).toISOString().slice(0, 10);
 const existing = history.findIndex((row) => row.date === day);
 const previous = existing >= 0 ? history[existing] : {};
-const point = { ...previous, date: day, equityUsd: Math.round(equityUsd * 100) / 100 };
+const point = { ...previous, date: day, equityUsd: Math.round(equityUsd * 100) / 100, asOf: updatedAt, snapshotId: api?.meta?.snapshotId || null, source: "navigator-cabinet" };
 if (existing >= 0) history[existing] = point;
 else history.push(point);
 history.sort((a, b) => a.date.localeCompare(b.date));

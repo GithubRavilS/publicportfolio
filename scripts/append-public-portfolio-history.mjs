@@ -7,8 +7,15 @@ const historyPath = "data/public-equity-history.json";
 const response = await fetch(apiUrl, { headers: { accept: "application/json" } });
 if (!response.ok) throw new Error(`Public Portfolio API returned HTTP ${response.status}`);
 const api = await response.json();
-if (api?.meta?.complete !== true || api?.meta?.stale !== false || api?.meta?.liveFromEndpoint !== true) {
-  throw new Error("Refusing to archive an incomplete, stale, or non-live portfolio snapshot.");
+if (api?.meta?.liveFromEndpoint !== true) {
+  throw new Error("Refusing to archive a snapshot that did not come from the live Navigator endpoint.");
+}
+if (api?.meta?.stale === true) {
+  console.log(`Skipping stale Navigator snapshot from ${api?.meta?.updatedAt || "unknown date"}.`);
+  process.exit(0);
+}
+if (api?.meta?.complete !== true) {
+  throw new Error("Refusing to archive an incomplete portfolio snapshot.");
 }
 const equityUsd = Number(api?.summary?.netWorthUsd);
 const updatedAt = String(api?.meta?.updatedAt || "");

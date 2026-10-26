@@ -12,14 +12,16 @@ if (api?.meta?.complete !== true || api?.meta?.stale !== false || api?.meta?.liv
 }
 const equityUsd = Number(api?.summary?.netWorthUsd);
 const updatedAt = String(api?.meta?.updatedAt || "");
-if (!Number.isFinite(equityUsd) || !/^\\d{4}-\\d{2}-\\d{2}T/.test(updatedAt)) {
+if (!Number.isFinite(equityUsd) || !Number.isFinite(Date.parse(updatedAt))) {
   throw new Error("API snapshot is missing a valid net worth or updatedAt timestamp.");
 }
 
 const raw = await fs.readFile(dataPath, "utf8");
-const match = raw.match(/^window\\.PORTFOLIO_DATA\\s*=\\s*([\\s\\S]*);\\s*$/);
-if (!match) throw new Error("Could not parse data/portfolio-data.js.");
-const portfolio = JSON.parse(match[1]);
+const assignment = raw.indexOf("=");
+if (assignment < 0) throw new Error("Could not parse data/portfolio-data.js.");
+let json = raw.slice(assignment + 1).trim();
+if (json.endsWith(";")) json = json.slice(0, -1).trim();
+const portfolio = JSON.parse(json);
 if (!Array.isArray(portfolio.snapshots)) portfolio.snapshots = [];
 
 const day = updatedAt.slice(0, 10);
@@ -34,5 +36,5 @@ portfolio.snapshots.sort((a, b) => String(a.timestamp || a.date || "").localeCom
 portfolio.currentCapitalUsd = point.equityUsd;
 portfolio.exportedAt = updatedAt;
 
-await fs.writeFile(dataPath, `window.PORTFOLIO_DATA = ${JSON.stringify(portfolio, null, 2)};\\n`);
+await fs.writeFile(dataPath, "window.PORTFOLIO_DATA = " + JSON.stringify(portfolio, null, 2) + "\n");
 console.log(`Archived ${day}: $${point.equityUsd.toFixed(2)} (${existing >= 0 ? "updated" : "added"}).`);

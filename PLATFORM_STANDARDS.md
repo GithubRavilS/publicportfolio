@@ -40,3 +40,11 @@ These requirements apply to every public product page and dashboard in this repo
 
 - Public history files may contain only the public portfolio summary fields explicitly approved for display.
 - Never commit wallet addresses, raw cabinet responses, authentication material, private identifiers, or position-level raw payloads to GitHub.
+
+## Project communication
+
+- Every response about this project must end with concrete next steps whenever further work is needed, including progress updates.
+- State the actions in execution order, who performs each action, and the evidence that will confirm completion. Include dependencies or blockers when relevant.
+- Keep the steps detailed enough to act on; avoid generic promises to investigate or continue.
+- Distinguish completed, tested, deployed, and production-verified work. Never describe a prepared patch as a completed production fix.
+- If no further action is needed, end by stating that explicitly.

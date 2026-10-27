@@ -32,6 +32,7 @@ for(const filter of ['all','collateral','lending','liquidity','yield','wallet','
 vm.runInContext('openDrawer("lp")',context);
 assert(element('#drawerContent').innerHTML.includes('12.34%'));
 assert(!element('#drawerContent').innerHTML.includes('PRIVATE WALLET'));
+context.snapshot.positions[0].details.isFullRange=true;context.snapshot.positions[0].details.rangeMin=null;context.snapshot.positions[0].details.rangeMax=null;vm.runInContext('posFilter="liquidity";renderPositions(data.positions)',context);assert(element('#positionsTable').innerHTML.includes('Полный диапазон'));
 context.snapshot.positions[0].ratePct=null;
 vm.runInContext('posFilter="liquidity";renderPositions(data.positions)',context);
 assert(element('#positionsTable').innerHTML.includes('Нет данных'));

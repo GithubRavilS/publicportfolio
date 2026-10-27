@@ -568,11 +568,8 @@ function collectCompleteness(snap, ctx) {
   if (!hasYield) {
     reasons.push("В снимке Navigator нет Yield-позиции (в кабинете Yield входит в баланс).");
   }
-  if (ctx.ageMs > STALE_AFTER_MS) {
-    reasons.push(
-      `Снимок Navigator старше ${round2(STALE_AFTER_MS / 3600000)} ч (updatedAt=${ctx.updatedAt}).`
-    );
-  }
+  // Age alone must never mark the snapshot incomplete or blank metrics.
+  // Stale is signaled separately via meta.stale + honest updatedAt.
 
   // Independent SoT: navigatorBalanceUsd from export totals — not a self-sum of this API.
   const expectedPublic = round2(ctx.navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD);

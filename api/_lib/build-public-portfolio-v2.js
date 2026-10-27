@@ -320,7 +320,7 @@ function mapLending(pack) {
         supplied: p.supplied || null,
         borrowed: p.borrowed || null,
         rewards: p.rewards || [],
-        sourceTimestamp: p.updatedAt || pack.updatedAt || null,
+        sourceTimestamp: p.scannedAt || p.updatedAt || pack.scannedAt || pack.updatedAt || null,
       },
     });
   }
@@ -357,6 +357,7 @@ function mapLiquidity(pack) {
         feesUsd: p.feesUsd ?? null,
         incentivesUsd: p.incentivesUsd ?? null,
         feeTier: p.feeTier ?? null,
+        feeSource: p.feeSource ?? null,
         // Explicit units only. Never guess whether 100 means percent, bps or pips.
         feeTierPct: p.feeTierPct ?? (p.feeTierUnit === "percent" ? p.feeTier : null),
         dynamicFee: p.dynamicFee ?? null,
@@ -372,7 +373,7 @@ function mapLiquidity(pack) {
         inRange: p.inRange ?? null,
         earnings: p.earnings || null,
         link: p.link || null,
-        sourceTimestamp: p.updatedAt || pack.updatedAt || null,
+        sourceTimestamp: p.scannedAt || p.updatedAt || pack.scannedAt || pack.updatedAt || null,
       },
     });
   }
@@ -409,7 +410,7 @@ function mapYield(pack) {
         supplied: p.supplied || null,
         rewards: p.rewards || [],
         link: p.link || null,
-        sourceTimestamp: p.updatedAt || pack.updatedAt || null,
+        sourceTimestamp: p.scannedAt || p.updatedAt || pack.scannedAt || pack.updatedAt || null,
       },
     });
   }
@@ -713,7 +714,7 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
     ? round2(rateCandidates.reduce((a, b) => a + Number(b), 0) / rateCandidates.length)
     : null;
 
-  const updatedAt = snap.updatedAt || snap.generatedAt || new Date().toISOString();
+  const updatedAt = snap.scannedAt || snap.updatedAt || snap.generatedAt || new Date().toISOString();
   const updatedMs = Date.parse(updatedAt);
   const ageMs = Number.isFinite(updatedMs) ? Date.now() - updatedMs : Infinity;
 
@@ -789,6 +790,10 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
     meta: {
       updatedAt,
       source: "DeFi Navigator",
+      scannedAt: snap.scannedAt || snap.updatedAt || null,
+      cacheUpdatedAt: snap.cacheUpdatedAt || null,
+      generatedAt: snap.generatedAt || null,
+      refreshStatus: snap.refreshStatus || null,
       walletCount,
       chains: chains.size,
       stale,
@@ -815,6 +820,9 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
       navigatorSnapshot: {
         snapshotId,
         updatedAt,
+        scannedAt: snap.scannedAt || snap.updatedAt || null,
+        cacheUpdatedAt: snap.cacheUpdatedAt || null,
+        refreshStatus: snap.refreshStatus || null,
         generatedAt: snap.generatedAt || null,
         balanceUsd: navigatorBalanceUsd,
         source: snap.source || "DeFi Navigator cockpit cache",

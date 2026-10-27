@@ -1,0 +1,73 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import handler from '../api/public-portfolio/refresh.js';
+
+const secret='synthetic-test-secret';
+process.env.NAVIGATOR_REFRESH_TOKEN=secret;
+function req(method='POST',url='/api/public-portfolio/refresh',headers={}){return {method,url,headers:{host:'portfolio.example',...headers},body:{clientId:999,wallet:'ignored'}}}
+async function run(request){let body;const headers={};const res={statusCode:0,setHeader(k,v){headers[k]=v},json(x){body=x}};await handler(request,res);assert(!JSON.stringify(body).includes(secret));return {status:res.statusCode,body,headers}}
+let calls=[];
+const job=(status='running',completed=0)=>({ok:true,jobId:'job-fixture',status,wallets:{total:2,completed,failed:0},scannedAt:'2026-10-27T00:00:00Z',snapshotId:'new-snapshot'});
+globalThis.fetch=async(url,opts)=>{calls.push({url:String(url),opts});return new Response(JSON.stringify(job()),{status:200})};
+assert.equal((await run(req('DELETE'))).status,405);
+assert.equal((await run(req('POST','/',{origin:'https://other.example'}))).status,403);
+assert.equal((await run(req('POST','/',{origin:'invalid'}))).status,403);
+assert.equal((await run(req('GET','/?jobId=../admin'))).status,400);
+delete process.env.NAVIGATOR_REFRESH_TOKEN;
+assert.equal((await run(req())).status,503);
+process.env.NAVIGATOR_REFRESH_TOKEN=secret;
+assert.equal(calls.length,0);
+assert.equal((await run(req())).status,200);
+assert.equal(calls[0].opts.body,'{}');
+assert.equal(calls[0].opts.headers.Authorization,`Bearer ${secret}`);
+assert(!calls[0].url.includes('999'));
+globalThis.fetch=async()=>new Response(JSON.stringify(job('completed',1)),{status:200});
+assert.equal((await run(req())).body.error.code,'UNCONFIRMED_SCAN');
+globalThis.fetch=async()=>new Response(JSON.stringify(job('completed',2)),{status:200});
+assert.equal((await run(req())).body.status,'completed');
+globalThis.fetch=async()=>new Response('private upstream failure',{status:500});
+assert.equal((await run(req())).body.error.code,'NAVIGATOR_REFRESH_UNAVAILABLE');
+globalThis.fetch=async()=>new Response('',{status:429,headers:{'Retry-After':'60'}});
+assert.equal((await run(req())).headers['Retry-After'],'60');
+
+const script=fs.readFileSync(new URL('../js/portfolio-refresh.js',import.meta.url),'utf8');
+async function client(sequence,{loaded=true}={}){
+ let click,loads=[],requests=[],storage=new Map();
+ const button={disabled:false,setAttribute(){},removeAttribute(){},addEventListener(name,fn){click=fn}};
+ const notice={hidden:true,style:{},setAttribute(){}};
+ const ctx=vm.createContext({console,Date,Promise,AbortSignal,sessionStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},window:{addEventListener(){}},document:{documentElement:{lang:'ru'},querySelector:s=>s==='#refreshBtn'?button:{after(){}},createElement:()=>notice},setTimeout:fn=>{fn();return 0},loadData:async date=>{loads.push(date);return loaded},fetch:async(url,options)=>{requests.push({url,options});const next=sequence.shift();if(!next)throw Error('Unexpected fetch');return {ok:next.ok!==false,json:async()=>next}}});
+ vm.runInContext(script,ctx);
+ await Promise.all([click(),click()]);return {notice,button,loads,requests,storage};
+}
+let c=await client([job('queued'),job('running',1),job('completed',2)]);
+assert.equal(c.requests[0].options.method,'POST');
+assert(c.requests.slice(1).every(r=>r.options.method==='GET'));
+assert.equal(c.loads.length,1);
+assert.equal(c.loads[0],'2026-10-27T00:00:00Z');
+assert(c.notice.textContent.includes('Новый снимок сохранён'));
+assert.equal(c.button.disabled,false);
+assert.equal(c.storage.size,0);
+c=await client([{...job('partial',1),wallets:{total:2,completed:1,failed:1}}]);
+assert.equal(c.loads.length,0);
+assert(c.notice.textContent.includes('Не все кошельки'));
+c=await client([{ok:false,error:{code:'REFRESH_NOT_CONFIGURED'}}]);
+assert(c.notice.textContent.includes('временно недоступно'));
+assert.equal(c.loads.length,0);
+c=await client([job('completed',2)],{loaded:false});
+assert.equal(c.loads.length,3);
+assert(!c.notice.textContent.includes('Новый снимок сохранён'));
+const html=fs.readFileSync(new URL('../public-portfolio-v2.html',import.meta.url),'utf8');
+const loadStart=html.indexOf('let dataLoading=false');
+const loadScript=html.slice(loadStart,html.indexOf("$$('.nav-btn')",loadStart));
+const lastGood={summary:{netWorthUsd:100},positions:[{id:'old'}],history:[],meta:{updatedAt:'2020-01-01T00:00:00Z'}};
+const loadContext=vm.createContext({console:{info(){}},Date,Map,Number,Array,API_URL:'/api/public-portfolio/v2',data:lastGood,render(){},fetch:async url=>url==='/api/public-portfolio/v2'?{ok:true,json:async()=>lastGood}:{ok:false}});
+vm.runInContext(loadScript,loadContext);
+assert.equal(await vm.runInContext("loadData('2026-10-27T00:00:00Z')",loadContext),false);
+assert.equal(loadContext.data,lastGood);
+loadContext.fetch=async()=>{throw Error('offline')};
+assert.equal(await vm.runInContext('loadData()',loadContext),false);
+assert.equal(loadContext.data,lastGood);
+loadContext.fetch=async url=>url==='/api/public-portfolio/v2'?{ok:true,json:async()=>({...lastGood,meta:{scannedAt:'2026-10-27T00:00:00Z',updatedAt:'2026-10-27T00:00:00Z'}})}:{ok:false};
+assert.equal(await vm.runInContext("loadData('2026-10-27T00:00:00Z')",loadContext),true);
+console.log('PASS: fixed-cabinet proxy, server-only token, confirmed two-wallet scan, polling, partial errors and no false success.');

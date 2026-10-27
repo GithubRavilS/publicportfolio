@@ -45,3 +45,32 @@ On 2026-10-27 the public cabinet endpoint still returned a 2026-10-23 snapshot.
 All four LPs had null APR, fee tier and price bounds. These fields must be restored
 in `backend/public_navigator_export.py` and the source cache refresh, rather than
 copied from the independently updated legacy sheet.
+
+## Manual full-cabinet refresh
+
+The Refresh button requests a real scan of both attached wallets through
+`POST /api/public-portfolio/refresh`; ordinary page loads and five-minute
+background reads only fetch the current snapshot.
+
+The site server forwards requests to `NAVIGATOR_REFRESH_URL` (Navigator's
+fixed-cabinet `/api/public/navigator-refresh`) with server-only
+`NAVIGATOR_REFRESH_TOKEN`. Never embed that token, cabinet credentials or
+caller-selected wallet/client parameters in browser code.
+
+The service must durably track a single active job per cabinet and coalesce
+concurrent clicks. POST starts or joins it; GET with `jobId` reports
+`queued | running | completed | partial | failed`, plus
+`wallets: { total: 2, completed, failed }`.
+Only mark completed after both wallet scans and DB snapshot persistence.
+A completed response includes the factual `scannedAt` and `snapshotId`.
+A short global cooldown protects upstream scan quotas.
+
+The browser polls status, disables duplicate clicks, and retains the job ID
+across reloads. It shows success only after a completed job and after loading
+a portfolio response whose scan time is at least the completed job's scan time.
+Partial failures, request failures and missing configuration must remain visible
+and preserve the last readable snapshot.
+
+Regression checks:
+- `node scripts/test-portfolio-refresh.mjs`
+- `node scripts/test-public-portfolio-ui.mjs`

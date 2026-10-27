@@ -135,7 +135,8 @@ export async function fetchNavigatorSnapshot(url, opts = {}) {
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+      cache: "no-store",
     });
     if (!res.ok) {
       throw new Error(`navigator snapshot HTTP ${res.status}`);
@@ -319,7 +320,7 @@ function mapLending(pack) {
         supplied: p.supplied || null,
         borrowed: p.borrowed || null,
         rewards: p.rewards || [],
-        sourceTimestamp: pack.updatedAt || null,
+        sourceTimestamp: p.updatedAt || pack.updatedAt || null,
       },
     });
   }
@@ -346,7 +347,7 @@ function mapLiquidity(pack) {
       valueUsd: value,
       collateralUsd: 0,
       debtUsd: 0,
-      ratePct: p.displayApr ?? p.apr ?? null,
+      ratePct: p.displayApr ?? p.apr ?? p.aprPct ?? null,
       rewardUsd: reward,
       healthFactor: null,
       includedInNetWorth: true,
@@ -356,6 +357,12 @@ function mapLiquidity(pack) {
         feesUsd: p.feesUsd ?? null,
         incentivesUsd: p.incentivesUsd ?? null,
         feeTier: p.feeTier ?? null,
+        // Explicit units only. Never guess whether 100 means percent, bps or pips.
+        feeTierPct: p.feeTierPct ?? (p.feeTierUnit === "percent" ? p.feeTier : null),
+        dynamicFee: p.dynamicFee ?? null,
+        rangeQuote: p.rangeQuote ?? null,
+        rateKind: "APR",
+        ratePeriod: p.ratePeriod ?? null,
         rangeMin: p.rangeMin ?? null,
         rangeMax: p.rangeMax ?? null,
         rangeCurrent: p.rangeCurrent ?? null,
@@ -363,7 +370,7 @@ function mapLiquidity(pack) {
         inRange: p.inRange ?? null,
         earnings: p.earnings || null,
         link: p.link || null,
-        sourceTimestamp: pack.updatedAt || null,
+        sourceTimestamp: p.updatedAt || pack.updatedAt || null,
       },
     });
   }
@@ -389,7 +396,7 @@ function mapYield(pack) {
       valueUsd: value,
       collateralUsd: 0,
       debtUsd: 0,
-      ratePct: p.displayApr ?? p.apr ?? null,
+      ratePct: p.displayApr ?? p.apr ?? p.aprPct ?? null,
       rewardUsd: round2(p.rewardsUsd || 0),
       healthFactor: null,
       includedInNetWorth: true,
@@ -400,7 +407,7 @@ function mapYield(pack) {
         supplied: p.supplied || null,
         rewards: p.rewards || [],
         link: p.link || null,
-        sourceTimestamp: pack.updatedAt || null,
+        sourceTimestamp: p.updatedAt || pack.updatedAt || null,
       },
     });
   }

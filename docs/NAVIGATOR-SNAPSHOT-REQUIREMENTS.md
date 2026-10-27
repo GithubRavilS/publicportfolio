@@ -36,7 +36,9 @@ Every active LP needs:
 
 Public Portfolio refreshes on return to the tab and every five minutes while
 visible. Endpoint/fallback snapshots or individual positions older than 36 hours
-are not shown as current values. Source refresh must be repaired in Navigator's
+remain visible as the last available values, with their source date and an explicit
+stale warning. Age alone must never blank overview metrics, position amounts,
+earnings or lending risk details. Missing fields stay unavailable individually. Source refresh must be repaired in Navigator's
 scan scheduler; refreshing the public export alone does not refresh its cache.
 
 On 2026-10-27 the public cabinet endpoint still returned a 2026-10-23 snapshot.

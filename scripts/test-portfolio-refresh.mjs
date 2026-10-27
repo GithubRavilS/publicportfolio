@@ -26,6 +26,8 @@ globalThis.fetch=async()=>new Response(JSON.stringify(job('completed',1)),{statu
 assert.equal((await run(req())).body.error.code,'UNCONFIRMED_SCAN');
 globalThis.fetch=async()=>new Response(JSON.stringify(job('completed',2)),{status:200});
 assert.equal((await run(req())).body.status,'completed');
+globalThis.fetch=async()=>new Response(JSON.stringify({...job('partial',1),ok:false,wallets:{total:2,completed:1,failed:1}}),{status:200});
+assert.equal((await run(req())).body.status,'partial');
 globalThis.fetch=async()=>new Response('private upstream failure',{status:500});
 assert.equal((await run(req())).body.error.code,'NAVIGATOR_REFRESH_UNAVAILABLE');
 globalThis.fetch=async()=>new Response('',{status:429,headers:{'Retry-After':'60'}});

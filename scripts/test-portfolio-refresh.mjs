@@ -22,6 +22,14 @@ assert.equal((await run(req())).status,200);
 assert.equal(calls[0].opts.body,'{}');
 assert.equal(calls[0].opts.headers.Authorization,`Bearer ${secret}`);
 assert(!calls[0].url.includes('999'));
+globalThis.fetch=async()=>new Response(JSON.stringify({ok:false,jobId:'job-fixture',status:'queued',wallets:{total:2,completed:0,failed:0},scannedAt:null,snapshotId:null}),{status:202});
+{
+  const queued=await run(req());
+  assert.equal(queued.status,200);
+  assert.equal(queued.body.status,'queued');
+}
+globalThis.fetch=async()=>new Response(JSON.stringify({ok:false,jobId:'job-fixture',status:'running',wallets:{total:2,completed:0,failed:0},scannedAt:null,snapshotId:null}),{status:200});
+assert.equal((await run(req())).body.status,'running');
 globalThis.fetch=async()=>new Response(JSON.stringify(job('completed',1)),{status:200});
 assert.equal((await run(req())).body.error.code,'UNCONFIRMED_SCAN');
 globalThis.fetch=async()=>new Response(JSON.stringify(job('completed',2)),{status:200});

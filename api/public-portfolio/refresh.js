@@ -52,7 +52,8 @@ export default async function handler(req, res) {
     }
     const data = await response.json();
     const wallets = data.wallets || {};
-    if ((data.ok !== true && !['partial','failed'].includes(data.status)) || !JOB_ID.test(String(data.jobId || '')) || !STATES.has(data.status)) {
+    // PA returns ok:false while queued/running; accept any STATES status with a valid jobId.
+    if (!JOB_ID.test(String(data.jobId || '')) || !STATES.has(data.status)) {
       return reply(res, 502, {ok:false, error:{code:'INVALID_REFRESH_RESPONSE'}});
     }
     const total = Number(wallets.total), completed = Number(wallets.completed), failed = Number(wallets.failed);

@@ -1280,5 +1280,12 @@
     "asOf": "2026-11-13T22:42:36.767371+00:00",
     "snapshotId": "f6e7e09ae3a42d49",
     "source": "navigator-cabinet"
+  },
+  {
+    "date": "2026-11-14",
+    "equityUsd": 14580.21,
+    "asOf": "2026-11-14T22:33:26.512141+00:00",
+    "snapshotId": "fea052fde5111dc4",
+    "source": "navigator-cabinet"
   }
 ]

@@ -1299,6 +1299,14 @@
   {
     "date": "2026-11-17",
     "equityUsd": 14726.85,
+    "walletIdleUsd": 86.99,
+    "collateralUsd": 13196.86,
+    "debtUsd": 8028.68,
+    "liquidityUsd": 8164.62,
+    "yieldPrincipalUsd": 507.06,
+    "rewardsAccruedUsd": 13.66,
+    "borrowAprPct": 5.23,
+    "healthFactor": 1.335,
     "asOf": "2026-11-17T09:10:20.560013+00:00",
     "snapshotId": "725313f90b1fb236",
     "source": "navigator-cabinet"

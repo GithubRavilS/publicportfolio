@@ -1328,17 +1328,17 @@
   },
   {
     "date": "2026-11-23",
-    "equityUsd": 11443.95,
-    "walletIdleUsd": 85.82,
-    "collateralUsd": 9411.98,
-    "debtUsd": 6588.099999999999,
-    "liquidityUsd": 8031.98,
-    "yieldPrincipalUsd": 502.27,
-    "rewardsAccruedUsd": 48.33,
-    "borrowAprPct": 5.37,
+    "equityUsd": 11369.99,
+    "walletIdleUsd": 84.68,
+    "collateralUsd": 9411.99,
+    "debtUsd": 6588.17,
+    "liquidityUsd": 7963.13,
+    "yieldPrincipalUsd": 498.36,
+    "rewardsAccruedUsd": 48.36,
+    "borrowAprPct": 5.51,
     "healthFactor": 1.283,
-    "asOf": "2026-11-23T17:21:40.035316+00:00",
-    "snapshotId": "384a05513f6319b0",
+    "asOf": "2026-11-23T19:02:36.695022+00:00",
+    "snapshotId": "443a20c176ad6882",
     "source": "navigator-cabinet"
   }
 ]

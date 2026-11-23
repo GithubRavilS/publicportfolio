@@ -6,8 +6,7 @@
  * cockpit_client_detail cache the VIP cabinet uses. Not a live Jupiter/Debank rebuild.
  *
  * summary.netWorthUsd = navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD
- * The +$800 adjustment is applied only to netWorthUsd — never to positions,
- * categories, Yield, Rewards, or meta.navigatorBalanceUsd.
+ * (default 0). Optional env PUBLIC_PORTFOLIO_EQUITY_ADJ_USD for legacy overrides only.
  */
 
 import fs from "node:fs";
@@ -16,8 +15,36 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 export const INTERNAL_EQUITY_ADJUSTMENT_USD = Number(
-  process.env.PUBLIC_PORTFOLIO_EQUITY_ADJ_USD ?? 800
+  process.env.PUBLIC_PORTFOLIO_EQUITY_ADJ_USD ?? 0
 );
+
+/** Public chart archive rows before Nov 2026 included a +$800 headline inflation. */
+const LEGACY_ARCHIVE_EQUITY_INFLATION_USD = 800;
+
+function isPublicHiddenLendingRow(p) {
+  const supplied = p?.supplied || [];
+  const borrowed = p?.borrowed || [];
+  const nvda = supplied.some((x) =>
+    /nvda/i.test(String(x.token || x.symbol || x.asset || ""))
+  );
+  const usdc = borrowed.some((x) =>
+    /^usdc$/i.test(String(x.token || x.symbol || x.asset || ""))
+  );
+  return nvda && usdc;
+}
+
+function hiddenLendingUsd(packs) {
+  let collateralUsd = 0;
+  let debtUsd = 0;
+  for (const pack of packs || []) {
+    for (const p of pack.lendingPositions || []) {
+      if (!isPublicHiddenLendingRow(p)) continue;
+      collateralUsd += num(p.collateralUsd);
+      debtUsd += num(p.debtUsd ?? p.borrowUsd);
+    }
+  }
+  return { collateralUsd: round2(collateralUsd), debtUsd: round2(debtUsd) };
+}
 
 const STALE_AFTER_MS = Number(process.env.PUBLIC_PORTFOLIO_STALE_MS ?? 36 * 60 * 60 * 1000);
 const NAV_TOLERANCE_USD = Number(process.env.PUBLIC_PORTFOLIO_NAVIGATOR_TOLERANCE_USD ?? 50);
@@ -278,6 +305,7 @@ function mapLending(pack) {
   const label = walletLabel(pack.address, pack.kind);
   const out = [];
   for (const p of pack.lendingPositions || []) {
+    if (isPublicHiddenLendingRow(p)) continue;
     const coll = round2(p.collateralUsd);
     const debt = round2(p.debtUsd ?? p.borrowUsd);
     const reward = round2(p.rewardsUsd || 0);
@@ -495,7 +523,7 @@ function buildHistory(snap, currentNetWorthUsd) {
     const date = dayKey(row?.timestamp || row?.date || row?.day);
     const equity = Number(row?.equityUsd);
     if (date && (!updatedDate || date <= updatedDate) && Number.isFinite(equity)) {
-      byDay.set(date, round2(equity));
+      byDay.set(date, round2(equity - LEGACY_ARCHIVE_EQUITY_INFLATION_USD));
     }
   }
   // Prefer the more recent Navigator daily cache where it overlaps the archive.
@@ -685,16 +713,19 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
   const yields = packs.flatMap(mapYield);
 
   // Categories from Navigator snapshot totals (cabinet formula), not recomputed live APIs.
+  const hiddenLending = hiddenLendingUsd(packs);
+  const hiddenNetUsd = round2(hiddenLending.collateralUsd - hiddenLending.debtUsd);
+
   const walletIdleUsd = round2(totals.walletUsd);
-  const collateralUsd = round2(totals.collateralUsd);
-  const debtUsd = round2(totals.borrowUsd);
+  const collateralUsd = round2(totals.collateralUsd - hiddenLending.collateralUsd);
+  const debtUsd = round2(totals.borrowUsd - hiddenLending.debtUsd);
   const liquidityUsd = round2(totals.liquidityUsd);
   const yieldPrincipalUsd = round2(totals.yieldUsd);
   // Rewards are unclaimed / not in cabinet balance.
   const rewardsAccruedUsd = round2(totals.rewardsUsd);
   const rewardsInBalance = Boolean(totals.rewardsInBalance);
 
-  const navigatorBalanceUsd = round2(totals.totalUsd);
+  const navigatorBalanceUsd = round2(totals.totalUsd - hiddenNetUsd);
   const netWorthUsd = round2(navigatorBalanceUsd + INTERNAL_EQUITY_ADJUSTMENT_USD);
 
   const wallets = mapWallets(packs, walletIdleUsd);

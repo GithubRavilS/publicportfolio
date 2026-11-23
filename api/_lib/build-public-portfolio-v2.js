@@ -512,27 +512,40 @@ function loadLegacyHistoryArchive() {
   return [];
 }
 
-function buildHistory(snap, currentNetWorthUsd) {
-  // Legacy chart values are retained as historical observations per product
-  // requirements. They already contain the public equity adjustment.
+function publicChartEquityUsd(
+  rawEquity,
+  { legacyArchive = false, hiddenNetUsd = 0 } = {}
+) {
+  let v = Number(rawEquity);
+  if (!Number.isFinite(v)) return null;
+  if (legacyArchive) v -= LEGACY_ARCHIVE_EQUITY_INFLATION_USD;
+  v -= hiddenNetUsd;
+  v += INTERNAL_EQUITY_ADJUSTMENT_USD;
+  return round2(v);
+}
+
+function buildHistory(snap, currentNetWorthUsd, hiddenNetUsd = 0) {
   const byDay = new Map();
   const updatedDate = dayKey(snap.updatedAt || snap.generatedAt);
   // Never show archive rows dated after the latest cabinet snapshot: they are
   // not yet confirmed by a live balance.
   for (const row of loadLegacyHistoryArchive()) {
     const date = dayKey(row?.timestamp || row?.date || row?.day);
-    const equity = Number(row?.equityUsd);
-    if (date && (!updatedDate || date <= updatedDate) && Number.isFinite(equity)) {
-      byDay.set(date, round2(equity - LEGACY_ARCHIVE_EQUITY_INFLATION_USD));
+    const adj = publicChartEquityUsd(row?.equityUsd, {
+      legacyArchive: true,
+      hiddenNetUsd,
+    });
+    if (date && (!updatedDate || date <= updatedDate) && adj != null) {
+      byDay.set(date, adj);
     }
   }
   // Prefer the more recent Navigator daily cache where it overlaps the archive.
   for (const h of Array.isArray(snap.historyDaily) ? snap.historyDaily : []) {
     const date = dayKey(h?.date || h?.day);
     const raw = h.equityUsd ?? h.totalUsd;
-    const equity = Number(raw);
-    if (date && (!updatedDate || date <= updatedDate) && raw != null && raw !== "" && Number.isFinite(equity)) {
-      byDay.set(date, round2(equity + INTERNAL_EQUITY_ADJUSTMENT_USD));
+    if (date && (!updatedDate || date <= updatedDate) && raw != null && raw !== "") {
+      const adj = publicChartEquityUsd(raw, { legacyArchive: false, hiddenNetUsd });
+      if (adj != null) byDay.set(date, adj);
     }
   }
   // Today's live cabinet total is authoritative and replaces its archive row.
@@ -731,7 +744,7 @@ export function buildPublicPortfolioV2FromNavigator(snap, opts = {}) {
   const wallets = mapWallets(packs, walletIdleUsd);
   const positions = [...lending, ...liquidity, ...yields, ...wallets];
 
-  const history = buildHistory(snap, netWorthUsd);
+  const history = buildHistory(snap, netWorthUsd, hiddenNetUsd);
 
   const hfCandidates = lending
     .map((p) => p.healthFactor)
